@@ -1,5 +1,4 @@
 ﻿using System;
-using NewLife.IoT.Drivers;
 using NewLife.Log;
 
 namespace Test;
@@ -25,16 +24,16 @@ class Program
 
     static void Test1()
     {
-        DriverFactory.ScanAll();
+        //DriverFactory.ScanAll();
 
-        DriverFactory.ScanAll();
+        //DriverFactory.ScanAll();
 
-        foreach (var item in DriverFactory.Drivers)
-        {
-            Console.WriteLine();
-            XTrace.WriteLine("{0}\t{1}", item.Name, item.DisplayName);
-            XTrace.WriteLine(item.DefaultParameter?.Trim());
-        }
+        //foreach (var item in DriverFactory.Drivers)
+        //{
+        //    Console.WriteLine();
+        //    XTrace.WriteLine("{0}\t{1}", item.Name, item.DisplayName);
+        //    XTrace.WriteLine(item.DefaultParameter?.Trim());
+        //}
 
         //var drv = DriverFactory.Drivers[0];
         //XTrace.WriteLine("{0}", drv.DefaultParameter[0]);
