@@ -39,7 +39,7 @@ public static class AudioContainerFactory
                 return new OggFileReader(stream);
 
             if (magic[0] == 'f' && magic[1] == 'L' && magic[2] == 'a' && magic[3] == 'C')
-                throw new NotSupportedException("FLAC 原生容器暂不支持，请使用 RawPcmReader");
+                return new FlacContainerReader(stream);
         }
 
         // 回退到原始 PCM
