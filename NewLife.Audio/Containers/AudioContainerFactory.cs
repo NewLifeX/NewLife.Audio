@@ -17,6 +17,7 @@ public static class AudioContainerFactory
         {
             ".wav" => new WaveFileReader(stream),
             ".ogg" or ".opus" => new OggFileReader(stream),
+            ".mp4" or ".m4a" or ".mov" => new Mp4FileReader(stream),
             _ => CreateReader(stream, ext),
         };
     }
@@ -28,7 +29,7 @@ public static class AudioContainerFactory
     public static IAudioContainerReader CreateReader(Stream stream, String formatHint = null)
     {
         // 尝试魔术字节识别
-        var magic = new Byte[4];
+        var magic = new Byte[8];
         var pos = stream.Position;
         if (stream.Read(magic, 0, 4) >= 4)
         {
@@ -42,6 +43,14 @@ public static class AudioContainerFactory
 
             if (magic[0] == 'f' && magic[1] == 'L' && magic[2] == 'a' && magic[3] == 'C')
                 return new FlacContainerReader(stream);
+
+            // MP4/M4A: bytes 4-7 = 'ftyp'
+            if (stream.Read(magic, 0, 8) >= 8 &&
+                magic[4] == 'f' && magic[5] == 't' && magic[6] == 'y' && magic[7] == 'p')
+            {
+                stream.Seek(pos, SeekOrigin.Begin);
+                return new Mp4FileReader(stream);
+            }
         }
 
         // 回退到原始 PCM
@@ -74,6 +83,7 @@ public static class AudioContainerFactory
             ".wav" => new WaveFileWriter(stream, format),
             ".ogg" or ".opus" => new OggFileWriter(stream, format, AVTypes.Transparent),
             ".mp3" => new Mp3FileWriter(stream, format),
+            ".mp4" or ".m4a" => new Mp4FileWriter(stream, format),
             _ => throw new NotSupportedException($"不支持的容器格式: {formatHint}"),
         };
     }

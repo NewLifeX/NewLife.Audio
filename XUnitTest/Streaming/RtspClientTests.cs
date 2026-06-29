@@ -1,4 +1,5 @@
 using System;
+using System.Threading.Tasks;
 using NewLife.Audio.Streaming;
 using Xunit;
 
@@ -59,7 +60,7 @@ public class RtspClientTests
     }
 
     [Fact(DisplayName = "RTSP连接失败抛异常不抛NullRef")]
-    public async void ConnectAsync_InvalidHost_ThrowsConnectionException()
+    public async Task ConnectAsync_InvalidHost_ThrowsConnectionException()
     {
         var client = new RtspClient("rtsp://127.0.0.1:1/stream");
         // 无服务器监听，应抛 SocketException 而非 NullReferenceException
@@ -67,7 +68,7 @@ public class RtspClientTests
     }
 
     [Fact(DisplayName = "RTSP未连接时Pause返回false不抛异常")]
-    public async void PauseAsync_NotConnected_ReturnsFalse()
+    public async Task PauseAsync_NotConnected_ReturnsFalse()
     {
         var client = new RtspClient("rtsp://localhost:554/stream");
         var result = await client.PauseAsync();
