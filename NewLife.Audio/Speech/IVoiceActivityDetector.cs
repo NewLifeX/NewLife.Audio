@@ -1,4 +1,4 @@
-using NewLife.Data;
+using System;
 
 namespace NewLife.Audio.Speech;
 
@@ -11,12 +11,12 @@ public interface IVoiceActivityDetector
     /// <summary>判断是否为语音帧</summary>
     /// <param name="frame">音频帧数据（16-bit PCM）</param>
     /// <returns>true=语音，false=静音</returns>
-    Boolean IsSpeech(Packet frame);
+    Boolean IsSpeech(ReadOnlySpan<Byte> frame);
 
     /// <summary>获取语音概率（0.0~1.0）</summary>
     /// <param name="frame">音频帧数据</param>
     /// <returns>语音概率</returns>
-    Single GetSpeechProbability(Packet frame);
+    Single GetSpeechProbability(ReadOnlySpan<Byte> frame);
 
     /// <summary>重置检测器状态</summary>
     void Reset();

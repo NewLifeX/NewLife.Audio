@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
 
@@ -42,7 +43,7 @@ public class WaveFileReader : IAudioContainerReader
     }
 
     /// <summary>读取下一帧 PCM 数据</summary>
-    public Packet ReadFrame()
+    public IPacket ReadFrame()
     {
         if (_currentFrame >= _totalFrames) return null;
 
@@ -52,7 +53,7 @@ public class WaveFileReader : IAudioContainerReader
         if (read == 0) return null;
 
         _currentFrame++;
-        return new Packet(buffer, 0, read);
+        return new ArrayPacket(buffer, 0, read);
     }
 
     /// <summary>定位到指定帧</summary>
@@ -72,35 +73,44 @@ public class WaveFileReader : IAudioContainerReader
         var header = new Byte[44];
         _stream.Read(header, 0, 44);
 
+        var reader = new SpanReader(header.AsSpan());
+
         // RIFF
-        if (header[0] != 'R' || header[1] != 'I' || header[2] != 'F' || header[3] != 'F')
+        if (reader.ReadUInt32() != 0x46464952u)
             throw new InvalidDataException("不是有效的 WAV 文件");
+        reader.Advance(4); // file size
 
         // WAVE
-        if (header[8] != 'W' || header[9] != 'A' || header[10] != 'V' || header[11] != 'E')
+        if (reader.ReadUInt32() != 0x45564157u)
             throw new InvalidDataException("不是有效的 WAV 文件");
 
-        // fmt chunk
-        var audioFormat = (Int16)(header[20] | header[21] << 8);
-        var channels = (Int16)(header[22] | header[23] << 8);
-        var sampleRate = header[24] | header[25] << 8 | header[26] << 16 | header[27] << 24;
-        var bitsPerSample = (Int16)(header[34] | header[35] << 8);
+        // fmt sub-chunk: skip "fmt " and chunk size
+        reader.Advance(8);
 
-        // data chunk
-        var pos = 36;
-        while (pos < header.Length - 8 && pos < 1000)
+        var audioFormat = reader.ReadInt16();
+        var channels = reader.ReadInt16();
+        var sampleRate = reader.ReadInt32();
+        reader.Advance(6); // byteRate(4) + blockAlign(2)
+        var bitsPerSample = reader.ReadInt16();
+
+        // data sub-chunk
+        _dataOffset = 0;
+        _dataSize = 0;
+        while (reader.Available >= 8)
         {
-            var chunkId = new String([(Char)header[pos], (Char)header[pos + 1], (Char)header[pos + 2], (Char)header[pos + 3]]);
-            var chunkSize = header[pos + 4] | header[pos + 5] << 8 | header[pos + 6] << 16 | header[pos + 7] << 24;
+            var pos = reader.Position;
+            var chunkId = reader.ReadUInt32();
+            var chunkSize = reader.ReadInt32();
 
-            if (chunkId == "data")
+            if (chunkId == 0x61746164u) // "data"
             {
                 _dataOffset = pos + 8;
                 _dataSize = chunkSize;
                 break;
             }
 
-            pos += 8 + chunkSize;
+            // 跳过 chunk 内容（不超出缓冲区边界）
+            reader.Advance(Math.Min(chunkSize, reader.Available));
         }
 
         _stream.Seek(_dataOffset, SeekOrigin.Begin);

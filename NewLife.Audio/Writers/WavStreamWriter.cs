@@ -1,3 +1,5 @@
+using NewLife.Buffers;
+
 namespace NewLife.Audio.Writers;
 
 /// <summary>WAV 音频流写入器。写标准 RIFF/WAV 头（data chunk size 设为最大值表示未知长度），后续透传 PCM int16 单声道数据</summary>
@@ -36,26 +38,26 @@ public sealed class WavStreamWriter : AudioStreamWriter
         var riffSize = maxDataSize - 8; // RIFF chunk size = fileSize - 8
 
         var header = new Byte[44];
-        var offset = 0;
+        var writer = new SpanWriter(header.AsSpan());
 
         // RIFF chunk
-        BinaryWriterHelper.WriteFourCC(header, ref offset, "RIFF");
-        BinaryWriterHelper.WriteInt32LE(header, ref offset, riffSize);
-        BinaryWriterHelper.WriteFourCC(header, ref offset, "WAVE");
+        writer.Write(0x46464952u);       // "RIFF"
+        writer.Write(riffSize);
+        writer.Write(0x45564157u);       // "WAVE"
 
         // fmt sub-chunk
-        BinaryWriterHelper.WriteFourCC(header, ref offset, "fmt ");
-        BinaryWriterHelper.WriteInt32LE(header, ref offset, 16);          // sub-chunk size (PCM = 16)
-        BinaryWriterHelper.WriteInt16LE(header, ref offset, 1);           // audio format (1 = PCM)
-        BinaryWriterHelper.WriteInt16LE(header, ref offset, (Int16)channels);
-        BinaryWriterHelper.WriteInt32LE(header, ref offset, _sampleRate);
-        BinaryWriterHelper.WriteInt32LE(header, ref offset, byteRate);
-        BinaryWriterHelper.WriteInt16LE(header, ref offset, (Int16)blockAlign);
-        BinaryWriterHelper.WriteInt16LE(header, ref offset, (Int16)bitsPerSample);
+        writer.Write(0x20746D66u);       // "fmt "
+        writer.Write(16);                // sub-chunk size (PCM = 16)
+        writer.Write((Int16)1);          // audio format (1 = PCM)
+        writer.Write((Int16)channels);
+        writer.Write(_sampleRate);
+        writer.Write(byteRate);
+        writer.Write((Int16)blockAlign);
+        writer.Write((Int16)bitsPerSample);
 
         // data sub-chunk
-        BinaryWriterHelper.WriteFourCC(header, ref offset, "data");
-        BinaryWriterHelper.WriteInt32LE(header, ref offset, maxDataSize);
+        writer.Write(0x61746164u);       // "data"
+        writer.Write(maxDataSize);
 
         await stream.WriteAsync(header, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);

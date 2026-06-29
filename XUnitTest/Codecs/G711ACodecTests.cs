@@ -26,7 +26,7 @@ public class G711ACodecTests
         var encoded = _codec.FromPcm(pcm, null);
         Assert.Equal(samples, encoded.Total);
 
-        var decoded = _codec.ToPcm(encoded, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
         Assert.Equal(samples * 2, decoded.Total);
 
         var pcmData = decoded.ReadBytes();

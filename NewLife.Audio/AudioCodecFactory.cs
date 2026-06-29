@@ -53,11 +53,11 @@ public class AudioCodecFactory
     /// <param name="data">设备数据</param>
     /// <param name="trim">是否已去除芯片头</param>
     /// <returns></returns>
-    public Packet TrimHI(Packet data, out Boolean trim)
+    public IPacket TrimHI(IPacket data, out Boolean trim)
     {
         foreach (var header in _chipHeaders)
         {
-            if (header.TryTrim(data, out var result))
+            if (header.TryTrim(data.GetSpan(), out var result))
             {
                 _lastChipHeader = header;
                 trim = true;
@@ -73,14 +73,14 @@ public class AudioCodecFactory
     /// <summary>添加芯片头（还原最近一次去除的芯片头）</summary>
     /// <param name="data"></param>
     /// <returns></returns>
-    public Packet AddHI(Packet data)
+    public IPacket AddHI(IPacket data)
     {
-        if (_lastChipHeader != null && _lastChipHeader.TryAdd(data, out var result))
+        if (_lastChipHeader != null && _lastChipHeader.TryAdd(data.GetSpan(), out var result))
             return result;
 
         // 回退到海思头
         var hi = new HisiliconHeader();
-        hi.TryAdd(data, out var fallback);
+        hi.TryAdd(data.GetSpan(), out var fallback);
         return fallback;
     }
 
@@ -89,12 +89,12 @@ public class AudioCodecFactory
     /// <param name="data"></param>
     /// <returns></returns>
     /// <exception cref="NotSupportedException"></exception>
-    public Packet ToPcm(AVTypes avType, Packet data)
+    public IPacket ToPcm(AVTypes avType, IPacket data)
     {
         data = TrimHI(data, out _);
 
         var codec = _registry.GetCodec(avType);
-        return codec.ToPcm(data, null);
+        return codec.ToPcm(data.GetSpan(), null);
     }
 
     /// <summary>PCM编码转设备数据</summary>
@@ -102,13 +102,13 @@ public class AudioCodecFactory
     /// <param name="pcm"></param>
     /// <returns></returns>
     /// <exception cref="NotSupportedException"></exception>
-    public Packet FromPcm(AVTypes avType, Packet pcm)
+    public IPacket FromPcm(AVTypes avType, IPacket pcm)
     {
         var codec = _registry.GetCodec(avType);
-        var rs = codec.FromPcm(pcm, null);
+        var rs = codec.FromPcm(pcm.GetSpan(), null);
 
         // 如果有上次去除的芯片头，还原之
-        if (_lastChipHeader != null) _lastChipHeader.TryAdd(rs, out rs);
+        if (_lastChipHeader != null) _lastChipHeader.TryAdd(rs.GetSpan(), out rs);
 
         return rs;
     }

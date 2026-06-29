@@ -1,6 +1,7 @@
 using System;
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
+using NewLife.Data;
 using Xunit;
 
 namespace XUnitTest.Codecs;
@@ -36,7 +37,7 @@ public class G726CodecTests
         var encoded = codec.FromPcm(pcm, null);
         Assert.True(encoded.Total > 0);
 
-        var decoded = codec.ToPcm(encoded, null);
+        var decoded = codec.ToPcm(encoded.GetSpan(), null);
         Assert.Equal(samples * 2, decoded.Total);
     }
 

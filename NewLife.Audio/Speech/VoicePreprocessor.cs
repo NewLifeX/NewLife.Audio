@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NewLife.Audio.DSP;
 using NewLife.Data;
 
@@ -107,16 +108,15 @@ public class VoicePreprocessor : IAudioProcessor
         {
             // 构建临时 Packet 用于 VAD
             var tempPcm = new Byte[read * 2];
+            var pcmSamples = MemoryMarshal.Cast<Byte, Int16>(tempPcm.AsSpan());
             for (var i = 0; i < read; i++)
             {
-                var sample = (Int16)(buffer[offset + i] * 32767f);
-                tempPcm[i * 2] = (Byte)(sample & 0xFF);
-                tempPcm[i * 2 + 1] = (Byte)((sample >> 8) & 0xFF);
+                pcmSamples[i] = (Int16)(buffer[offset + i] * 32767f);
             }
 
-            CurrentSpeechProbability = _vad.GetSpeechProbability((Packet)tempPcm);
+            CurrentSpeechProbability = _vad.GetSpeechProbability(tempPcm);
 
-            if (!_vad.IsSpeech((Packet)tempPcm) && _silenceOnVad)
+            if (!_vad.IsSpeech(tempPcm) && _silenceOnVad)
             {
                 // 输出静音
                 Array.Clear(buffer, offset, read);

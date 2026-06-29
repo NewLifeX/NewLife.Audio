@@ -1,6 +1,7 @@
 using System;
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
+using NewLife.Data;
 using Xunit;
 
 namespace XUnitTest.Codecs;
@@ -37,7 +38,7 @@ public class G722CodecTests
         // G.722 每2样本编码为1字节
         Assert.Equal(samples / 2, encoded.Total);
 
-        var decoded = _codec.ToPcm(encoded, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
         Assert.Equal(samples * 2, decoded.Total);
     }
 

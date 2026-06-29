@@ -77,9 +77,9 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     /// <param name="audio">FLAC 编码数据（含 fLaC 标记和元数据块）</param>
     /// <param name="option"></param>
     /// <returns>16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ReadBytes();
+        var data = audio.ToArray();
         var offset = 0;
 
         // 验证 fLaC 标记
@@ -123,17 +123,17 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             offset = frameStart + 1; // 继续搜索下一帧
         }
 
-        return pcm.ToArray();
+        return new ArrayPacket(pcm.ToArray());
     }
 
     /// <summary>PCM 转 FLAC 数据</summary>
     /// <param name="pcm">16-bit PCM</param>
     /// <param name="option">压缩级别 0~8，默认 5</param>
     /// <returns>FLAC 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var level = option is Int32 l ? l : 5;
-        var pcmData = pcm.ReadBytes();
+        var pcmData = pcm.ToArray();
         var sampleCount = pcmData.Length / 2;
         var pcmSamples = new Int16[sampleCount];
         for (var i = 0; i < sampleCount; i++)
@@ -160,7 +160,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             EncodeFrame(chunk, bitsPerSample, sampleRate, ms);
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     #region 帧解码

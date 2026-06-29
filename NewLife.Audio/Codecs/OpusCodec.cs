@@ -29,12 +29,12 @@ public class OpusCodec : IAudioCodec, ICodecInfo
     /// <param name="audio">Opus 编码数据</param>
     /// <param name="option"></param>
     /// <returns>16-bit PCM @ 48kHz</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ReadBytes();
+        var data = audio.ToArray();
 
         // Opus 包格式：TOC 字节 + 压缩数据
-        if (data.Length < 1) return new Byte[0];
+        if (data.Length < 1) return ArrayPacket.Empty;
 
         var toc = data[0];
         var mode = (toc >> 3) & 0x1F; // SILK-only / CELT-only / Hybrid
@@ -51,17 +51,17 @@ public class OpusCodec : IAudioCodec, ICodecInfo
             pcm[i * 2 + 1] = 0;
         }
 
-        return pcm;
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM 转 Opus（CELT 基础编码）</summary>
     /// <param name="pcm">16-bit PCM @ 48kHz</param>
     /// <param name="option">比特率（bps），默认 32000</param>
     /// <returns>Opus 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var bitrate = option is Int32 br ? br : 32000;
-        var pcmData = pcm.ReadBytes();
+        var pcmData = pcm.ToArray();
         var frameSize = 960; // 20ms @ 48kHz
 
         var ms = new MemoryStream();
@@ -81,7 +81,7 @@ public class OpusCodec : IAudioCodec, ICodecInfo
             offset += frameSize * 2;
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     /// <summary>根据 Opus 模式获取帧大小</summary>

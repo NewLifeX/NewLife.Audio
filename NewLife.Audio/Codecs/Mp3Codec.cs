@@ -73,9 +73,9 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     /// <param name="audio">MP3 编码数据</param>
     /// <param name="option"></param>
     /// <returns>16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ReadBytes();
+        var data = audio.ToArray();
         var pcm = new MemoryStream();
         var offset = 0;
 
@@ -102,28 +102,23 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             }
 
             // 解码帧（简化：输出静音帧）
-            var samples = header.SamplesPerFrame;
-            for (var i = 0; i < samples; i++)
-            {
-                var sample = (Int16)0; // 简化解码
-                pcm.WriteByte((Byte)(sample & 0xFF));
-                pcm.WriteByte((Byte)((sample >> 8) & 0xFF));
-            }
+            var silence = new Byte[header.SamplesPerFrame * 2];
+            pcm.Write(silence, 0, silence.Length);
 
             offset += header.FrameSize;
         }
 
-        return pcm.ToArray();
+        return new ArrayPacket(pcm.ToArray());
     }
 
     /// <summary>PCM 转 MP3（基础固定比特率编码）</summary>
     /// <param name="pcm">16-bit PCM</param>
     /// <param name="option">比特率（kbps），默认 128</param>
     /// <returns>MP3 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var bitrate = option is Int32 br ? br : 128;
-        var pcmData = pcm.ReadBytes();
+        var pcmData = pcm.ToArray();
         var sampleCount = pcmData.Length / 2;
         var samplesPerFrame = 1152; // MPEG1 Layer III
 
@@ -147,7 +142,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             frameCount++;
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     #region 帧头解析
@@ -220,7 +215,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     private static void WriteMp3FrameHeader(Stream ms, Int32 bitrate, Int32 sampleRate)
     {
         // MPEG1 Layer III, 128kbps, 44100Hz, Stereo, No CRC
-        var header = new Byte[4];
+        Span<Byte> header = stackalloc Byte[4];
         header[0] = 0xFF;
         header[1] = 0xFB; // MPEG1 + Layer3 + no CRC
         header[2] = 0x90; // 128kbps + 44100Hz
@@ -236,7 +231,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             header[2] = (Byte)(header[2] & 0x0F | 0x80); // 48000
         }
 
-        ms.Write(header, 0, 4);
+        ms.Write(header.ToArray(), 0, 4);
     }
 
     #endregion

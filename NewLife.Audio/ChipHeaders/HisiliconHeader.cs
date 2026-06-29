@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.Audio.ChipHeaders;
@@ -18,19 +19,18 @@ public class HisiliconHeader : IAudioChipHeader
     /// <param name="data">可能含海思头的音频数据</param>
     /// <param name="result">去除头后的数据</param>
     /// <returns></returns>
-    public Boolean TryTrim(Packet data, out Packet result)
+    public Boolean TryTrim(ReadOnlySpan<Byte> data, out IPacket result)
     {
-        if (data.Total >= 4)
+        if (data.Length >= 4)
         {
-            var buf = data.ReadBytes(0, 4);
-            if (buf[0] == Magic[0] && buf[1] == Magic[1] && buf[3] == 0x00 && buf[2] == (Byte)((data.Total - 4) / 2))
+            if (data[0] == Magic[0] && data[1] == Magic[1] && data[3] == 0x00 && data[2] == (Byte)((data.Length - 4) / 2))
             {
-                result = data.ReadBytes(4, data.Total - 4);
+                result = new ArrayPacket(data.Slice(4).ToArray());
                 return true;
             }
         }
 
-        result = data;
+        result = new ArrayPacket(data.ToArray());
         return false;
     }
 
@@ -38,18 +38,19 @@ public class HisiliconHeader : IAudioChipHeader
     /// <param name="data">原始音频数据</param>
     /// <param name="result">添加头后的数据</param>
     /// <returns></returns>
-    public Boolean TryAdd(Packet data, out Packet result)
+    public Boolean TryAdd(ReadOnlySpan<Byte> data, out IPacket result)
     {
-        var buf = new Byte[4];
-        buf[0] = 0x00;
-        buf[1] = 0x01;
-        buf[2] = (Byte)(data.Total / 2);
-        buf[3] = 0x00;
+        var total = 4 + data.Length;
+        var buf = new Byte[total];
+        var writer = new SpanWriter(buf); // 默认小端
 
-        var pk = new Packet(buf);
-        pk.Append(data);
+        writer.WriteByte(0x00);
+        writer.WriteByte(0x01);
+        writer.WriteByte((Byte)(data.Length / 2));
+        writer.WriteByte(0x00);
+        writer.Write(data);
 
-        result = pk;
+        result = new ArrayPacket(buf);
         return true;
     }
 }

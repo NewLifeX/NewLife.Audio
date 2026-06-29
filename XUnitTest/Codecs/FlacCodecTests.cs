@@ -1,8 +1,7 @@
 using System;
 using System.IO;
 using NewLife.Audio;
-using NewLife.Audio.Codecs;
-using Xunit;
+using NewLife.Audio.Codecs;using NewLife.Data;using Xunit;
 
 namespace XUnitTest.Codecs;
 
@@ -36,7 +35,7 @@ public class FlacCodecTests
         Assert.True(encoded.Total > 40); // 至少包含 fLaC + STREAMINFO
 
         // 解码：目前仅支持Verbatim子帧，能获得部分输出即可
-        var decoded = _codec.ToPcm(encoded, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
         // FLAC 无损解码应能恢复数据
         Assert.NotNull(decoded);
     }

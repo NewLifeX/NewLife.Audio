@@ -31,10 +31,10 @@ public class WaveFileWriter : IAudioContainerWriter
     public void WriteMetadata(AudioMetadata metadata) { }
 
     /// <summary>写入 PCM 数据帧</summary>
-    public void WriteFrame(Packet frame)
+    public void WriteFrame(ReadOnlySpan<Byte> frame)
     {
-        _writer.WriteChunkAsync(_stream, frame.ReadBytes(), default).AsTask().GetAwaiter().GetResult();
-        _dataSize += frame.Total;
+        _writer.WriteChunkAsync(_stream, frame.ToArray(), default).AsTask().GetAwaiter().GetResult();
+        _dataSize += frame.Length;
     }
 
     /// <summary>完成写入</summary>

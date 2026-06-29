@@ -28,7 +28,7 @@ public class RtspClient : IDisposable
     public AVTypes CodecType { get; private set; }
 
     /// <summary>音频帧可用事件</summary>
-    public event EventHandler<Packet> AudioFrameReceived;
+    public event EventHandler<IPacket> AudioFrameReceived;
 
     /// <summary>初始化 RTSP 客户端</summary>
     /// <param name="url">RTSP URL</param>
@@ -106,5 +106,5 @@ public class RtspClient : IDisposable
     }
 
     /// <summary>触发音频帧事件（由传输层调用）</summary>
-    protected void OnAudioFrameReceived(Packet frame) => AudioFrameReceived?.Invoke(this, frame);
+    protected void OnAudioFrameReceived(IPacket frame) => AudioFrameReceived?.Invoke(this, frame);
 }

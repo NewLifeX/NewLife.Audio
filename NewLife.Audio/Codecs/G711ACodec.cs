@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+﻿using System.Runtime.InteropServices;
+using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
 
@@ -88,34 +89,33 @@ public class G711ACodec : IAudioCodec, ICodecInfo
     /// <param name="audio"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
         //// 如果前四字节是00 01 52 00，则是海思头，需要去掉
         //if (audio[0] == 0x00 && audio[1] == 0x01 && audio[2] == 0x52 && audio[3] == 0x00)
         //    audio = audio[4..];
 
-        var pcmdata = new Byte[audio.Total * 2];
-        for (Int32 i = 0, offset = 0; i < audio.Total; i++)
+        var pcmdata = new Byte[audio.Length * 2];
+        var samples = MemoryMarshal.Cast<Byte, Int16>(pcmdata.AsSpan());
+        for (Int32 i = 0; i < audio.Length; i++)
         {
-            var value = AlawToLinear(audio[i]);
-            pcmdata[offset++] = (Byte)(value & 0xff);
-            pcmdata[offset++] = (Byte)(value >> 8 & 0xff);
+            samples[i] = AlawToLinear(audio[i]);
         }
-        return pcmdata;
+        return new ArrayPacket(pcmdata);
     }
 
     /// <summary>PCM转音频数据</summary>
     /// <param name="pcm"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var g711data = new Byte[pcm.Total / 2];
-        for (Int32 i = 0, k = 0; i < pcm.Total - 1; i += 2, k++)
+        var g711data = new Byte[pcm.Length / 2];
+        var samples = MemoryMarshal.Cast<Byte, Int16>(pcm);
+        for (Int32 i = 0; i < samples.Length; i++)
         {
-            var v = (Int16)(pcm[i + 1] << 8 | pcm[i]);
-            g711data[k] = LinearToAlaw(v);
+            g711data[i] = LinearToAlaw(samples[i]);
         }
-        return g711data;
+        return new ArrayPacket(g711data);
     }
 }

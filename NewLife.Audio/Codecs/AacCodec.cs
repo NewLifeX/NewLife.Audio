@@ -35,9 +35,9 @@ public class AacCodec : IAudioCodec, ICodecInfo
     /// <param name="audio">AAC 编码数据（ADTS 或 Raw 格式）</param>
     /// <param name="option">"adts"=ADTS格式, "raw"=裸AAC</param>
     /// <returns>16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ReadBytes();
+        var data = audio.ToArray();
         var isAdts = option is String fmt && fmt == "adts" || IsAdtsFormat(data);
 
         var pcm = new MemoryStream();
@@ -70,18 +70,18 @@ public class AacCodec : IAudioCodec, ICodecInfo
             }
         }
 
-        return pcm.ToArray();
+        return new ArrayPacket(pcm.ToArray());
     }
 
     /// <summary>PCM 转 AAC（基础编码，ADTS 封装）</summary>
     /// <param name="pcm">16-bit PCM</param>
     /// <param name="option">比特率（bps），默认 64000</param>
     /// <returns>AAC ADTS 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var bitrate = option is Int32 br ? br : 64000;
         var sampleRate = 44100;
-        var pcmData = pcm.ReadBytes();
+        var pcmData = pcm.ToArray();
 
         var ms = new MemoryStream();
         var samplesPerFrame = 1024;
@@ -98,7 +98,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
                 ms.WriteByte(0);
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     #region ADTS 头解析/写入

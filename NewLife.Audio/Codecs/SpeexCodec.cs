@@ -23,10 +23,10 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
     public Boolean IsStateful => true;
 
     /// <summary>Speex 解码（迁移提示）</summary>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
         => throw new NotSupportedException("Speex 已停止维护。建议使用 Opus (OpusCodec) 替代。https://opus-codec.org/");
 
     /// <summary>Speex 编码（迁移提示）</summary>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
         => throw new NotSupportedException("Speex 已停止维护。建议使用 Opus (OpusCodec) 替代。https://opus-codec.org/");
 }

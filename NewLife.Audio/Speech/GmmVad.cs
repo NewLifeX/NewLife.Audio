@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NewLife.Data;
 
 namespace NewLife.Audio.Speech;
@@ -53,7 +54,7 @@ public class GmmVad : IVoiceActivityDetector
     }
 
     /// <summary>判断是否为语音帧</summary>
-    public Boolean IsSpeech(Packet frame)
+    public Boolean IsSpeech(ReadOnlySpan<Byte> frame)
     {
         var prob = GetSpeechProbability(frame);
         var threshold = 0.5f - _aggressiveness * 0.1f;
@@ -79,13 +80,12 @@ public class GmmVad : IVoiceActivityDetector
     }
 
     /// <summary>获取语音概率（0.0~1.0）</summary>
-    public Single GetSpeechProbability(Packet frame)
+    public Single GetSpeechProbability(ReadOnlySpan<Byte> frame)
     {
-        var samples = frame.ReadBytes();
-        if (samples.Length < _frameSamples * 2) return 0f;
+        if (frame.Length < _frameSamples * 2) return 0f;
 
         // 计算6子带能量
-        ComputeSubbandEnergy(samples);
+        ComputeSubbandEnergy(frame);
 
         // 简化 GMM 评分：比较各子带能量与阈值
         var speechScore = 0f;
@@ -129,12 +129,17 @@ public class GmmVad : IVoiceActivityDetector
         }
     }
 
-    private void ComputeSubbandEnergy(Byte[] samples)
+    private void ComputeSubbandEnergy(ReadOnlySpan<Byte> samples)
     {
         var sampleCount = Math.Min(samples.Length / 2, _frameSamples);
 
+        // 预转换 PCM Int16 → 浮点样本，避免内层 DFT 循环重复位运算
+        var floatSamples = new Single[sampleCount];
+        var shortSamples = MemoryMarshal.Cast<Byte, Int16>(samples);
+        for (var n = 0; n < sampleCount; n++)
+            floatSamples[n] = (Single)(shortSamples[n] / 32768.0);
+
         // 简易 FFT 计算子带能量
-        // 将时域信号分段，用带通滤波器近似各子带
         for (var b = 0; b < 6; b++)
         {
             var lowFreq = Subbands[b].Low;
@@ -142,7 +147,6 @@ public class GmmVad : IVoiceActivityDetector
             var energy = 0.0;
             var validSamples = 0;
 
-            // 简易 DFT 计算子带能量（仅计算关键频点）
             var lowBin = lowFreq * _frameSamples / _sampleRate;
             var highBin = highFreq * _frameSamples / _sampleRate;
 
@@ -152,7 +156,7 @@ public class GmmVad : IVoiceActivityDetector
                 var imag = 0.0;
                 for (var n = 0; n < sampleCount; n++)
                 {
-                    var sample = (Int16)(samples[n * 2 + 1] << 8 | samples[n * 2]) / 32768.0;
+                    var sample = floatSamples[n];
                     var angle = 2.0 * Math.PI * k * n / sampleCount;
                     real += sample * Math.Cos(angle);
                     imag -= sample * Math.Sin(angle);

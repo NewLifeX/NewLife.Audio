@@ -15,7 +15,7 @@ public interface IAudioContainerWriter : IDisposable
 
     /// <summary>写入一帧编码数据</summary>
     /// <param name="frame">编码数据帧</param>
-    void WriteFrame(Packet frame);
+    void WriteFrame(ReadOnlySpan<Byte> frame);
 
     /// <summary>完成写入并刷新缓冲区</summary>
     void Flush();

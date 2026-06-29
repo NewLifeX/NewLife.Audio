@@ -51,7 +51,7 @@ public class RawPcmReader : IAudioContainerReader
     }
 
     /// <summary>读取下一帧</summary>
-    public Packet ReadFrame()
+    public IPacket ReadFrame()
     {
         if (_currentFrame >= _totalFrames) return null;
 
@@ -61,7 +61,7 @@ public class RawPcmReader : IAudioContainerReader
         if (read == 0) return null;
 
         _currentFrame++;
-        return new Packet(buffer, 0, read);
+        return new ArrayPacket(buffer, 0, read);
     }
 
     /// <summary>定位</summary>

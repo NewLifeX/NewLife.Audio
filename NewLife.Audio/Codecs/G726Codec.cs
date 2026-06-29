@@ -67,18 +67,17 @@ public class G726Codec : IAudioCodec, ICodecInfo
     /// <param name="audio">G.726 编码数据</param>
     /// <param name="option"></param>
     /// <returns>16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var audioData = audio.ReadBytes();
-        var pcm = new Byte[audioData.Length * 2 * 8 / _bitsPerSample];
+        var pcm = new Byte[audio.Length * 2 * 8 / _bitsPerSample];
         var outIdx = 0;
 
         Int32 buffer = 0;
         var bitsInBuffer = 0;
 
-        for (var i = 0; i < audioData.Length; i++)
+        for (var i = 0; i < audio.Length; i++)
         {
-            buffer = (buffer << 8) | audioData[i];
+            buffer = (buffer << 8) | audio[i];
             bitsInBuffer += 8;
 
             while (bitsInBuffer >= _bitsPerSample && outIdx < pcm.Length - 1)
@@ -92,17 +91,16 @@ public class G726Codec : IAudioCodec, ICodecInfo
             }
         }
 
-        return pcm;
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM转G.726音频数据</summary>
     /// <param name="pcm">16-bit PCM</param>
     /// <param name="option"></param>
     /// <returns>G.726 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var pcmData = pcm.ReadBytes();
-        var sampleCount = pcmData.Length / 2;
+        var sampleCount = pcm.Length / 2;
         var outputBits = sampleCount * _bitsPerSample;
         var output = new Byte[(outputBits + 7) / 8];
 
@@ -110,9 +108,9 @@ public class G726Codec : IAudioCodec, ICodecInfo
         var buffer = 0;
         var bitsInBuffer = 0;
 
-        for (var i = 0; i < pcmData.Length - 1; i += 2)
+        for (var i = 0; i < pcm.Length - 1; i += 2)
         {
-            var sample = (Int16)(pcmData[i + 1] << 8 | pcmData[i]);
+            var sample = (Int16)(pcm[i + 1] << 8 | pcm[i]);
             var code = EncodeSample(sample);
 
             buffer = (buffer << _bitsPerSample) | code;
@@ -133,7 +131,7 @@ public class G726Codec : IAudioCodec, ICodecInfo
             output[outIdx++] = (Byte)buffer;
         }
 
-        return output;
+        return new ArrayPacket(output);
     }
 
     private Int16 DecodeSample(Int32 code)

@@ -27,7 +27,7 @@ public class ADPCMCodecTests
         // ADPCM 4:1 压缩，1024 samples → ~516 bytes（含4字节头）
         Assert.True(encoded.Total > 200 && encoded.Total < samples * 2);
 
-        var decoded = _codec.ToPcm(encoded, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
         // 解码后应有1024个采样
         Assert.Equal(samples * 2, decoded.Total);
 
@@ -72,7 +72,7 @@ public class ADPCMCodecTests
             }
 
             var encoded = _codec.FromPcm(pcm, null);
-            var decoded = _codec.ToPcm(encoded, null);
+            var decoded = _codec.ToPcm(encoded.GetSpan(), null);
 
             Assert.Equal(sampleCount * 2, decoded.Total);
         }

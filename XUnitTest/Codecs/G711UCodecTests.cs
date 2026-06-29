@@ -26,7 +26,7 @@ public class G711UCodecTests
         var encoded = _codec.FromPcm(pcm, null);
         Assert.Equal(samples, encoded.Total); // G.711 2:1 压缩
 
-        var decoded = _codec.ToPcm(encoded, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
         Assert.Equal(samples * 2, decoded.Total);
 
         // G.711 μ-law 有损压缩，检查峰值误差

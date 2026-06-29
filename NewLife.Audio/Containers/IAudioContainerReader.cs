@@ -23,7 +23,7 @@ public interface IAudioContainerReader : IDisposable
 
     /// <summary>读取下一帧编码数据</summary>
     /// <returns>编码数据帧，null表示结束</returns>
-    Packet ReadFrame();
+    IPacket ReadFrame();
 
     /// <summary>定位到指定帧</summary>
     /// <param name="frameIndex">帧索引</param>

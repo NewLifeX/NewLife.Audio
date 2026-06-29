@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
 using NewLife.Audio.Writers;
@@ -54,13 +55,11 @@ public class WebSocketAudioPipe
         var headerSize = 5;
         var message = new Byte[headerSize + audioData.Length];
 
-        message[0] = (Byte)CodecType;
-        message[1] = (Byte)((_sendSeq >> 8) & 0xFF);
-        message[2] = (Byte)(_sendSeq & 0xFF);
-        message[3] = (Byte)((audioData.Length >> 8) & 0xFF);
-        message[4] = (Byte)(audioData.Length & 0xFF);
-
-        Array.Copy(audioData, 0, message, headerSize, audioData.Length);
+        var writer = new SpanWriter(message.AsSpan()) { IsLittleEndian = false };
+        writer.WriteByte((Byte)CodecType);
+        writer.Write(_sendSeq);
+        writer.Write((UInt16)audioData.Length);
+        audioData.AsSpan().CopyTo(writer.GetSpan(audioData.Length));
         _sendSeq++;
 
         return message;
@@ -73,16 +72,16 @@ public class WebSocketAudioPipe
     {
         if (!_isOpen || message.Length < 5) return null;
 
-        var codec = (AVTypes)message[0];
-        var seq = (UInt16)((message[1] << 8) | message[2]);
-        var len = (UInt16)((message[3] << 8) | message[4]);
+        var reader = new SpanReader(message.AsSpan()) { IsLittleEndian = false };
+        var codec = (AVTypes)reader.ReadByte();
+        var seq = reader.ReadUInt16();
+        var len = reader.ReadUInt16();
 
         if (len + 5 > message.Length) return null;
 
         _recvSeq = seq;
 
-        var audioData = new Byte[len];
-        Array.Copy(message, 5, audioData, 0, len);
+        var audioData = message.AsSpan(reader.Position, len).ToArray();
 
         AudioFrameReceived?.Invoke(this, audioData);
         return audioData;

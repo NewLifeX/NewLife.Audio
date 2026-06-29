@@ -1,4 +1,5 @@
-﻿using NewLife.Data;
+﻿using System.Runtime.InteropServices;
+using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
 
@@ -82,14 +83,13 @@ public class G711UCodec : IAudioCodec, ICodecInfo
         return size;
     }
 
-    private Byte[] UlawToPcm16(Byte[] samples)
+    private Byte[] UlawToPcm16(ReadOnlySpan<Byte> samples)
     {
         var pcmSamples = new Byte[samples.Length * 2];
-        for (Int32 i = 0, k = 0; i < samples.Length; i++)
+        var output = MemoryMarshal.Cast<Byte, Int16>(pcmSamples.AsSpan());
+        for (Int32 i = 0; i < samples.Length; i++)
         {
-            var s = ulawToLinearTable[samples[i] & 0xff];
-            pcmSamples[k++] = (Byte)(s & 0xff);
-            pcmSamples[k++] = (Byte)(s >> 8 & 0xff);
+            output[i] = ulawToLinearTable[samples[i] & 0xff];
         }
         return pcmSamples;
     }
@@ -115,20 +115,20 @@ public class G711UCodec : IAudioCodec, ICodecInfo
     /// <param name="audio"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet ToPcm(Packet audio, Object option) => UlawToPcm16(audio.ReadBytes());
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option) => new ArrayPacket(UlawToPcm16(audio));
 
     /// <summary>PCM转音频数据</summary>
     /// <param name="pcm">16位小端PCM数据</param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var g711data = new Byte[pcm.Total / 2];
-        for (Int32 i = 0, k = 0; i < pcm.Total - 1; i += 2, k++)
+        var g711data = new Byte[pcm.Length / 2];
+        var samples = MemoryMarshal.Cast<Byte, Int16>(pcm);
+        for (Int32 i = 0; i < samples.Length; i++)
         {
-            var v = (Int16)(pcm[i + 1] << 8 | pcm[i]);
-            g711data[k] = linearToUlawTable[v & 0xFFFF];
+            g711data[i] = linearToUlawTable[samples[i] & 0xFFFF];
         }
-        return g711data;
+        return new ArrayPacket(g711data);
     }
 }

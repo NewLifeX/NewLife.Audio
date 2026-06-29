@@ -9,11 +9,11 @@ public interface IAudioCodec
     /// <param name="audio"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    Packet ToPcm(Packet audio, Object option);
+    IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option);
 
     /// <summary>PCM转音频数据</summary>
     /// <param name="pcm"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    Packet FromPcm(Packet pcm, Object option);
+    IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option);
 }

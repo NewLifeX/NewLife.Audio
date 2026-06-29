@@ -71,7 +71,7 @@ public class FlacContainerReader : IAudioContainerReader
         Duration = sampleRate > 0 ? (Double)totalSamples / sampleRate : 0;
     }
 
-    public Packet ReadFrame()
+    public IPacket ReadFrame()
     {
         if (_currentPos >= _stream.Length) return null;
         _stream.Seek(_currentPos, SeekOrigin.Begin);
@@ -79,7 +79,7 @@ public class FlacContainerReader : IAudioContainerReader
         var read = _stream.Read(frameBuffer, 0, frameBuffer.Length);
         if (read == 0) return null;
         _currentPos = _stream.Position;
-        return new Packet(frameBuffer, 0, read);
+        return new ArrayPacket(frameBuffer, 0, read);
     }
 
     public void SeekFrame(Int64 frameIndex)

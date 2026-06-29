@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
 
@@ -53,7 +54,7 @@ public class OggFileReader : IAudioContainerReader
     }
 
     /// <summary>读取下一帧</summary>
-    public Packet ReadFrame()
+    public IPacket ReadFrame()
     {
         if (_currentFrame >= _totalFrames && _totalFrames > 0) return null;
 
@@ -62,9 +63,9 @@ public class OggFileReader : IAudioContainerReader
 
         _currentFrame++;
         if (page.Value.Packets.Length > 0)
-            return page.Value.Packets[0];
+            return new ArrayPacket(page.Value.Packets[0]);
 
-        return new Byte[0];
+        return ArrayPacket.Empty;
     }
 
     /// <summary>定位</summary>
@@ -87,10 +88,18 @@ public class OggFileReader : IAudioContainerReader
         var header = new Byte[27];
         if (_stream.Read(header, 0, 27) < 27) return null;
 
-        if (header[0] != 'O' || header[1] != 'g' || header[2] != 'g' || header[3] != 'S')
-            return null;
+        var reader = new SpanReader(header.AsSpan()); // OGG 是小端序，SpanReader 默认 LE
+        var magic = reader.ReadUInt32();
+        if (magic != 0x5367674F) return null; // "OggS"
 
-        var segmentCount = header[26];
+        var version = reader.ReadByte();
+        var flags = reader.ReadByte();
+        var granule = reader.ReadInt64();
+        var serial = reader.ReadUInt32();
+        var pageSeq = reader.ReadUInt32();
+        var crc = reader.ReadUInt32();
+        var segmentCount = reader.ReadByte();
+
         var segmentTable = new Byte[segmentCount];
         _stream.Read(segmentTable, 0, segmentCount);
 
@@ -100,11 +109,6 @@ public class OggFileReader : IAudioContainerReader
 
         var payload = new Byte[payloadSize];
         if (payloadSize > 0) _stream.Read(payload, 0, payloadSize);
-
-        // 解析 granule position
-        var granule = (Int64)header[6] | ((Int64)header[7] << 8) | ((Int64)header[8] << 16) |
-                      ((Int64)header[9] << 24) | ((Int64)header[10] << 32) | ((Int64)header[11] << 40) |
-                      ((Int64)header[12] << 48) | ((Int64)header[13] << 56);
 
         // 解析段表，分割为多个包
         var packets = new List<Byte[]>();

@@ -1,3 +1,5 @@
+using System.Runtime.InteropServices;
+using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
@@ -32,9 +34,9 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
     /// <param name="audio">Vorbis 编码数据（含3个头包 + 音频包）</param>
     /// <param name="option"></param>
     /// <returns>16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ReadBytes();
+        var data = audio.ToArray();
         if (data.Length < 30) throw new InvalidDataException("Vorbis 数据太短");
 
         // 解析标识头（第一个包：0x01 + "vorbis"）
@@ -50,34 +52,31 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
         var pcm = new MemoryStream();
         while (offset < data.Length - 1)
         {
-            var packetLen = data[offset] | (data[offset + 1] << 8);
+            var reader2 = new SpanReader(data.AsSpan(offset));
+            var packetLen = reader2.ReadUInt16();
             if (packetLen == 0 || offset + 2 + packetLen > data.Length) break;
 
             offset += 2;
             // 简化：输出静音采样
             var samplesPerBlock = _blockSize0 / 2; // 简化
-            for (var i = 0; i < samplesPerBlock; i++)
-            {
-                var sample = (Int16)0;
-                pcm.WriteByte((Byte)(sample & 0xFF));
-                pcm.WriteByte((Byte)((sample >> 8) & 0xFF));
-            }
+            var silenceBlock = new Byte[samplesPerBlock * 2];
+            pcm.Write(silenceBlock, 0, silenceBlock.Length);
 
             offset += packetLen;
         }
 
-        return pcm.ToArray();
+        return new ArrayPacket(pcm.ToArray());
     }
 
     /// <summary>PCM 转 Vorbis（基础编码）</summary>
     /// <param name="pcm">16-bit PCM</param>
     /// <param name="option">质量级别 0~10，默认 5</param>
     /// <returns>Vorbis 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var quality = option is Int32 q ? (q < 0 ? 0 : q > 10 ? 10 : q) : 5;
         var sampleRate = 44100;
-        var pcmData = pcm.ReadBytes();
+        var pcmData = pcm.ToArray();
 
         var ms = new MemoryStream();
 
@@ -97,73 +96,78 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
         {
             // 简化 Vorbis 包
             var packetData = new Byte[blockSize / 4];
-            ms.WriteByte((Byte)(packetData.Length & 0xFF));
-            ms.WriteByte((Byte)((packetData.Length >> 8) & 0xFF));
+            Span<Byte> lenBuf = stackalloc Byte[2];
+            var lenWriter = new SpanWriter(lenBuf);
+            lenWriter.Write((UInt16)packetData.Length);
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+            ms.Write(lenBuf);
+#else
+            ms.Write(lenBuf.ToArray(), 0, 2);
+#endif
             ms.Write(packetData, 0, packetData.Length);
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     #region 头解析
 
     private Int32 ParseIdentificationHeader(Byte[] data, Int32 offset)
     {
-        var packetType = data[offset++];
+        var reader = new SpanReader(data.AsSpan(offset));
+
+        var packetType = reader.ReadByte();
         if (packetType != 1) throw new InvalidDataException("不是 Vorbis 标识头");
 
         // "vorbis" 签名
-        var sig = System.Text.Encoding.ASCII.GetString(data, offset, 6);
+        var sig = System.Text.Encoding.ASCII.GetString(data, offset + 1, 6);
         if (sig != "vorbis") throw new InvalidDataException("不是有效的 Vorbis 数据");
-        offset += 6;
+        reader.Advance(6);
 
         // Vorbis 版本
-        var version = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-        offset += 4;
+        var version = reader.ReadUInt32();
         if (version != 0) throw new NotSupportedException($"Vorbis 版本 {version} 不支持");
 
-        _channels = data[offset++];
-        _sampleRate = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-        offset += 4;
+        _channels = reader.ReadByte();
+        _sampleRate = (Int32)reader.ReadUInt32();
 
         // 跳过 bitrate max/nom/min (12 bytes)
-        offset += 12;
+        reader.Advance(12);
 
-        _blockSize0 = 1 << (data[offset] & 0x0F);
-        _blockSize1 = 1 << ((data[offset] >> 4) & 0x0F);
-        offset++;
+        var bs = reader.ReadByte();
+        _blockSize0 = 1 << (bs & 0x0F);
+        _blockSize1 = 1 << ((bs >> 4) & 0x0F);
 
-        // framing flag
-        offset++;
+        reader.Advance(1); // framing flag
 
-        return offset;
+        return offset + reader.Position;
     }
 
     private Int32 SkipCommentHeader(Byte[] data, Int32 offset)
     {
-        var packetType = data[offset++];
+        var reader = new SpanReader(data.AsSpan(offset));
+
+        var packetType = reader.ReadByte();
         if (packetType != 3) throw new InvalidDataException("不是 Vorbis 注释头");
 
         // 跳过 "vorbis" (6 bytes)
-        offset += 6;
+        reader.Advance(6);
 
         // 跳过 vendor string
-        var vendorLen = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-        offset += 4 + vendorLen;
+        var vendorLen = reader.ReadUInt32();
+        reader.Advance((Int32)vendorLen);
 
         // 跳过 user comments
-        var commentCount = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-        offset += 4;
+        var commentCount = reader.ReadUInt32();
         for (var i = 0; i < commentCount; i++)
         {
-            var len = data[offset] | (data[offset + 1] << 8) | (data[offset + 2] << 16) | (data[offset + 3] << 24);
-            offset += 4 + len;
+            var len = reader.ReadUInt32();
+            reader.Advance((Int32)len);
         }
 
-        // framing flag
-        offset++;
+        reader.Advance(1); // framing flag
 
-        return offset;
+        return offset + reader.Position;
     }
 
     private Int32 ParseSetupHeader(Byte[] data, Int32 offset)
@@ -225,10 +229,14 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
     private static void WriteUInt32LE(Stream ms, UInt32 value)
     {
-        ms.WriteByte((Byte)(value & 0xFF));
-        ms.WriteByte((Byte)((value >> 8) & 0xFF));
-        ms.WriteByte((Byte)((value >> 16) & 0xFF));
-        ms.WriteByte((Byte)((value >> 24) & 0xFF));
+        Span<Byte> buf = stackalloc Byte[4];
+        var writer = new SpanWriter(buf);
+        writer.Write(value);
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+        ms.Write(buf);
+#else
+        ms.Write(buf.ToArray(), 0, 4);
+#endif
     }
 
     #endregion

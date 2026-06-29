@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.Audio.ChipHeaders;
@@ -15,37 +16,37 @@ public class DahuaHeader : IAudioChipHeader
     public Int32 HeaderSize => 6;
 
     /// <summary>尝试去除大华头</summary>
-    public Boolean TryTrim(Packet data, out Packet result)
+    public Boolean TryTrim(ReadOnlySpan<Byte> data, out IPacket result)
     {
-        if (data.Total >= 6)
+        if (data.Length >= 6)
         {
-            var buf = data.ReadBytes(0, 4);
-            if (buf[0] == Magic[0] && buf[1] == Magic[1] && buf[2] == Magic[2] && buf[3] == Magic[3])
+            if (data[0] == Magic[0] && data[1] == Magic[1] && data[2] == Magic[2] && data[3] == Magic[3])
             {
-                result = data.ReadBytes(6, data.Total - 6);
+                result = new ArrayPacket(data.Slice(6).ToArray());
                 return true;
             }
         }
 
-        result = data;
+        result = new ArrayPacket(data.ToArray());
         return false;
     }
 
     /// <summary>添加大华头</summary>
-    public Boolean TryAdd(Packet data, out Packet result)
+    public Boolean TryAdd(ReadOnlySpan<Byte> data, out IPacket result)
     {
-        var buf = new Byte[6];
-        buf[0] = 0x00;
-        buf[1] = 0x01;
-        buf[2] = 0x01;
-        buf[3] = 0x00;
-        buf[4] = (Byte)(data.Total & 0xFF);
-        buf[5] = (Byte)((data.Total >> 8) & 0xFF);
+        var total = 6 + data.Length;
+        var buf = new Byte[total];
+        var writer = new SpanWriter(buf); // 默认小端
 
-        var pk = new Packet(buf);
-        pk.Append(data);
+        writer.WriteByte(0x00);
+        writer.WriteByte(0x01);
+        writer.WriteByte(0x01);
+        writer.WriteByte(0x00);
+        writer.WriteByte((Byte)(data.Length & 0xFF));
+        writer.WriteByte((Byte)((data.Length >> 8) & 0xFF));
+        writer.Write(data);
 
-        result = pk;
+        result = new ArrayPacket(buf);
         return true;
     }
 }

@@ -238,12 +238,12 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
     /// <param name="pcm"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var state = option as AdpcmState;
         state ??= new AdpcmState();
 
-        var pcmdata = new Int16[pcm.Total / 2];
+        var pcmdata = new Int16[pcm.Length / 2];
         for (var i = 0; i < pcmdata.Length; i++)
             pcmdata[i] = (Int16)(pcm[i * 2 + 1] << 8 | pcm[i * 2]);
 
@@ -255,14 +255,14 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 
         adpcm_coder(pcmdata, ms, state);
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 
     /// <summary>音频数据转PCM</summary>
     /// <param name="audio"></param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
         if (option is not AdpcmState state)
         {
@@ -272,14 +272,14 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
                 Index = audio[2],
                 Reserved = audio[3]
             };
-            audio = audio[4..];
+            audio = audio.Slice(4);
         }
 
         var ms = new MemoryStream();
 
-        adpcm_decoder(audio.ReadBytes(), ms, state);
+        adpcm_decoder(audio.ToArray(), ms, state);
 
-        return ms.ToArray();
+        return new ArrayPacket(ms.ToArray());
     }
 }
 

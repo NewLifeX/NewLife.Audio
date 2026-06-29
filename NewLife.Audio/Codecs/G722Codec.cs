@@ -1,3 +1,4 @@
+using System.Runtime.InteropServices;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
@@ -51,10 +52,10 @@ public class G722Codec : IAudioCodec, ICodecInfo
     /// <param name="audio">G.722 编码数据（每字节编码2个样本的高低子带）</param>
     /// <param name="option"></param>
     /// <returns>16kHz 16-bit PCM</returns>
-    public Packet ToPcm(Packet audio, Object option)
+    public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
         // G.722 每字节 = 2个样本的高低子带编码值
-        var sampleCount = audio.Total * 2;
+        var sampleCount = audio.Length * 2;
         var pcm = new Byte[sampleCount * 2];
 
         var lowerQuantizer = new G722Quantizer(LowerBandBits);
@@ -64,10 +65,10 @@ public class G722Codec : IAudioCodec, ICodecInfo
         var xlHistory = new Double[12]; // 低子带 QMF 历史
         var xhHistory = new Double[12]; // 高子带 QMF 历史
 
-        var audioData = audio.ReadBytes();
-        for (Int32 i = 0, outIdx = 0; i < audioData.Length; i++)
+        var samplesOut = MemoryMarshal.Cast<Byte, Int16>(pcm.AsSpan());
+        for (Int32 i = 0, outIdx = 0; i < audio.Length; i++)
         {
-            var b = audioData[i];
+            var b = audio[i];
 
             // 高6位为低子带，低2位为高子带
             var il = (b >> 2) & 0x3F; // 6-bit 低子带
@@ -81,32 +82,30 @@ public class G722Codec : IAudioCodec, ICodecInfo
             var sample1 = Clip16((Int32)(lowerSample + upperSample));
             var sample2 = Clip16((Int32)(lowerSample - upperSample));
 
-            pcm[outIdx++] = (Byte)(sample1 & 0xFF);
-            pcm[outIdx++] = (Byte)((sample1 >> 8) & 0xFF);
-            pcm[outIdx++] = (Byte)(sample2 & 0xFF);
-            pcm[outIdx++] = (Byte)((sample2 >> 8) & 0xFF);
+            samplesOut[outIdx++] = sample1;
+            samplesOut[outIdx++] = sample2;
         }
 
-        return pcm;
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM转G.722音频数据</summary>
     /// <param name="pcm">16kHz 16-bit PCM</param>
     /// <param name="option"></param>
     /// <returns>G.722 编码数据</returns>
-    public Packet FromPcm(Packet pcm, Object option)
+    public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var sampleCount = pcm.Total / 2;
+        var sampleCount = pcm.Length / 2;
         var output = new Byte[sampleCount / 2];
 
         var lowerQuantizer = new G722Quantizer(LowerBandBits);
         var upperQuantizer = new G722Quantizer(UpperBandBits);
 
-        var pcmData = pcm.ReadBytes();
-        for (Int32 i = 0, outIdx = 0; i < pcmData.Length - 3; i += 4)
+        var samplesIn = MemoryMarshal.Cast<Byte, Int16>(pcm);
+        for (Int32 i = 0, outIdx = 0; i < samplesIn.Length - 1; i += 2)
         {
-            var s1 = (Int16)(pcmData[i + 1] << 8 | pcmData[i]);
-            var s2 = (Int16)(pcmData[i + 3] << 8 | pcmData[i + 2]);
+            var s1 = samplesIn[i];
+            var s2 = samplesIn[i + 1];
 
             // QMF 分析（简化为直接分量）
             var lowerSample = (s1 + s2) / 2.0;
@@ -118,7 +117,7 @@ public class G722Codec : IAudioCodec, ICodecInfo
             output[outIdx++] = (Byte)((il << 2) | ih);
         }
 
-        return output;
+        return new ArrayPacket(output);
     }
 
     private static Int16 Clip16(Int32 val)

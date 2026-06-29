@@ -50,7 +50,7 @@ public class AudioCodecFactoryTests
     public void FromPcm_ADPCMA_ReturnsEncoded()
     {
         var pcm = new Byte[160 * 2];
-        var result = _factory.FromPcm(AVTypes.ADPCMA, pcm);
+        var result = _factory.FromPcm(AVTypes.ADPCMA, new ArrayPacket(pcm));
         Assert.NotNull(result);
         Assert.True(result.Total > 0);
         Assert.True(result.Total < pcm.Length); // ADPCM 4:1压缩
@@ -60,7 +60,7 @@ public class AudioCodecFactoryTests
     public void FromPcm_G711A_ReturnsEncoded()
     {
         var pcm = new Byte[160 * 2];
-        var result = _factory.FromPcm(AVTypes.G711A, pcm);
+        var result = _factory.FromPcm(AVTypes.G711A, new ArrayPacket(pcm));
         Assert.NotNull(result);
         Assert.Equal(pcm.Length / 2, result.Total); // G.711 2:1压缩
     }
@@ -69,7 +69,7 @@ public class AudioCodecFactoryTests
     public void FromPcm_G711U_ReturnsEncoded()
     {
         var pcm = new Byte[160 * 2];
-        var result = _factory.FromPcm(AVTypes.G711U, pcm);
+        var result = _factory.FromPcm(AVTypes.G711U, new ArrayPacket(pcm));
         Assert.NotNull(result);
         Assert.Equal(pcm.Length / 2, result.Total);
     }
@@ -78,9 +78,9 @@ public class AudioCodecFactoryTests
     public void ToPcm_UnsupportedType_ThrowsNotSupported()
     {
         var data = new Byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.H264, data));
-        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.SVAC, data));
-        Assert.Throws<NotSupportedException>(() => _factory.FromPcm(AVTypes.H264, data));
+        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.H264, new ArrayPacket(data)));
+        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.SVAC, new ArrayPacket(data)));
+        Assert.Throws<NotSupportedException>(() => _factory.FromPcm(AVTypes.H264, new ArrayPacket(data)));
     }
 
     [Fact(DisplayName = "海思头去除：正确格式的4字节头被剥离")]
@@ -97,7 +97,7 @@ public class AudioCodecFactoryTests
         buf[3] = 0x00;
         Array.Copy(payload, 0, buf, 4, 100);
 
-        var result = _factory.TrimHI(buf, out var trimmed);
+        var result = _factory.TrimHI(new ArrayPacket(buf), out var trimmed);
         Assert.True(trimmed);
         Assert.Equal(100, result.Total);
         Assert.Equal(0xAB, result[0]);
@@ -107,7 +107,7 @@ public class AudioCodecFactoryTests
     public void TrimHI_InvalidHeader_ReturnsOriginal()
     {
         var data = new Byte[] { 0xAA, 0xBB, 0xCC, 0xDD };
-        var result = _factory.TrimHI(data, out var trimmed);
+        var result = _factory.TrimHI(new ArrayPacket(data), out var trimmed);
         Assert.False(trimmed);
         Assert.Equal(4, result.Total);
     }
@@ -116,7 +116,7 @@ public class AudioCodecFactoryTests
     public void AddHI_ReturnsDataPlus4()
     {
         var data = new Byte[100];
-        var result = _factory.AddHI(data);
+        var result = _factory.AddHI(new ArrayPacket(data));
         Assert.Equal(104, result.Total);
         Assert.Equal(0x00, result[0]);
         Assert.Equal(0x01, result[1]);
@@ -131,7 +131,7 @@ public class AudioCodecFactoryTests
         for (var i = 0; i < 50; i++) original[i] = (Byte)(i + 1);
 
         // 添加海思头后去除
-        var withHI = _factory.AddHI(original);
+        var withHI = _factory.AddHI(new ArrayPacket(original));
         Assert.Equal(54, withHI.Total);
 
         var afterStrip = _factory.TrimHI(withHI, out var stripped);

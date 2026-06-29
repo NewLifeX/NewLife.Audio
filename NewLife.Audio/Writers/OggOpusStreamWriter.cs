@@ -1,3 +1,5 @@
+using NewLife.Buffers;
+
 namespace NewLife.Audio.Writers;
 
 /// <summary>OGG Opus 音频流写入器。将裸 Opus 包封装为标准 OGG 容器页（RFC 7845 + RFC 3533），使浏览器 MSE 可流式解码</summary>
@@ -62,8 +64,8 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
 
         // 两个 header 页合并为一次写入，确保前端 MSE 在同一个 appendBuffer 中收到完整初始化段
         var headerBytes = new Byte[page0.Length + page1.Length];
-        Buffer.BlockCopy(page0, 0, headerBytes, 0, page0.Length);
-        Buffer.BlockCopy(page1, 0, headerBytes, page0.Length, page1.Length);
+        page0.AsSpan().CopyTo(headerBytes.AsSpan());
+        page1.AsSpan().CopyTo(headerBytes.AsSpan(page0.Length));
         await stream.WriteAsync(headerBytes, cancellationToken).ConfigureAwait(false);
 
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -130,48 +132,43 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
         var headerSize = 27 + segmentCount; // 27 字节固定头 + 段表
         var page = new Byte[headerSize + payloadLen];
 
-        // --- 写入 OGG 页头 ---
-        var offset = 0;
-        // 0-3: 魔术字 "OggS"
-        page[offset++] = 0x4F; // O
-        page[offset++] = 0x67; // g
-        page[offset++] = 0x67; // g
-        page[offset++] = 0x53; // S
+        var writer = new SpanWriter(page.AsSpan()); // OGG 是小端序，SpanWriter 默认 LE
+
+        // 0-3: 魔术字 "OggS"（0x5367674F LE → 'O','g','g','S'）
+        writer.Write(0x5367674Fu);
         // 4: 版本 0
-        page[offset++] = 0;
+        writer.WriteByte(0);
         // 5: 头类型标志
-        page[offset++] = headerType;
-        // 6-13: granule position (int64 LE)
-        BinaryWriterHelper.WriteInt64LE(page, ref offset, granulePosition);
-        // 14-17: stream serial number (uint32 LE)
-        BinaryWriterHelper.WriteUInt32LE(page, ref offset, _serialNo);
-        // 18-21: page sequence number (uint32 LE)
-        BinaryWriterHelper.WriteUInt32LE(page, ref offset, _pageSeq);
+        writer.WriteByte(headerType);
+        // 6-13: granule position (Int64 LE)
+        writer.Write(granulePosition);
+        // 14-17: stream serial number (UInt32 LE)
+        writer.Write(_serialNo);
+        // 18-21: page sequence number (UInt32 LE)
+        writer.Write(_pageSeq);
         _pageSeq++;
         // 22-25: CRC32 checksum（先填 0，后面回填）
-        var crcOffset = offset;
-        BinaryWriterHelper.WriteUInt32LE(page, ref offset, 0);
+        var crcOffset = writer.Position;
+        writer.Write(0u);
         // 26: segment count
-        page[offset++] = (Byte)segmentCount;
+        writer.WriteByte((Byte)segmentCount);
         // 27+: segment table
         for (var i = 0; i < fullSegments; i++)
-            page[offset++] = 255;
+            writer.WriteByte(255);
         if (lastSegmentSize > 0)
-            page[offset++] = (Byte)lastSegmentSize;
+            writer.WriteByte((Byte)lastSegmentSize);
         // 如果 payload 为空，段表写入一个长度为 0 的段
         if (payloadLen == 0)
-            page[offset++] = 0;
+            writer.WriteByte(0);
 
         // --- 拷贝负载 ---
         if (payloadLen > 0)
-            payload.CopyTo(page.AsMemory(offset));
+            payload.CopyTo(page.AsMemory(writer.Position));
 
         // --- 计算并回填 CRC32 ---
-        var crc = BinaryWriterHelper.Crc32Compute(page);
-        page[crcOffset] = (Byte)(crc & 0xFF);
-        page[crcOffset + 1] = (Byte)((crc >> 8) & 0xFF);
-        page[crcOffset + 2] = (Byte)((crc >> 16) & 0xFF);
-        page[crcOffset + 3] = (Byte)((crc >> 24) & 0xFF);
+        var crc = OggCrc32.Compute(page);
+        var crcWriter = new SpanWriter(page.AsSpan(crcOffset));
+        crcWriter.Write(crc);
 
         return page;
     }
@@ -184,23 +181,22 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
     private static Byte[] BuildOpusHeadPacket()
     {
         var packet = new Byte[19];
-        var offset = 0;
+        var writer = new SpanWriter(packet.AsSpan());
         // "OpusHead"
-        BinaryWriterHelper.WriteFourCC(packet, ref offset, "OpusHead");
+        writer.Write(0x7375704Fu);       // "Opus"
+        writer.Write(0x64616548u);       // "Head"
         // Version: 1
-        packet[offset++] = 1;
+        writer.WriteByte(1);
         // Channel count: 1（单声道）
-        packet[offset++] = 1;
+        writer.WriteByte(1);
         // Pre-skip: 3840 (2 bytes LE)
-        packet[offset++] = (Byte)(PreSkip & 0xFF);
-        packet[offset++] = (Byte)((PreSkip >> 8) & 0xFF);
+        writer.Write((Int16)PreSkip);
         // Input sample rate: 48000 (4 bytes LE)
-        BinaryWriterHelper.WriteInt32LE(packet, ref offset, 48000);
+        writer.Write(48000);
         // Output gain: 0 (2 bytes LE)
-        packet[offset++] = 0;
-        packet[offset++] = 0;
+        writer.Write((Int16)0);
         // Channel mapping family: 0
-        packet[offset++] = 0;
+        writer.WriteByte(0);
         return packet;
     }
 
@@ -211,15 +207,16 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
         var vendorBytes = System.Text.Encoding.UTF8.GetBytes(vendor);
         var packetLen = 8 + 4 + vendorBytes.Length + 4; // "OpusTags" + vendorLen + vendor + userCommentsLen(0)
         var packet = new Byte[packetLen];
-        var offset = 0;
+        var writer = new SpanWriter(packet.AsSpan());
         // "OpusTags"
-        BinaryWriterHelper.WriteFourCC(packet, ref offset, "OpusTags");
+        writer.Write(0x7375704Fu);       // "Opus"
+        writer.Write(0x73676154u);       // "Tags"
         // Vendor string length + vendor string
-        BinaryWriterHelper.WriteInt32LE(packet, ref offset, vendorBytes.Length);
-        Array.Copy(vendorBytes, 0, packet, offset, vendorBytes.Length);
-        offset += vendorBytes.Length;
+        writer.Write(vendorBytes.Length);
+        vendorBytes.AsSpan().CopyTo(writer.GetSpan(vendorBytes.Length));
+        writer.Advance(vendorBytes.Length);
         // User comment list length: 0
-        BinaryWriterHelper.WriteInt32LE(packet, ref offset, 0);
+        writer.Write(0);
         return packet;
     }
 

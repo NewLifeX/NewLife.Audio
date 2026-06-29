@@ -44,7 +44,7 @@ public class HisiliconHeaderTests
         Assert.True(_header.TryAdd(original, out var withHI));
         Assert.Equal(54, withHI.Total);
 
-        Assert.True(_header.TryTrim(withHI, out var stripped));
+        Assert.True(_header.TryTrim(withHI.GetSpan(), out var stripped));
         Assert.Equal(50, stripped.Total);
 
         for (var i = 0; i < 50; i++)
@@ -82,7 +82,7 @@ public class DahuaHeaderTests
         Assert.True(_header.TryAdd(original, out var withHeader));
         Assert.Equal(36, withHeader.Total);
 
-        Assert.True(_header.TryTrim(withHeader, out var stripped));
+        Assert.True(_header.TryTrim(withHeader.GetSpan(), out var stripped));
         Assert.Equal(30, stripped.Total);
         for (var i = 0; i < 30; i++)
             Assert.Equal(original[i], stripped[i]);
@@ -117,7 +117,7 @@ public class UniviewHeaderTests
         Assert.True(_header.TryAdd(original, out var withHeader));
         Assert.Equal(24, withHeader.Total);
 
-        Assert.True(_header.TryTrim(withHeader, out var stripped));
+        Assert.True(_header.TryTrim(withHeader.GetSpan(), out var stripped));
         Assert.Equal(20, stripped.Total);
         for (var i = 0; i < 20; i++)
             Assert.Equal(original[i], stripped[i]);
