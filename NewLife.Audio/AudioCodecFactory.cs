@@ -1,53 +1,81 @@
-﻿using NewLife.Audio.Codecs;
+﻿using NewLife.Audio.ChipHeaders;
+using NewLife.Audio.Codecs;
 using NewLife.Data;
 
 namespace NewLife.Audio;
 
+/// <summary>音频编解码工厂。管理编解码器注册表、芯片头处理链，提供统一的PCM转换入口</summary>
+/// <remarks>
+/// 自动注册内置编解码器：ADPCM、G.711A、G.711U、G.722、G.726。
+/// 支持运行时通过 <see cref="Register"/> 方法注册自定义编解码器。
+/// 芯片头处理链：自动尝试去除已知芯片头（海思/大华/宇视），编码时按需还原。
+/// </remarks>
 public class AudioCodecFactory
 {
-    private readonly ADPCMCodec adpcmCodec = new();
-    private readonly G711ACodec g711ACodec = new();
-    private readonly G711UCodec g711UCodec = new();
-    private Boolean _hasHI;
+    private readonly CodecRegistry _registry = new();
+    private readonly List<IAudioChipHeader> _chipHeaders = [];
+    private IAudioChipHeader _lastChipHeader;
 
-    // 海思芯片编码的音频需要移除海思头，可能还有其他的海思头
-    //private static readonly Byte[] HI = new Byte[] { 0x00, 0x01, 0x52, 0x00 };
-    private static readonly Byte[] HI = new Byte[] { 0x00, 0x01 };
+    /// <summary>编解码器注册表</summary>
+    public CodecRegistry Registry => _registry;
 
-    /// <summary>去除海思头</summary>
+    /// <summary>芯片头处理器列表</summary>
+    public IReadOnlyList<IAudioChipHeader> ChipHeaders => _chipHeaders;
+
+    /// <summary>初始化编解码工厂，注册内置编解码器和芯片头</summary>
+    public AudioCodecFactory()
+    {
+        // 注册内置编解码器
+        _registry.Register(AVTypes.ADPCMA, new ADPCMCodec());
+        _registry.Register(AVTypes.G711A, new G711ACodec());
+        _registry.Register(AVTypes.G711U, new G711UCodec());
+        _registry.Register(AVTypes.G722, new G722Codec());
+        _registry.Register(AVTypes.G726, new G726Codec());
+
+        // 注册芯片头处理器（按优先级排序）
+        _chipHeaders.Add(new HisiliconHeader());
+        _chipHeaders.Add(new DahuaHeader());
+        _chipHeaders.Add(new UniviewHeader());
+    }
+
+    /// <summary>注册自定义编解码器</summary>
+    /// <param name="avType">音频编码类型</param>
+    /// <param name="codec">编解码器实例</param>
+    public void Register(AVTypes avType, IAudioCodec codec) => _registry.Register(avType, codec);
+
+    /// <summary>去除芯片头。按注册顺序尝试所有芯片头处理器</summary>
     /// <param name="data">设备数据</param>
-    /// <param name="trim">是否已去除海思头</param>
+    /// <param name="trim">是否已去除芯片头</param>
     /// <returns></returns>
     public Packet TrimHI(Packet data, out Boolean trim)
     {
-        var buf = data.ReadBytes(0, 4);
-        if (buf[0] == HI[0] && buf[1] == HI[1] && buf[3] == 0x00 && buf[2] == (Byte)((data.Total - 4) / 2))
+        foreach (var header in _chipHeaders)
         {
-            data = data[4..];
-            trim = true;
+            if (header.TryTrim(data, out var result))
+            {
+                _lastChipHeader = header;
+                trim = true;
+                return result;
+            }
         }
-        else
-            trim = false;
 
+        _lastChipHeader = null;
+        trim = false;
         return data;
     }
 
-    /// <summary>添加海思头</summary>
+    /// <summary>添加芯片头（还原最近一次去除的芯片头）</summary>
     /// <param name="data"></param>
     /// <returns></returns>
     public Packet AddHI(Packet data)
     {
-        var buf = new Byte[4 + data.Total];
-        buf[0] = 0x00;
-        buf[1] = 0x01;
-        buf[2] = (Byte)(data.Total / 2);
-        buf[3] = 0x00;
+        if (_lastChipHeader != null && _lastChipHeader.TryAdd(data, out var result))
+            return result;
 
-        //data.CopyTo(buf, 4);
-        var pk = new Packet(buf);
-        pk.Append(data);
-
-        return pk;
+        // 回退到海思头
+        var hi = new HisiliconHeader();
+        hi.TryAdd(data, out var fallback);
+        return fallback;
     }
 
     /// <summary>设备数据转PCM编码</summary>
@@ -57,15 +85,10 @@ public class AudioCodecFactory
     /// <exception cref="NotSupportedException"></exception>
     public Packet ToPcm(AVTypes avType, Packet data)
     {
-        data = TrimHI(data, out _hasHI);
+        data = TrimHI(data, out _);
 
-        return avType switch
-        {
-            AVTypes.ADPCMA => adpcmCodec.ToPcm(data, null),
-            AVTypes.G711A => g711ACodec.ToPcm(data, null),
-            AVTypes.G711U => g711UCodec.ToPcm(data, null),
-            _ => throw new NotSupportedException($"[{avType}] NotSupported"),
-        };
+        var codec = _registry.GetCodec(avType);
+        return codec.ToPcm(data, null);
     }
 
     /// <summary>PCM编码转设备数据</summary>
@@ -75,16 +98,11 @@ public class AudioCodecFactory
     /// <exception cref="NotSupportedException"></exception>
     public Packet FromPcm(AVTypes avType, Packet pcm)
     {
-        var rs = avType switch
-        {
-            AVTypes.ADPCMA => adpcmCodec.FromPcm(pcm, null),
-            AVTypes.G711A => g711ACodec.FromPcm(pcm, null),
-            AVTypes.G711U => g711UCodec.FromPcm(pcm, null),
-            _ => throw new NotSupportedException($"[{avType}] NotSupported"),
-        };
+        var codec = _registry.GetCodec(avType);
+        var rs = codec.FromPcm(pcm, null);
 
-        // 添加海思头
-        if (_hasHI) rs = AddHI(rs);
+        // 如果有上次去除的芯片头，还原之
+        if (_lastChipHeader != null) _lastChipHeader.TryAdd(rs, out rs);
 
         return rs;
     }

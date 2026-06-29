@@ -2,8 +2,20 @@
 
 namespace NewLife.Audio.Codecs;
 
-public class G711UCodec : IAudioCodec
+/// <summary>G711U（μ-law）编解码器</summary>
+public class G711UCodec : IAudioCodec, ICodecInfo
 {
+    /// <summary>编解码器名称</summary>
+    public String Name => "G.711 μ-law";
+
+    /// <summary>版本号</summary>
+    public String Version => "1.0";
+
+    /// <summary>支持的编码类型</summary>
+    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.G711U];
+
+    /// <summary>无状态编解码器</summary>
+    public Boolean IsStateful => false;
     /* 16384 entries per table (16 bit) */
     private readonly Byte[] linearToUlawTable = new Byte[65536];
 
@@ -106,8 +118,17 @@ public class G711UCodec : IAudioCodec
     public Packet ToPcm(Packet audio, Object option) => UlawToPcm16(audio.ReadBytes());
 
     /// <summary>PCM转音频数据</summary>
-    /// <param name="pcm"></param>
+    /// <param name="pcm">16位小端PCM数据</param>
     /// <param name="option"></param>
     /// <returns></returns>
-    public Packet FromPcm(Packet pcm, Object option) => throw new NotImplementedException();
+    public Packet FromPcm(Packet pcm, Object option)
+    {
+        var g711data = new Byte[pcm.Total / 2];
+        for (Int32 i = 0, k = 0; i < pcm.Total - 1; i += 2, k++)
+        {
+            var v = (Int16)(pcm[i + 1] << 8 | pcm[i]);
+            g711data[k] = linearToUlawTable[v & 0xFFFF];
+        }
+        return g711data;
+    }
 }

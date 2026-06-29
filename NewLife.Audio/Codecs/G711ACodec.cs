@@ -3,8 +3,19 @@
 namespace NewLife.Audio.Codecs;
 
 /// <summary>G711A编码</summary>
-public class G711ACodec : IAudioCodec
+public class G711ACodec : IAudioCodec, ICodecInfo
 {
+    /// <summary>编解码器名称</summary>
+    public String Name => "G.711 A-law";
+
+    /// <summary>版本号</summary>
+    public String Version => "1.0";
+
+    /// <summary>支持的编码类型</summary>
+    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.G711A];
+
+    /// <summary>无状态编解码器</summary>
+    public Boolean IsStateful => false;
     private readonly Int32 SIGN_BIT = 0x80;
     private readonly Int32 QUANT_MASK = 0xf;
     private readonly Int32 SEG_SHIFT = 4;

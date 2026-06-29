@@ -9,8 +9,19 @@ namespace NewLife.Audio.Codecs;
 /// 本文的以IMA的ADPCM编码标准为例进行描述，IMA-ADPCM 是Intel公司首先开发的是一种主要针对16bit采样波形数据的有损压缩算法，压缩比为 4:1。
 /// 它与通常的DVI-ADPCM是同一算法。
 /// </remarks>
-public class ADPCMCodec : IAudioCodec
+public class ADPCMCodec : IAudioCodec, ICodecInfo
 {
+    /// <summary>编解码器名称</summary>
+    public String Name => "IMA ADPCM";
+
+    /// <summary>版本号</summary>
+    public String Version => "1.0";
+
+    /// <summary>支持的编码类型</summary>
+    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.ADPCMA];
+
+    /// <summary>无状态编解码器（纯算法，状态由调用方管理）</summary>
+    public Boolean IsStateful => false;
     /* Intel ADPCM step variation table */
     private static readonly Int32[] indexTable = {
         -1, -1, -1, -1, 2, 4, 6, 8,
@@ -290,7 +301,8 @@ class AdpcmState
     public Byte Index { get; set; }
 }
 
-static class AdpcmDecoderExtension
+/// <summary>ADPCM解码扩展方法</summary>
+public static class AdpcmDecoderExtension
 {
     /// <summary>
     /// 添加wav头
