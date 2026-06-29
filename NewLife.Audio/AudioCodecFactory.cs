@@ -31,6 +31,12 @@ public class AudioCodecFactory
         _registry.Register(AVTypes.G711U, new G711UCodec());
         _registry.Register(AVTypes.G722, new G722Codec());
         _registry.Register(AVTypes.G726, new G726Codec());
+        _registry.Register(AVTypes.MP3, new Mp3Codec());
+        _registry.Register(AVTypes.MPEGAUDIO, new Mp3Codec());
+        _registry.Register(AVTypes.AAC, new AacCodec());
+        _registry.Register(AVTypes.AACLC, new AacCodec());
+        _registry.Register(AVTypes.HEAAC, new AacCodec());
+        _registry.RegisterFactory(AVTypes.Transparent, () => new OpusCodec());
 
         // 注册芯片头处理器（按优先级排序）
         _chipHeaders.Add(new HisiliconHeader());

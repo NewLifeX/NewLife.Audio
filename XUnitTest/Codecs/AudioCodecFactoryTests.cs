@@ -78,9 +78,9 @@ public class AudioCodecFactoryTests
     public void ToPcm_UnsupportedType_ThrowsNotSupported()
     {
         var data = new Byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
-        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.AAC, data));
-        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.MP3, data));
-        Assert.Throws<NotSupportedException>(() => _factory.FromPcm(AVTypes.AAC, data));
+        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.H264, data));
+        Assert.Throws<NotSupportedException>(() => _factory.ToPcm(AVTypes.SVAC, data));
+        Assert.Throws<NotSupportedException>(() => _factory.FromPcm(AVTypes.H264, data));
     }
 
     [Fact(DisplayName = "海思头去除：正确格式的4字节头被剥离")]
