@@ -18,6 +18,7 @@ public class VoicePreprocessor : IAudioProcessor
     private readonly BiQuadFilter _highPassFilter;
     private readonly GmmVad _vad;
     private readonly AutomaticGainControl _agc;
+    private readonly FixedBufferSource _agcBufferSource;
 
     private Boolean _enableVAD;
     private Boolean _enableAGC;
@@ -85,6 +86,8 @@ public class VoicePreprocessor : IAudioProcessor
 
         _vad = new GmmVad(sampleRate);
         _agc = new AutomaticGainControl(-18f, 20f, _inputFormat);
+        _agcBufferSource = new FixedBufferSource(_inputFormat);
+        _agc.Source = _agcBufferSource;
 
         _enableVAD = true;
         _enableAGC = true;
@@ -124,21 +127,13 @@ public class VoicePreprocessor : IAudioProcessor
             }
         }
 
-        // Step 3: AGC
+        // Step 3: AGC（通过 AutomaticGainControl 的完整包络跟随逻辑）
         if (_enableAGC)
         {
-            var agcBuffer = new Single[read];
-            Array.Copy(buffer, offset, agcBuffer, 0, read);
-            // 手动逐采样处理 AGC
-            for (var i = 0; i < read; i++)
-            {
-                var sample = agcBuffer[i];
-                // 简化 AGC（RMS检测 + 增益调整）
-                var rms = Math.Abs(sample);
-                var targetGain = rms > 0.001f ? _agc.TargetLevel / rms : _agc.MaxGain;
-                // 不直接设 Source，逐采样处理
-                buffer[offset + i] = sample * Math.Min(targetGain, _agc.MaxGain);
-            }
+            // 将 HPF+VAD 处理后的数据喂给 AGC 的固定缓冲源
+            _agcBufferSource.SetData(buffer, offset, read);
+            var agcRead = _agc.Read(buffer, offset, read);
+            if (agcRead > 0) read = agcRead;
         }
 
         return read;
@@ -150,6 +145,71 @@ public class VoicePreprocessor : IAudioProcessor
         _highPassFilter.Reset();
         _vad.Reset();
         _agc.Reset();
+        _agcBufferSource.Reset();
         CurrentSpeechProbability = 0;
     }
+
+    #region 辅助
+
+    /// <summary>固定缓冲源。实现 IAudioProcessor 作为数据提供者，供下游处理器（如 AGC）从其 Read() 拉取数据</summary>
+    private sealed class FixedBufferSource : IAudioProcessor
+    {
+        private readonly AudioFormat _format;
+        private Single[] _buffer;
+        private Int32 _offset;
+        private Int32 _length;
+        private Int32 _pos;
+
+        /// <summary>输入格式</summary>
+        public AudioFormat InputFormat => _format;
+
+        /// <summary>输出格式</summary>
+        public AudioFormat OutputFormat => _format;
+
+        /// <summary>上游源（不使用）</summary>
+        public IAudioProcessor Source { get; set; }
+
+        /// <summary>初始化固定缓冲源</summary>
+        /// <param name="format">音频格式</param>
+        public FixedBufferSource(AudioFormat format)
+        {
+            _format = format;
+            _buffer = [];
+        }
+
+        /// <summary>设置待读取的数据</summary>
+        /// <param name="buffer">源缓冲区</param>
+        /// <param name="offset">起始偏移</param>
+        /// <param name="length">数据长度</param>
+        public void SetData(Single[] buffer, Int32 offset, Int32 length)
+        {
+            if (_buffer.Length < length)
+                _buffer = new Single[length];
+            Array.Copy(buffer, offset, _buffer, 0, length);
+            _offset = 0;
+            _length = length;
+            _pos = 0;
+        }
+
+        /// <summary>读取数据</summary>
+        public Int32 Read(Single[] buffer, Int32 offset, Int32 count)
+        {
+            var remaining = _length - _pos;
+            if (remaining <= 0) return 0;
+
+            var toCopy = Math.Min(count, remaining);
+            Array.Copy(_buffer, _pos, buffer, offset, toCopy);
+            _pos += toCopy;
+            return toCopy;
+        }
+
+        /// <summary>重置</summary>
+        public void Reset()
+        {
+            _pos = 0;
+            _length = 0;
+        }
+    }
+
+    #endregion
 }

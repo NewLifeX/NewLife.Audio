@@ -1,3 +1,5 @@
+using NewLife.Audio.DSP;
+
 namespace NewLife.Audio.Containers;
 
 /// <summary>容器工厂。根据扩展名或魔术字节自动创建对应的读写器</summary>
@@ -44,5 +46,35 @@ public static class AudioContainerFactory
 
         // 回退到原始 PCM
         return new RawPcmReader(stream);
+    }
+
+    /// <summary>根据文件路径和格式创建写入器</summary>
+    /// <param name="filePath">文件路径（扩展名用于确定容器格式）</param>
+    /// <param name="format">音频格式</param>
+    /// <returns>容器写入器</returns>
+    public static IAudioContainerWriter CreateWriter(String filePath, AudioFormat format)
+    {
+        var ext = Path.GetExtension(filePath)?.ToLowerInvariant();
+        var stream = File.Create(filePath);
+
+        return CreateWriter(stream, ext, format);
+    }
+
+    /// <summary>根据流和格式提示创建写入器</summary>
+    /// <param name="stream">输出流</param>
+    /// <param name="formatHint">格式提示（扩展名: .wav / .ogg / .opus / .mp3）</param>
+    /// <param name="format">音频格式</param>
+    /// <returns>容器写入器</returns>
+    public static IAudioContainerWriter CreateWriter(Stream stream, String formatHint, AudioFormat format)
+    {
+        var hint = formatHint?.ToLowerInvariant();
+
+        return hint switch
+        {
+            ".wav" => new WaveFileWriter(stream, format),
+            ".ogg" or ".opus" => new OggFileWriter(stream, format, AVTypes.Transparent),
+            ".mp3" => new Mp3FileWriter(stream, format),
+            _ => throw new NotSupportedException($"不支持的容器格式: {formatHint}"),
+        };
     }
 }

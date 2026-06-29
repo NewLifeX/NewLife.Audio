@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using NewLife.Audio.DSP;
 using NewLife.Data;
 
 namespace NewLife.Audio.Speech;
@@ -8,12 +9,14 @@ namespace NewLife.Audio.Speech;
 /// 6子带能量分析 + 2分量高斯混合模型 + Hangover防抖动。
 /// 参考 WebRTC VAD 原理，纯 C# 实现。
 /// 帧长固定 10ms（80/160/240/320/480 样本对应 8k/16k/24k/32k/48kHz）。
+/// 实现 IAudioProcessor 接口，可直接接入 M3 信号链。Read() 透传样本不修改数据，仅更新检测状态。
 /// </remarks>
-public class GmmVad : IVoiceActivityDetector
+public class GmmVad : IVoiceActivityDetector, IAudioProcessor
 {
     private Int32 _aggressiveness;
     private Int32 _sampleRate;
     private Int32 _frameSamples;
+    private readonly AudioFormat _format;
 
     // 子带能量历史
     private readonly Single[] _subbandEnergy = new Single[6];
@@ -42,6 +45,21 @@ public class GmmVad : IVoiceActivityDetector
         set => _aggressiveness = value < 0 ? 0 : value > 3 ? 3 : value;
     }
 
+    /// <summary>输入格式</summary>
+    public AudioFormat InputFormat => _format;
+
+    /// <summary>输出格式（与输入相同，VAD 不修改数据）</summary>
+    public AudioFormat OutputFormat => _format;
+
+    /// <summary>上游数据源</summary>
+    public IAudioProcessor Source { get; set; }
+
+    /// <summary>最近一次检测的语音概率（0~1）</summary>
+    public Single LastSpeechProbability { get; private set; }
+
+    /// <summary>最近一次检测是否为语音</summary>
+    public Boolean LastIsSpeech { get; private set; }
+
     /// <summary>初始化 VAD</summary>
     /// <param name="sampleRate">采样率（Hz），默认 8000</param>
     /// <param name="aggressiveness">灵敏度（0~3），默认 1</param>
@@ -50,6 +68,7 @@ public class GmmVad : IVoiceActivityDetector
         _sampleRate = sampleRate;
         _aggressiveness = aggressiveness < 0 ? 0 : aggressiveness > 3 ? 3 : aggressiveness;
         _frameSamples = sampleRate / 100; // 10ms
+        _format = new AudioFormat { SampleRate = sampleRate, Channels = 1, BitsPerSample = 16 };
         Reset();
     }
 
@@ -121,12 +140,43 @@ public class GmmVad : IVoiceActivityDetector
     {
         _hangoverCount = 0;
         _wasSpeech = false;
+        LastSpeechProbability = 0f;
+        LastIsSpeech = false;
         for (var i = 0; i < 6; i++)
         {
             _subbandEnergy[i] = 0;
             _subbandMean[i] = NoiseMeanInit[i];
             _subbandVar[i] = 100f;
         }
+    }
+
+    /// <summary>从上游源读取数据，执行 VAD 检测后透传样本（不修改数据）</summary>
+    /// <param name="buffer">输出缓冲区</param>
+    /// <param name="offset">起始偏移</param>
+    /// <param name="count">采样数</param>
+    /// <returns>实际读取的采样数</returns>
+    public Int32 Read(Single[] buffer, Int32 offset, Int32 count)
+    {
+        if (Source == null) return 0;
+
+        var read = Source.Read(buffer, offset, count);
+        if (read == 0) return 0;
+
+        // 转换 Float → Int16 用于 VAD 检测
+        var pcmBytes = new Byte[read * 2];
+        var pcmSamples = MemoryMarshal.Cast<Byte, Int16>(pcmBytes.AsSpan());
+        for (var i = 0; i < read; i++)
+        {
+            var sample = buffer[offset + i];
+            pcmSamples[i] = (Int16)(Math.Max(-1f, Math.Min(1f, sample)) * 32767f);
+        }
+
+        // 执行 VAD 检测
+        LastSpeechProbability = GetSpeechProbability(pcmBytes);
+        LastIsSpeech = IsSpeech(pcmBytes);
+
+        // 透传样本（不修改）
+        return read;
     }
 
     private void ComputeSubbandEnergy(ReadOnlySpan<Byte> samples)

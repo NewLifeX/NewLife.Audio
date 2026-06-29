@@ -112,6 +112,42 @@ public class FftAnalyzer : IAudioProcessor
         return power;
     }
 
+    /// <summary>计算复数频谱（含实部和虚部）</summary>
+    /// <param name="samples">时域采样数据（长度 = fftSize）</param>
+    /// <param name="real">输出实部</param>
+    /// <param name="imag">输出虚部</param>
+    public void ComputeComplexSpectrum(Single[] samples, out Single[] real, out Single[] imag)
+    {
+        real = new Single[_fftSize];
+        imag = new Single[_fftSize];
+
+        for (var i = 0; i < Math.Min(samples.Length, _fftSize); i++)
+            real[_bitReversed[i]] = samples[i] * _window[i];
+
+        FftInPlace(real, imag, false);
+    }
+
+    /// <summary>逆 FFT 变换（复数频谱 → 时域信号）</summary>
+    /// <param name="real">实部</param>
+    /// <param name="imag">虚部</param>
+    /// <returns>时域采样数据（长度 = fftSize）</returns>
+    public Single[] ComputeInverseFft(Single[] real, Single[] imag)
+    {
+        // 位反转排序
+        var re = new Single[_fftSize];
+        var im = new Single[_fftSize];
+        for (var i = 0; i < _fftSize; i++)
+        {
+            re[_bitReversed[i]] = real[i];
+            im[_bitReversed[i]] = imag[i];
+        }
+
+        FftInPlace(re, im, true);
+
+        // 由于正向 FFT 加了窗，IFFT 后无需叠加窗（由 OLA 负责）
+        return re;
+    }
+
     #region FFT 核心
 
     private void FftInPlace(Single[] real, Single[] imag, Boolean inverse)

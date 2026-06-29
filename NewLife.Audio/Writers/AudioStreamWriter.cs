@@ -2,7 +2,9 @@ namespace NewLife.Audio.Writers;
 
 /// <summary>音频流写入器抽象基类。定义流式音频输出的生命周期：写头 → 逐块写数据 → 写尾</summary>
 /// <remarks>
-/// 典型用法：
+/// 本类为流式场景（WebSocket/HTTP 实时推流）的内部实现，不作为公开容器 API。
+/// 文件读写请使用 <see cref="NewLife.Audio.Containers.IAudioContainerWriter"/> 接口和 <see cref="NewLife.Audio.Containers.AudioContainerFactory"/>。
+/// <para>典型用法：</para>
 /// <code>
 /// await using var writer = AudioStreamWriter.Create("opus");
 /// await writer.WriteHeaderAsync(stream, ct);
