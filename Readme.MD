@@ -6,14 +6,18 @@
 ![Nuget](https://img.shields.io/nuget/v/NewLife.Audio?logo=nuget)
 ![Nuget (with prereleases)](https://img.shields.io/nuget/vpre/NewLife.Audio?label=dev%20nuget&logo=nuget)
 
+[English](Readme.en.MD) | 简体中文
+
 支持各种音频到PCM的编解码
 
 源码： https://github.com/NewLifeX/NewLife.Audio  
 Nuget：NewLife.Audio  
 
+📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [竞品分析](Doc/竞品分析报告.md) | [各模块架构设计](Doc/)
+
 
 ## 新生命项目矩阵
-各项目默认支持net9.0/netstandard2.1/netstandard2.0/net4.62/net4.5，旧版（2024.0801）支持net4.0/net2.0  
+各项目默认支持net9.0/netstandard2.1/netstandard2.0/net462/net45，旧版（2024.0801）支持net4.0/net2.0  
 
 |                               项目                               | 年份  | 说明                                                                                        |
 | :--------------------------------------------------------------: | :---: | ------------------------------------------------------------------------------------------- |
@@ -33,7 +37,7 @@ Nuget：NewLife.Audio
 |   [NewLife.Modbus](https://github.com/NewLifeX/NewLife.Modbus)   | 2022  | ModbusTcp/ModbusRTU/ModbusASCII，基于IoT标准库实现，支持ZeroIoT平台和IoTEdge网关            |
 |  [NewLife.Siemens](https://github.com/NewLifeX/NewLife.Siemens)  | 2022  | 西门子PLC协议，基于IoT标准库实现，支持IoT平台和IoTEdge                                      |
 |      [NewLife.Map](https://github.com/NewLifeX/NewLife.Map)      | 2022  | 地图组件库，封装百度地图、高德地图、腾讯地图、天地图                                        |
-|    [NewLife.Audio](https://github.com/NewLifeX/NewLife.Audio)    | 2023  | 音频编解码库，PCM/ADPCMA/G711A/G722U/WAV/AAC                                                |
+|    [NewLife.Audio](https://github.com/NewLifeX/NewLife.Audio)    | 2023  | 音频编解码库，G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex，DSP/语音处理/流媒体     |
 |                             产品平台                             |       | 产品平台级，编译部署即用，个性化自定义                                                      |
 |         [Stardust](https://github.com/NewLifeX/Stardust)         | 2018  | 星尘，分布式服务平台，节点管理、APM监控中心、配置中心、注册中心、发布中心                   |
 |           [AntJob](https://github.com/NewLifeX/AntJob)           | 2019  | 蚂蚁调度，分布式大数据计算平台（实时/离线），蚂蚁搬家分片思想，万亿级数据量项目验证         |

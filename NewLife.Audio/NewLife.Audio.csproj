@@ -5,7 +5,7 @@
     <Description>支持各种音频到PCM的编解码</Description>
     <Company>新生命开发团队</Company>
     <Copyright>©2002-2026 新生命开发团队</Copyright>
-    <VersionPrefix>1.0</VersionPrefix>
+    <VersionPrefix>1.1</VersionPrefix>
     <VersionSuffix>$([System.DateTime]::Now.ToString(`yyyy.MMdd`))</VersionSuffix>
     <Version>$(VersionPrefix).$(VersionSuffix)</Version>
     <FileVersion>$(Version)</FileVersion>
@@ -26,8 +26,8 @@
     <PackageIcon>leaf.png</PackageIcon>
     <RepositoryUrl>https://github.com/NewLifeX/NewLife.Audio</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
-    <PackageTags>音频;Audio;PCM;G711;新生命团队;NewLife;$(AssemblyName)</PackageTags>
-    <PackageReleaseNotes></PackageReleaseNotes>
+    <PackageTags>音频;Audio;PCM;G711;G722;G726;ADPCM;Opus;MP3;AAC;FLAC;Vorbis;Speex;DSP;VAD;AEC;AGC;NS;RTP;RTSP;新生命团队;NewLife;$(AssemblyName)</PackageTags>
+    <PackageReleaseNotes>新增 Opus/Speex 纯托管编解码器，完善 AAC/MP3/FLAC/Vorbis 全链路编解码；新增 MP4 容器完整支持；新增声学回声消除 AEC、噪声抑制 NS、自动增益控制 AGC、语音活动检测 VAD；新增 RTSP 完整 TCP 协议栈客户端与 RTP 封包/解包；新增 DSP 信号链管线架构与变速变调；250 单元测试全覆盖；新增英文 README 与完整架构文档</PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -41,7 +41,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="NewLife.Core" Version="11.16.2026.601" />
+    <PackageReference Include="NewLife.Core" Version="11.17.2026.701" />
   </ItemGroup>
 
   <ItemGroup>
