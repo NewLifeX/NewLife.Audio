@@ -1,3 +1,4 @@
+using System.Text;
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
@@ -118,165 +119,143 @@ public class Mp4FileReader : IAudioContainerReader
     private void ParseMoov(Byte[] moovData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
-        var offset = 0;
-        while (offset < moovData.Length - 8)
+        var reader = new SpanReader(moovData) { IsLittleEndian = false };
+        while (reader.Available >= 8)
         {
-            var size = ReadUInt32BE(moovData, offset);
-            var type = ReadFourCC(moovData, offset + 4);
-            if (size < 8 || offset + size > moovData.Length) break;
+            var size = reader.ReadUInt32();
+            var type = Encoding.ASCII.GetString(reader.ReadBytes(4));
+            if (size < 8 || reader.Position + (size - 8) > moovData.Length) break;
 
-            var data = new Byte[size - 8];
-            Array.Copy(moovData, offset + 8, data, 0, size - 8);
+            var subSpan = reader.ReadBytes((Int32)size - 8);
+            var r = new SpanReader(subSpan) { IsLittleEndian = false };
 
             switch (type)
             {
                 case "mvhd":
-                    ParseMvhd(data);
+                    ParseMvhd(ref r);
                     break;
                 case "trak":
-                    ParseTrak(data, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
+                    ParseTrak(ref r, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
-
-            offset += (Int32)size;
         }
     }
 
-    private void ParseTrak(Byte[] trakData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
+    private void ParseTrak(ref SpanReader reader, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
-        var offset = 0;
-        while (offset < trakData.Length - 8)
+        while (reader.Available >= 8)
         {
-            var size = ReadUInt32BE(trakData, offset);
-            var type = ReadFourCC(trakData, offset + 4);
-            if (size < 8 || offset + size > trakData.Length) break;
+            var size = reader.ReadUInt32();
+            var type = Encoding.ASCII.GetString(reader.ReadBytes(4));
+            if (size < 8 || size - 8 > reader.Available) break;
 
-            var data = new Byte[size - 8];
-            Array.Copy(trakData, offset + 8, data, 0, size - 8);
+            var subSpan = reader.ReadBytes((Int32)size - 8);
 
             switch (type)
             {
                 case "tkhd":
                     break;
                 case "mdia":
-                    ParseMdia(data, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
+                    ParseMdia(subSpan, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
-
-            offset += (Int32)size;
         }
     }
 
-    private void ParseMdia(Byte[] mdiaData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
+    private void ParseMdia(ReadOnlySpan<Byte> mdiaData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
-        var offset = 0;
-        while (offset < mdiaData.Length - 8)
+        var reader = new SpanReader(mdiaData) { IsLittleEndian = false };
+        while (reader.Available >= 8)
         {
-            var size = ReadUInt32BE(mdiaData, offset);
-            var type = ReadFourCC(mdiaData, offset + 4);
-            if (size < 8 || offset + size > mdiaData.Length) break;
+            var size = reader.ReadUInt32();
+            var type = Encoding.ASCII.GetString(reader.ReadBytes(4));
+            if (size < 8 || size - 8 > reader.Available) break;
 
-            var data = new Byte[size - 8];
-            Array.Copy(mdiaData, offset + 8, data, 0, size - 8);
+            var subSpan = reader.ReadBytes((Int32)size - 8);
+            var r = new SpanReader(subSpan) { IsLittleEndian = false };
 
             switch (type)
             {
                 case "mdhd":
-                    ParseMdhd(data);
+                    ParseMdhd(ref r);
                     break;
                 case "minf":
-                    ParseMinf(data, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
+                    ParseMinf(ref r, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
-
-            offset += (Int32)size;
         }
     }
 
-    private void ParseMinf(Byte[] minfData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
+    private void ParseMinf(ref SpanReader reader, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
-        var offset = 0;
-        while (offset < minfData.Length - 8)
+        while (reader.Available >= 8)
         {
-            var size = ReadUInt32BE(minfData, offset);
-            var type = ReadFourCC(minfData, offset + 4);
-            if (size < 8 || offset + size > minfData.Length) break;
+            var size = reader.ReadUInt32();
+            var type = Encoding.ASCII.GetString(reader.ReadBytes(4));
+            if (size < 8 || size - 8 > reader.Available) break;
 
-            var data = new Byte[size - 8];
-            Array.Copy(minfData, offset + 8, data, 0, size - 8);
+            var subSpan = reader.ReadBytes((Int32)size - 8);
 
             switch (type)
             {
                 case "stbl":
-                    ParseStbl(data, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
+                    ParseStbl(subSpan.ToArray(), ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
-
-            offset += (Int32)size;
         }
     }
 
     private void ParseStbl(Byte[] stblData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
-        var offset = 0;
-        while (offset < stblData.Length - 8)
+        var reader = new SpanReader(stblData) { IsLittleEndian = false };
+        while (reader.Available >= 8)
         {
-            var size = ReadUInt32BE(stblData, offset);
-            var type = ReadFourCC(stblData, offset + 4);
-            if (size < 8 || offset + size > stblData.Length) break;
+            var size = reader.ReadUInt32();
+            var type = Encoding.ASCII.GetString(reader.ReadBytes(4));
+            if (size < 8 || reader.Position + (size - 8) > stblData.Length) break;
 
-            var data = new Byte[size - 8];
-            Array.Copy(stblData, offset + 8, data, 0, size - 8);
+            var subSpan = reader.ReadBytes((Int32)size - 8);
 
             switch (type)
             {
-                case "stsd": stsd = data; break;
-                case "stts": stts = data; break;
-                case "stsc": stsc = data; break;
-                case "stsz": stsz = data; break;
-                case "stco": stco = data; stcoVersion = 0; break;
-                case "co64": stco = data; stcoVersion = 1; break;
+                case "stsd": stsd = subSpan.ToArray(); break;
+                case "stts": stts = subSpan.ToArray(); break;
+                case "stsc": stsc = subSpan.ToArray(); break;
+                case "stsz": stsz = subSpan.ToArray(); break;
+                case "stco": stco = subSpan.ToArray(); stcoVersion = 0; break;
+                case "co64": stco = subSpan.ToArray(); stcoVersion = 1; break;
             }
-
-            offset += (Int32)size;
         }
     }
 
-    private void ParseMvhd(Byte[] data)
+    private void ParseMvhd(ref SpanReader reader)
     {
-        var version = data[0];
-        Int32 off;
+        if (reader.Available < 4) return;
+        var version = reader.ReadByte();
+        reader.Advance(3); // flags
         if (version == 1)
-        {
-            off = 20; // 8B creation, 8B modification
-        }
+            reader.Advance(16); // 8B creation + 8B modification
         else
-        {
-            off = 12; // 4B creation, 4B modification
-        }
-        if (off + 4 > data.Length) return;
-        _timescale = ReadInt32BE(data, off);
+            reader.Advance(8);  // 4B creation + 4B modification
+        if (reader.Available < 4) return;
+        _timescale = reader.ReadInt32();
     }
 
-    private void ParseMdhd(Byte[] data)
+    private void ParseMdhd(ref SpanReader reader)
     {
-        if (data.Length < 12) return;
-        var version = data[0];
-        Int32 off;
+        if (reader.Available < 4) return;
+        var version = reader.ReadByte();
+        reader.Advance(3); // flags
         if (version == 1)
-        {
-            off = 20;
-        }
+            reader.Advance(16); // 8B creation + 8B modification
         else
-        {
-            off = 12;
-        }
-        if (off + 8 > data.Length) return;
-        _timescale = ReadInt32BE(data, off);
+            reader.Advance(8);  // 4B creation + 4B modification
+        if (reader.Available < 4) return;
+        _timescale = reader.ReadInt32();
         // duration follows but we use stts for accurate frame counts
     }
 
@@ -284,21 +263,21 @@ public class Mp4FileReader : IAudioContainerReader
     private void ParseStsdAudio(Byte[] stsdData)
     {
         if (stsdData.Length < 16) return;
-        var entryCount = ReadInt32BE(stsdData, 4);
+        var entryCount = stsdData[4] << 24 | stsdData[5] << 16 | stsdData[6] << 8 | stsdData[7];
         if (entryCount < 1) return;
 
         var offset = 8;
         if (offset + 8 > stsdData.Length) return;
-        var descSize = ReadInt32BE(stsdData, offset);
-        var descType = ReadFourCC(stsdData, offset + 4);
+        var descSize = stsdData[offset] << 24 | stsdData[offset + 1] << 16 | stsdData[offset + 2] << 8 | stsdData[offset + 3];
+        var descType = Encoding.ASCII.GetString(stsdData, offset + 4, 4);
         if (descType != "mp4a" || descSize < 36) return;
 
         // mp4a box: 6B reserved, 2B dataRefIndex, 2B version, 2B revision, 4B vendor
         // 2B channels, 2B sampleSize(16), 2B preDefined, 2B reserved, 4B sampleRate
         var dataOff = offset + 8;
-        var channels = ReadUInt16BE(stsdData, dataOff + 16);
-        var sampleSize = ReadUInt16BE(stsdData, dataOff + 18);
-        var sampleRate = (Int32)(ReadUInt32BE(stsdData, dataOff + 24) >> 16);
+        var channels = (UInt16)((stsdData[dataOff + 16] << 8) | stsdData[dataOff + 17]);
+        var sampleSize = (UInt16)((stsdData[dataOff + 18] << 8) | stsdData[dataOff + 19]);
+        var sampleRate = (Int32)(((stsdData[dataOff + 24] << 24) | (stsdData[dataOff + 25] << 16) | (stsdData[dataOff + 26] << 8) | stsdData[dataOff + 27]) >> 16);
 
         _format = new AudioFormat
         {
@@ -319,8 +298,8 @@ public class Mp4FileReader : IAudioContainerReader
 
         // stsz: [version(1)+flags(3)] [sampleSize(4)] [entryCount(4)] + [entrySize(4)]*count
         if (stsz.Length < 12) return;
-        var sampleSizeFixed = ReadUInt32BE(stsz, 4);
-        var entryCount = ReadInt32BE(stsz, 8);
+        var sampleSizeFixed = (UInt32)((stsz[4] << 24) | (stsz[5] << 16) | (stsz[6] << 8) | stsz[7]);
+        var entryCount = stsz[8] << 24 | stsz[9] << 16 | stsz[10] << 8 | stsz[11];
         _sampleCount = entryCount;
         _sampleSizes = new UInt32[entryCount];
 
@@ -333,37 +312,40 @@ public class Mp4FileReader : IAudioContainerReader
         {
             var szOff = 12;
             for (var i = 0; i < entryCount && szOff + 4 <= stsz.Length; i++, szOff += 4)
-                _sampleSizes[i] = ReadUInt32BE(stsz, szOff);
+                _sampleSizes[i] = (UInt32)((stsz[szOff] << 24) | (stsz[szOff + 1] << 16) | (stsz[szOff + 2] << 8) | stsz[szOff + 3]);
         }
 
         // stco/co64: [version+flags(4)] [entryCount(4)] + [offset(4 or 8)]*count
         if (stco.Length < 8) return;
-        var chunkCount = ReadInt32BE(stco, 4);
+        var chunkCount = stco[4] << 24 | stco[5] << 16 | stco[6] << 8 | stco[7];
         var chunkOffsets = new Int64[chunkCount];
         if (stcoVersion == 1)
         {
             var coOff = 8;
             for (var i = 0; i < chunkCount && coOff + 8 <= stco.Length; i++, coOff += 8)
-                chunkOffsets[i] = ReadInt64BE(stco, coOff);
+                chunkOffsets[i] = (Int64)stco[coOff] << 56 | (Int64)stco[coOff + 1] << 48 |
+                                   (Int64)stco[coOff + 2] << 40 | (Int64)stco[coOff + 3] << 32 |
+                                   (Int64)stco[coOff + 4] << 24 | (Int64)stco[coOff + 5] << 16 |
+                                   (Int64)stco[coOff + 6] << 8 | stco[coOff + 7];
         }
         else
         {
             var coOff = 8;
             for (var i = 0; i < chunkCount && coOff + 4 <= stco.Length; i++, coOff += 4)
-                chunkOffsets[i] = ReadUInt32BE(stco, coOff);
+                chunkOffsets[i] = (UInt32)((stco[coOff] << 24) | (stco[coOff + 1] << 16) | (stco[coOff + 2] << 8) | stco[coOff + 3]);
         }
 
         // stsc: [version+flags(4)] [entryCount(4)] + [firstChunk(4) samplesPerChunk(4) descIdx(4)]*count
         if (stsc.Length < 8) return;
-        var stscEntryCount = ReadInt32BE(stsc, 4);
+        var stscEntryCount = stsc[4] << 24 | stsc[5] << 16 | stsc[6] << 8 | stsc[7];
         var stscEntries = new (Int32 firstChunk, Int32 samplesPerChunk, Int32 descIdx)[stscEntryCount];
         var scOff = 8;
         for (var i = 0; i < stscEntryCount && scOff + 12 <= stsc.Length; i++, scOff += 12)
         {
             stscEntries[i] = (
-                ReadInt32BE(stsc, scOff),
-                ReadInt32BE(stsc, scOff + 4),
-                ReadInt32BE(stsc, scOff + 8)
+                stsc[scOff] << 24 | stsc[scOff + 1] << 16 | stsc[scOff + 2] << 8 | stsc[scOff + 3],
+                stsc[scOff + 4] << 24 | stsc[scOff + 5] << 16 | stsc[scOff + 6] << 8 | stsc[scOff + 7],
+                stsc[scOff + 8] << 24 | stsc[scOff + 9] << 16 | stsc[scOff + 10] << 8 | stsc[scOff + 11]
             );
         }
 
@@ -399,8 +381,8 @@ public class Mp4FileReader : IAudioContainerReader
         var header = new Byte[8];
         if (_stream.Read(header, 0, 8) < 8) return (null, null);
 
-        var size = (Int64)ReadUInt32BE(header, 0);
-        var type = ReadFourCC(header, 4);
+        var size = (Int64)(UInt32)((header[0] << 24) | (header[1] << 16) | (header[2] << 8) | header[3]);
+        var type = Encoding.ASCII.GetString(header, 4, 4);
 
         Int64 dataSize;
         if (size == 1)
@@ -408,7 +390,10 @@ public class Mp4FileReader : IAudioContainerReader
             // 64-bit extended size
             var extSize = new Byte[8];
             _stream.Read(extSize, 0, 8);
-            size = ReadInt64BE(extSize, 0);
+            size = (Int64)extSize[0] << 56 | (Int64)extSize[1] << 48 |
+                   (Int64)extSize[2] << 40 | (Int64)extSize[3] << 32 |
+                   (Int64)extSize[4] << 24 | (Int64)extSize[5] << 16 |
+                   (Int64)extSize[6] << 8 | extSize[7];
             dataSize = size - 16;
         }
         else if (size == 0)
@@ -429,36 +414,4 @@ public class Mp4FileReader : IAudioContainerReader
     }
     #endregion
 
-    #region 二进制读取
-    private static UInt32 ReadUInt32BE(Byte[] data, Int32 offset)
-    {
-        return (UInt32)(data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3]);
-    }
-
-    private static Int32 ReadInt32BE(Byte[] data, Int32 offset)
-    {
-        return data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3];
-    }
-
-    private static UInt16 ReadUInt16BE(Byte[] data, Int32 offset)
-    {
-        return (UInt16)(data[offset] << 8 | data[offset + 1]);
-    }
-
-    private static Int64 ReadInt64BE(Byte[] data, Int32 offset)
-    {
-        return (Int64)data[offset] << 56 | (Int64)data[offset + 1] << 48 |
-               (Int64)data[offset + 2] << 40 | (Int64)data[offset + 3] << 32 |
-               (Int64)data[offset + 4] << 24 | (Int64)data[offset + 5] << 16 |
-               (Int64)data[offset + 6] << 8 | data[offset + 7];
-    }
-
-    private static String ReadFourCC(Byte[] data, Int32 offset)
-    {
-        return new String([
-            (Char)data[offset], (Char)data[offset + 1],
-            (Char)data[offset + 2], (Char)data[offset + 3],
-        ]);
-    }
-    #endregion
 }

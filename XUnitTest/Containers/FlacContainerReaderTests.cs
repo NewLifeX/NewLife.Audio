@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using NewLife.Audio.Containers;
 using Xunit;
@@ -10,7 +10,7 @@ public class FlacContainerReaderTests
     [Fact(DisplayName = "FLAC容器解析非FLAC文件抛异常")]
     public void FlacContainer_InvalidData_Throws()
     {
-        var ms = new MemoryStream(new Byte[] { 0x00, 0x01, 0x02, 0x03, 0x04 });
+        var ms = new MemoryStream([0x00, 0x01, 0x02, 0x03, 0x04]);
         Assert.Throws<InvalidDataException>(() => new FlacContainerReader(ms));
     }
 
@@ -18,7 +18,7 @@ public class FlacContainerReaderTests
     public void FlacContainer_ValidMarker_ParsesInfo()
     {
         var ms = new MemoryStream();
-        ms.Write(new Byte[] { (Byte)'f', (Byte)'L', (Byte)'a', (Byte)'C' }, 0, 4);
+        ms.Write([(Byte)'f', (Byte)'L', (Byte)'a', (Byte)'C'], 0, 4);
         ms.WriteByte(0x80);
         ms.WriteByte(0x00); ms.WriteByte(0x00); ms.WriteByte(34);
 

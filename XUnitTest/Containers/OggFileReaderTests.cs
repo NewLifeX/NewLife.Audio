@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.IO;
 using System.Linq;
 using NewLife.Audio.Containers;
@@ -43,7 +43,7 @@ public class OggFileReaderTests
     {
         var ms = new MemoryStream();
         // 第一页: OpusHead
-        WriteOggPage(ms, new Byte[] { (Byte)'O', (Byte)'p', (Byte)'u', (Byte)'s', (Byte)'H', (Byte)'e', (Byte)'a', (Byte)'d', 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0, false);
+        WriteOggPage(ms, [(Byte)'O', (Byte)'p', (Byte)'u', (Byte)'s', (Byte)'H', (Byte)'e', (Byte)'a', (Byte)'d', 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0, false);
         // 第二页: audio data
         var audioPayload = new Byte[100];
         for (var i = 0; i < 100; i++) audioPayload[i] = (Byte)(i + 1);
@@ -60,8 +60,8 @@ public class OggFileReaderTests
     public void SeekFrame_ResetsPosition()
     {
         var ms = new MemoryStream();
-        WriteOggPage(ms, new Byte[] { (Byte)'O', (Byte)'p', (Byte)'u', (Byte)'s', (Byte)'H', (Byte)'e', (Byte)'a', (Byte)'d', 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0 }, 0, false);
-        WriteOggPage(ms, new Byte[] { 0x01, 0x02, 0x03 }, 1920, false);
+        WriteOggPage(ms, [(Byte)'O', (Byte)'p', (Byte)'u', (Byte)'s', (Byte)'H', (Byte)'e', (Byte)'a', (Byte)'d', 1, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0], 0, false);
+        WriteOggPage(ms, [0x01, 0x02, 0x03], 1920, false);
 
         ms.Seek(0, SeekOrigin.Begin);
         var reader = new OggFileReader(ms);
@@ -78,7 +78,7 @@ public class OggFileReaderTests
         var segmentTableSize = segments;
 
         // OggS header (27 bytes)
-        stream.Write(new Byte[] { (Byte)'O', (Byte)'g', (Byte)'g', (Byte)'S' }, 0, 4); // magic
+        stream.Write([(Byte)'O', (Byte)'g', (Byte)'g', (Byte)'S'], 0, 4); // magic
         stream.WriteByte(0); // version
         var flags = (Byte)(isEos ? 0x04 : 0x00);
         if (segmentTableSize == 1 && packetData.Length < 255) flags |= 0x01; // first page of stream

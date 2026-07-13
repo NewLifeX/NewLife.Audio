@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using NewLife.Audio.Writers;
 using Xunit;
 
@@ -25,7 +25,7 @@ public class OggCrc32Tests
     [Fact(DisplayName = "OggCrc32单字节CRC32正确")]
     public void Compute_SingleByte()
     {
-        var crc = OggCrc32.Compute(new Byte[] { 0x00 });
+        var crc = OggCrc32.Compute([0x00]);
         Assert.NotEqual(0u, crc);
     }
 
@@ -47,8 +47,8 @@ public class OggCrc32Tests
     [Fact(DisplayName = "OggCrc32不同输入产生不同结果")]
     public void Compute_DifferentInput_DifferentResult()
     {
-        var crc1 = OggCrc32.Compute(new Byte[] { 0x01, 0x02, 0x03 });
-        var crc2 = OggCrc32.Compute(new Byte[] { 0x01, 0x02, 0x04 });
+        var crc1 = OggCrc32.Compute([0x01, 0x02, 0x03]);
+        var crc2 = OggCrc32.Compute([0x01, 0x02, 0x04]);
         Assert.NotEqual(crc1, crc2);
     }
 }

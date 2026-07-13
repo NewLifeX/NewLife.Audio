@@ -132,7 +132,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             offset += header.FrameSize;
         }
 
-        return new ArrayPacket(pcm.ToArray());
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM 转 MP3（基础固定比特率编码）</summary>
@@ -166,7 +166,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             frameCount++;
         }
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     #region 帧头解析
@@ -255,7 +255,11 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             header[2] = (Byte)(header[2] & 0x0F | 0x80); // 48000
         }
 
+#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
+        ms.Write(header);
+#else
         ms.Write(header.ToArray(), 0, 4);
+#endif
     }
 
     #endregion

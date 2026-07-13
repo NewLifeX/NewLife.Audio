@@ -1,4 +1,5 @@
 using System.Text;
+using NewLife.Audio.Codecs;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Containers;
@@ -114,7 +115,7 @@ public class Mp4FileWriter : IAudioContainerWriter
             // 64-bit extended size
             WriteUInt32BE(1);
             WriteFourCC("mdat");
-            WriteInt64BE(boxSize);
+            WriteInt64BE(_stream, boxSize);
         }
         else
         {
@@ -426,33 +427,11 @@ public class Mp4FileWriter : IAudioContainerWriter
         return ms.ToArray();
     }
 
-    /// <summary>生成 AAC AudioSpecificConfig（2 字节）</summary>
+    /// <summary>生成 AAC AudioSpecificConfig（ISO 14496-3）</summary>
     private Byte[] BuildDecoderConfig()
     {
-        // AudioSpecificConfig for AAC-LC:
-        // 5 bits: audioObjectType = 2 (AAC-LC)
-        // 4 bits: samplingFrequencyIndex
-        // 4 bits: channelConfiguration
-        // 3 bits: GASpecificConfig (frameLengthFlag=0, dependsOnCoreCoder=0, extensionFlag=0)
-
-        var sfi = GetSamplingFrequencyIndex(_format.SampleRate);
-        var ch = _format.Channels;
-
-        var config = new Byte[2];
-        config[0] = (Byte)((2 << 3) | (sfi >> 1));
-        config[1] = (Byte)(((sfi & 1) << 7) | (ch << 3));
-        return config;
-    }
-
-    private static Int32 GetSamplingFrequencyIndex(Int32 sampleRate)
-    {
-        return sampleRate switch
-        {
-            96000 => 0, 88200 => 1, 64000 => 2, 48000 => 3,
-            44100 => 4, 32000 => 5, 24000 => 6, 22050 => 7,
-            16000 => 8, 12000 => 9, 11025 => 10, 8000 => 11,
-            7350 => 12, _ => 4, // 默认 44100
-        };
+        var asc = AudioSpecificConfig.FromParameters(2, _format.SampleRate, _format.Channels);
+        return asc.ToByteArray();
     }
 
     private Byte[] BuildStts()
@@ -542,9 +521,16 @@ public class Mp4FileWriter : IAudioContainerWriter
         ms.WriteByte((Byte)value);
     }
 
-    private static void WriteInt64BE(Int64 value)
+    private static void WriteInt64BE(Stream ms, Int64 value)
     {
-        // This is on the main stream, placeholder for extended size
+        ms.WriteByte((Byte)(value >> 56));
+        ms.WriteByte((Byte)(value >> 48));
+        ms.WriteByte((Byte)(value >> 40));
+        ms.WriteByte((Byte)(value >> 32));
+        ms.WriteByte((Byte)(value >> 24));
+        ms.WriteByte((Byte)(value >> 16));
+        ms.WriteByte((Byte)(value >> 8));
+        ms.WriteByte((Byte)value);
     }
 
     private static void WriteFourCCToStream(Stream ms, String code)

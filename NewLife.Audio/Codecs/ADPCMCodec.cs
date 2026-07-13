@@ -1,4 +1,4 @@
-﻿using System.Text;
+﻿using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
@@ -157,7 +157,7 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
     /// <param name="outdata"></param>
     /// <param name="state"></param>
     /// <returns></returns>
-    private void adpcm_decoder(Byte[] audio, Stream outdata, AdpcmState state)
+    private void adpcm_decoder(ReadOnlySpan<Byte> audio, Stream outdata, AdpcmState state)
     {
         // signed char *inp;		/* Input buffer pointer */
         // short *outp;		/* output buffer pointer */
@@ -255,7 +255,7 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 
         adpcm_coder(pcmdata, ms, state);
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     /// <summary>音频数据转PCM</summary>
@@ -277,9 +277,9 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 
         var ms = new MemoryStream();
 
-        adpcm_decoder(audio.ToArray(), ms, state);
+        adpcm_decoder(audio, ms, state);
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 }
 
@@ -297,29 +297,29 @@ public static class AdpcmDecoderExtension
     public static Byte[] ToWav(this Byte[] input, UInt32 frequency, Byte bitDepth = 16)
     {
         var output = new Byte[input.Length + 44];
-        Array.Copy(Encoding.ASCII.GetBytes("RIFF"), 0, output, 0, 4);
-        WriteUint(4, (UInt32)output.Length - 8, output);
-        Array.Copy(Encoding.ASCII.GetBytes("WAVE"), 0, output, 8, 4);
-        Array.Copy(Encoding.ASCII.GetBytes("fmt "), 0, output, 12, 4);
-        WriteUint(16, 16, output); //Header size
-        output[20] = 1; //PCM
-        output[22] = 1; //1 channel
-        WriteUint(24, frequency, output); //Sample Rate
-        WriteUint(28, (UInt32)(frequency * (bitDepth / 8)), output); //Bytes per second
-        output[32] = (Byte)(bitDepth >> 3); //Bytes per sample
-        output[34] = bitDepth; //Bits per sample
-        Array.Copy(Encoding.ASCII.GetBytes("data"), 0, output, 36, 4);
-        WriteUint(40, (UInt32)input.Length, output); //Date size
-        Array.Copy(input, 0, output, 44, input.Length);
-        return output;
-    }
+        var writer = new SpanWriter(output.AsSpan());
 
-    private static void WriteUint(UInt32 offset, UInt32 value, Byte[] destination)
-    {
-        for (var i = 0; i < 4; i++)
-        {
-            destination[offset + i] = (Byte)(value & 0xFF);
-            value >>= 8;
-        }
+        // RIFF chunk
+        writer.Write(0x46464952u);       // "RIFF"
+        writer.Write((UInt32)(output.Length - 8));
+        writer.Write(0x45564157u);       // "WAVE"
+
+        // fmt sub-chunk
+        writer.Write(0x20746D66u);       // "fmt "
+        writer.Write(16);                // sub-chunk size (PCM = 16)
+        writer.Write((Int16)1);          // audio format (1 = PCM)
+        writer.Write((Int16)1);          // channels (1 = mono)
+        writer.Write(frequency);         // sample rate
+        writer.Write((UInt32)(frequency * (bitDepth / 8))); // byte rate
+        writer.Write((Int16)(bitDepth / 8)); // block align
+        writer.Write((Int16)bitDepth);   // bits per sample
+
+        // data sub-chunk
+        writer.Write(0x61746164u);       // "data"
+        writer.Write((UInt32)input.Length);
+
+        // PCM data
+        input.AsSpan().CopyTo(output.AsSpan(44));
+        return output;
     }
 }

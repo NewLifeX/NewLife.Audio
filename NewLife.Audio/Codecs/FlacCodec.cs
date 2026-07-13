@@ -1,3 +1,4 @@
+using NewLife.Buffers;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
@@ -123,7 +124,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             offset = frameStart + 1; // 继续搜索下一帧
         }
 
-        return new ArrayPacket(pcm.ToArray());
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM 转 FLAC 数据</summary>
@@ -149,10 +150,6 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         // 写入 fLaC 标记
         ms.Write(FlacMarker, 0, 4);
 
-        // 记录 PCM 数据用于后续 MD5 计算
-        var md5Pcm = new MemoryStream();
-        md5Pcm.Write(pcmData, 0, pcmData.Length);
-
         // 写入 STREAMINFO（MD5 先置零，后续回填）
         var streamInfoPos = ms.Position;
         WriteStreamInfoBlock(ms, (UInt16)blockSize, (UInt16)blockSize, sampleRate, 1, (Byte)bitsPerSample, (UInt64)sampleCount);
@@ -165,14 +162,15 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             EncodeFrame(chunk, bitsPerSample, sampleRate, ms);
         }
 
-        // 计算实际 MD5 并回填到 STREAMINFO
-        var md5 = System.Security.Cryptography.MD5.Create().ComputeHash(md5Pcm.ToArray());
+        // 计算实际 MD5 并回填到 STREAMINFO（直接对 pcmData 计算，避免中间流）
+        using var md5Hash = System.Security.Cryptography.MD5.Create();
+        var md5 = md5Hash.ComputeHash(pcmData);
         var finalPos = ms.Position;
         ms.Position = streamInfoPos + 4 + 34 - 16; // STREAMINFO header(4) + data(34) - MD5(16)
         ms.Write(md5, 0, 16);
         ms.Position = finalPos;
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     #region 帧解码
@@ -868,82 +866,80 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
     private static StreamInfo ParseStreamInfo(Byte[] data, Int32 offset)
     {
+        var reader = new SpanReader(data.AsSpan(offset)) { IsLittleEndian = false };
+
+        var minBlock = reader.ReadUInt16();
+        var maxBlock = reader.ReadUInt16();
+        var minFrame = reader.ReadUInt24();
+        var maxFrame = reader.ReadUInt24();
+
+        // 剩余 24 字节：5B 位域（采样率/声道/位深）+ 5B 总采样数（36 位）+ 16B MD5
+        var raw = reader.ReadBytes(24);
+
+        var sampleRate = (UInt32)((raw[0] << 12) | (raw[1] << 4) | (raw[2] >> 4));
+        var channels = (Byte)(((raw[2] & 0x0E) >> 1) + 1);
+        var bitsPerSample = (Byte)(((raw[2] & 0x01) << 4) | ((raw[3] & 0xF0) >> 4) + 1);
+        var totalSamples = (UInt64)((raw[3] & 0x0F) << 28) |
+                           ((UInt64)raw[4] << 20) |
+                           ((UInt64)raw[5] << 12) |
+                           ((UInt64)raw[6] << 4) |
+                           ((UInt64)raw[7] >> 4);
+
         return new StreamInfo
         {
-            MinBlockSize = (UInt16)((data[offset] << 8) | data[offset + 1]),
-            MaxBlockSize = (UInt16)((data[offset + 2] << 8) | data[offset + 3]),
-            MinFrameSize = (UInt32)((data[offset + 4] << 16) | (data[offset + 5] << 8) | data[offset + 6]),
-            MaxFrameSize = (UInt32)((data[offset + 7] << 16) | (data[offset + 8] << 8) | data[offset + 9]),
-            SampleRate = (UInt32)((data[offset + 10] << 12) | (data[offset + 11] << 4) | (data[offset + 12] >> 4)),
-            Channels = (Byte)(((data[offset + 12] & 0x0E) >> 1) + 1),
-            BitsPerSample = (Byte)(((data[offset + 12] & 0x01) << 4) | ((data[offset + 13] & 0xF0) >> 4) + 1),
-            TotalSamples = (UInt64)((data[offset + 13] & 0x0F) << 28) |
-                           ((UInt64)data[offset + 14] << 20) |
-                           ((UInt64)data[offset + 15] << 12) |
-                           ((UInt64)data[offset + 16] << 4) |
-                           ((UInt64)data[offset + 17] >> 4),
-            Md5Sum = GetMd5Slice(data, offset + 18, 16),
+            MinBlockSize = minBlock,
+            MaxBlockSize = maxBlock,
+            MinFrameSize = minFrame,
+            MaxFrameSize = maxFrame,
+            SampleRate = sampleRate,
+            Channels = channels,
+            BitsPerSample = bitsPerSample,
+            TotalSamples = totalSamples,
+            Md5Sum = raw.Slice(8, 16).ToArray(),
         };
-    }
-
-    private static Byte[] GetMd5Slice(Byte[] data, Int32 start, Int32 length)
-    {
-        var slice = new Byte[length];
-        Array.Copy(data, start, slice, 0, length);
-        return slice;
     }
 
     private static void WriteStreamInfoBlock(MemoryStream ms, UInt16 minBlock, UInt16 maxBlock,
         Int32 sampleRate, Int32 channels, Byte bitsPerSample, UInt64 totalSamples)
     {
+        var buf = new Byte[38]; // 4 header + 34 data
+        var writer = new SpanWriter(buf) { IsLittleEndian = false };
+
         // 元数据块头（last=1, type=0, size=34）
-        ms.WriteByte(0x80); // last + STREAMINFO
-        ms.WriteByte(0x00); // size
-        ms.WriteByte(0x00);
-        ms.WriteByte(34);
+        writer.WriteByte(0x80); // last + STREAMINFO
+        writer.WriteByte(0x00); // size
+        writer.WriteByte(0x00);
+        writer.WriteByte(34);
 
-        // MinBlockSize
-        ms.WriteByte((Byte)(minBlock >> 8));
-        ms.WriteByte((Byte)(minBlock & 0xFF));
+        // MinBlockSize / MaxBlockSize
+        writer.Write(minBlock);
+        writer.Write(maxBlock);
 
-        // MaxBlockSize
-        ms.WriteByte((Byte)(maxBlock >> 8));
-        ms.WriteByte((Byte)(maxBlock & 0xFF));
-
-        // MinFrameSize (unknown: 0)
-        WriteUInt24(ms, 0);
-
-        // MaxFrameSize (unknown: 0)
-        WriteUInt24(ms, 0);
+        // MinFrameSize / MaxFrameSize (unknown: 0, 24-bit each)
+        writer.FillZero(6);
 
         // SampleRate (20 bits) + Channels (3 bits) + BitsPerSample-1 (5 bits)
         var sampleRate20 = (UInt64)sampleRate;
         var channels3 = (UInt64)(channels - 1) & 0x07;
         var bps5 = (UInt64)(bitsPerSample - 1) & 0x1F;
         var combined = (sampleRate20 << 8) | (channels3 << 5) | (bps5 << 0);
-        ms.WriteByte((Byte)((combined >> 32) & 0xFF));
-        ms.WriteByte((Byte)((combined >> 24) & 0xFF));
-        ms.WriteByte((Byte)((combined >> 16) & 0xFF));
-        ms.WriteByte((Byte)((combined >> 8) & 0xFF));
-        ms.WriteByte((Byte)(combined & 0xFF));
+        writer.WriteByte((Byte)((combined >> 32) & 0xFF));
+        writer.WriteByte((Byte)((combined >> 24) & 0xFF));
+        writer.WriteByte((Byte)((combined >> 16) & 0xFF));
+        writer.WriteByte((Byte)((combined >> 8) & 0xFF));
+        writer.WriteByte((Byte)(combined & 0xFF));
 
         // TotalSamples (36 bits)
-        ms.WriteByte((Byte)((totalSamples >> 28) & 0xFF));
-        ms.WriteByte((Byte)((totalSamples >> 20) & 0xFF));
-        ms.WriteByte((Byte)((totalSamples >> 12) & 0xFF));
-        ms.WriteByte((Byte)((totalSamples >> 4) & 0xFF));
-        ms.WriteByte((Byte)((totalSamples << 4) & 0xF0));
+        writer.WriteByte((Byte)((totalSamples >> 28) & 0xFF));
+        writer.WriteByte((Byte)((totalSamples >> 20) & 0xFF));
+        writer.WriteByte((Byte)((totalSamples >> 12) & 0xFF));
+        writer.WriteByte((Byte)((totalSamples >> 4) & 0xFF));
+        writer.WriteByte((Byte)((totalSamples << 4) & 0xF0));
 
-        // MD5 (16 bytes of zeros for now)
-        for (var i = 0; i < 16; i++)
-            ms.WriteByte(0);
-    }
+        // MD5 (16 bytes of zeros)
+        writer.FillZero(16);
 
-    private static void WriteUInt24(MemoryStream ms, UInt32 value)
-    {
-        ms.WriteByte((Byte)((value >> 16) & 0xFF));
-        ms.WriteByte((Byte)((value >> 8) & 0xFF));
-        ms.WriteByte((Byte)(value & 0xFF));
+        ms.Write(buf, 0, buf.Length);
     }
 
     #endregion

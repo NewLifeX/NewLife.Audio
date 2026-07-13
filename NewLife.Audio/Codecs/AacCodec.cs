@@ -95,7 +95,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
             offset += frameLen;
         }
 
-        return new ArrayPacket(pcm.ToArray());
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM 转 AAC（基础编码，ADTS 封装）</summary>
@@ -106,11 +106,10 @@ public class AacCodec : IAudioCodec, ICodecInfo
     {
         var bitrate = option is Int32 br ? br : 64000;
         var sampleRate = 44100;
-        var pcmData = pcm.ToArray();
 
         var ms = new MemoryStream();
         var samplesPerFrame = 1024;
-        var sampleCount = pcmData.Length / 2;
+        var sampleCount = pcm.Length / 2;
 
         for (var pos = 0; pos < sampleCount; pos += samplesPerFrame)
         {
@@ -123,7 +122,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
                 ms.WriteByte(0);
         }
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     #region ADTS 头解析/写入
@@ -214,6 +213,11 @@ public class AacCodec : IAudioCodec, ICodecInfo
     {
         return data.Length >= 2 && data[0] == 0xFF && (data[1] & 0xF0) == 0xF0;
     }
+
+    /// <summary>从 ADTS 帧头信息创建 AudioSpecificConfig</summary>
+    /// <param name="adts">ADTS 帧头</param>
+    /// <returns>AudioSpecificConfig 实例</returns>
+    public static AudioSpecificConfig ToAudioSpecificConfig(AdtsInfo adts) => AudioSpecificConfig.FromAdts(adts);
 
     #endregion
 

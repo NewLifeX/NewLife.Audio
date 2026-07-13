@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using NewLife.Audio.Streaming;
 using Xunit;
 
@@ -17,7 +17,7 @@ public class RtpPacketTests
             SequenceNumber = 12345,
             Timestamp = 67890,
             Ssrc = 0x12345678,
-            Payload = new Byte[] { 0xAA, 0xBB, 0xCC, 0xDD },
+            Payload = [0xAA, 0xBB, 0xCC, 0xDD],
         };
 
         var bytes = original.ToBytes();
@@ -45,8 +45,8 @@ public class RtpPacketTests
             SequenceNumber = 1,
             Timestamp = 100,
             Ssrc = 0x11111111,
-            CsrcList = new UInt32[] { 0x22222222 },
-            Payload = new Byte[] { 0x01 },
+            CsrcList = [0x22222222],
+            Payload = [0x01],
         };
 
         var bytes = packet.ToBytes();
@@ -72,9 +72,9 @@ public class JitterBufferTests
     {
         var jb = new JitterBuffer(60, 20);
 
-        jb.Write(100, new Byte[] { 0x01 }, 1000);
-        jb.Write(101, new Byte[] { 0x02 }, 1020);
-        jb.Write(102, new Byte[] { 0x03 }, 1040);
+        jb.Write(100, [0x01], 1000);
+        jb.Write(101, [0x02], 1020);
+        jb.Write(102, [0x03], 1040);
 
         Assert.True(jb.Read(out var p1));
         Assert.Equal(0x01, p1[0]);
@@ -97,7 +97,7 @@ public class JitterBufferTests
     public void Reset_ClearsBuffer()
     {
         var jb = new JitterBuffer();
-        jb.Write(100, new Byte[] { 0x01 }, 1000);
+        jb.Write(100, [0x01], 1000);
         jb.Reset();
         Assert.False(jb.Read(out _));
     }

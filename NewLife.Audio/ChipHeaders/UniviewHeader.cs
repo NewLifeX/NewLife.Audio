@@ -26,7 +26,7 @@ public class UniviewHeader : IAudioChipHeader
             }
         }
 
-        result = new ArrayPacket(data.ToArray());
+        result = null;
         return false;
     }
 

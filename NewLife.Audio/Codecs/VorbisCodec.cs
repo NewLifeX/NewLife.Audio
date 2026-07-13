@@ -65,7 +65,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
             offset += packetLen;
         }
 
-        return new ArrayPacket(pcm.ToArray());
+        return new ArrayPacket(pcm);
     }
 
     /// <summary>PCM 转 Vorbis（基础编码）</summary>
@@ -76,7 +76,6 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
     {
         var quality = option is Int32 q ? (q < 0 ? 0 : q > 10 ? 10 : q) : 5;
         var sampleRate = 44100;
-        var pcmData = pcm.ToArray();
 
         var ms = new MemoryStream();
 
@@ -91,7 +90,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
         // 编码帧（简化：固定质量）
         var blockSize = 1024;
-        var sampleCount = pcmData.Length / 2;
+        var sampleCount = pcm.Length / 2;
         for (var pos = 0; pos < sampleCount; pos += blockSize)
         {
             // 简化 Vorbis 包
@@ -107,7 +106,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
             ms.Write(packetData, 0, packetData.Length);
         }
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     #region 头解析

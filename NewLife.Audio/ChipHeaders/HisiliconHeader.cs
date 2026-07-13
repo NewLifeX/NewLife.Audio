@@ -30,7 +30,7 @@ public class HisiliconHeader : IAudioChipHeader
             }
         }
 
-        result = new ArrayPacket(data.ToArray());
+        result = null;
         return false;
     }
 

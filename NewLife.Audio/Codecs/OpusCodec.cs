@@ -182,7 +182,7 @@ public class OpusCodec : IAudioCodec, ICodecInfo
             offset += frameBytes;
         }
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
 
     private Byte[] EncodeCELTFrame(Single[] pcm, Int32 bitrate)

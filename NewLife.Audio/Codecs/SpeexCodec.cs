@@ -75,7 +75,7 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
             offset += frameBytes;
         }
 
-        return new ArrayPacket(ms.ToArray());
+        return new ArrayPacket(ms);
     }
     #endregion
 
