@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using System.Text;
 using NewLife.Buffers;
 using NewLife.Data;
 
@@ -64,6 +65,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
             offset += packetLen;
         }
 
+        pcm.Position = 0;
         return new ArrayPacket(pcm);
     }
 
@@ -105,6 +107,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
             ms.Write(packetData, 0, packetData.Length);
         }
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 
@@ -118,9 +121,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
         if (packetType != 1) throw new InvalidDataException("不是 Vorbis 标识头");
 
         // "vorbis" 签名（6 字节）
-        var sigBytes = reader.ReadBytes(6);
-        if (sigBytes[0] != (Byte)'v' || sigBytes[1] != (Byte)'o' || sigBytes[2] != (Byte)'r' ||
-            sigBytes[3] != (Byte)'b' || sigBytes[4] != (Byte)'i' || sigBytes[5] != (Byte)'s')
+        if (reader.ReadBytes(6).ToStr(Encoding.ASCII) != "vorbis")
             throw new InvalidDataException("不是有效的 Vorbis 数据");
 
         // Vorbis 版本

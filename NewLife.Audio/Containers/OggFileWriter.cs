@@ -58,7 +58,7 @@ public class OggFileWriter : IAudioContainerWriter
             WriteOggHeaders();
 
         _packetCount++;
-        var page = BuildOggPage(frame.ToArray(), _granulePosition, headerType: 0x00);
+        var page = BuildOggPage(frame, _granulePosition, headerType: 0x00);
         _stream.Write(page, 0, page.Length);
 
         // 更新 granule position（每帧增加 samplesPerFrame）
@@ -145,7 +145,7 @@ public class OggFileWriter : IAudioContainerWriter
     /// <param name="granulePosition">granule position（音频样本时间戳）</param>
     /// <param name="headerType">页类型标志: 0x00=普通, 0x02=BOS, 0x04=EOS</param>
     /// <returns>完整 OGG 页字节数组</returns>
-    private Byte[] BuildOggPage(Byte[] payload, Int64 granulePosition, Byte headerType)
+    private Byte[] BuildOggPage(ReadOnlySpan<Byte> payload, Int64 granulePosition, Byte headerType)
     {
         var payloadLen = payload.Length;
         // 计算段表：每段最多 255 字节
@@ -189,7 +189,7 @@ public class OggFileWriter : IAudioContainerWriter
 
         // 拷贝负载
         if (payloadLen > 0)
-            Array.Copy(payload, 0, page, writer.Position, payloadLen);
+            payload.CopyTo(page.AsSpan(writer.Position));
 
         // 计算并回填 CRC32
         var crc = OggCrc32.Compute(page);

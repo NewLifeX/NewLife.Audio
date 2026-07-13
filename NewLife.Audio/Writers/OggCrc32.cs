@@ -6,7 +6,7 @@ public static class OggCrc32
     /// <summary>CRC32 查表法计算（IEEE 802.3 多项式 0xEDB88320），与 OGG 规范一致</summary>
     /// <param name="data">输入数据</param>
     /// <returns>CRC32 校验值</returns>
-    public static UInt32 Compute(Byte[] data)
+    public static UInt32 Compute(ReadOnlySpan<Byte> data)
     {
         var crc = 0xFFFFFFFFu;
         foreach (var b in data)

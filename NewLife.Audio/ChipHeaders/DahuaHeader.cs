@@ -27,7 +27,7 @@ public class DahuaHeader : IAudioChipHeader
             }
         }
 
-        result = null;
+        result = ArrayPacket.Empty;
         return false;
     }
 

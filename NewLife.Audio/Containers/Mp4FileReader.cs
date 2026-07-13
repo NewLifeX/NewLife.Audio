@@ -116,7 +116,7 @@ public class Mp4FileReader : IAudioContainerReader
         BuildSampleTable(stsdData, sttsData, stscData, stszData, stcoData, stcoVersion);
     }
 
-    private void ParseMoov(Byte[] moovData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
+    private void ParseMoov(ReadOnlySpan<Byte> moovData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
         var reader = new SpanReader(moovData) { IsLittleEndian = false };
@@ -202,13 +202,13 @@ public class Mp4FileReader : IAudioContainerReader
             switch (type)
             {
                 case "stbl":
-                    ParseStbl(subSpan.ToArray(), ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
+                    ParseStbl(subSpan, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
         }
     }
 
-    private void ParseStbl(Byte[] stblData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
+    private void ParseStbl(ReadOnlySpan<Byte> stblData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
         var reader = new SpanReader(stblData) { IsLittleEndian = false };
@@ -260,7 +260,7 @@ public class Mp4FileReader : IAudioContainerReader
     }
 
     /// <summary>解析 stsd 中的 mp4a 描述信息</summary>
-    private void ParseStsdAudio(Byte[] stsdData)
+    private void ParseStsdAudio(ReadOnlySpan<Byte> stsdData)
     {
         if (stsdData.Length < 16) return;
         var entryCount = stsdData[4] << 24 | stsdData[5] << 16 | stsdData[6] << 8 | stsdData[7];
@@ -269,8 +269,8 @@ public class Mp4FileReader : IAudioContainerReader
         var offset = 8;
         if (offset + 8 > stsdData.Length) return;
         var descSize = stsdData[offset] << 24 | stsdData[offset + 1] << 16 | stsdData[offset + 2] << 8 | stsdData[offset + 3];
-        var descType = Encoding.ASCII.GetString(stsdData, offset + 4, 4);
-        if (descType != "mp4a" || descSize < 36) return;
+
+        if (stsdData.Slice(offset + 4, 4).ToStr(Encoding.ASCII) != "mp4a" || descSize < 36) return;
 
         // mp4a box: 6B reserved, 2B dataRefIndex, 2B version, 2B revision, 4B vendor
         // 2B channels, 2B sampleSize(16), 2B preDefined, 2B reserved, 4B sampleRate
@@ -292,7 +292,7 @@ public class Mp4FileReader : IAudioContainerReader
     }
 
     /// <summary>构建采样偏移表</summary>
-    private void BuildSampleTable(Byte[] stsd, Byte[] stts, Byte[] stsc, Byte[] stsz, Byte[] stco, Int32 stcoVersion)
+    private void BuildSampleTable(ReadOnlySpan<Byte> stsd, ReadOnlySpan<Byte> stts, ReadOnlySpan<Byte> stsc, ReadOnlySpan<Byte> stsz, ReadOnlySpan<Byte> stco, Int32 stcoVersion)
     {
         ParseStsdAudio(stsd);
 

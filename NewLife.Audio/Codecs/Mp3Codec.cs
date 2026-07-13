@@ -130,6 +130,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             offset += header.FrameSize;
         }
 
+        pcm.Position = 0;
         return new ArrayPacket(pcm);
     }
 
@@ -163,6 +164,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             frameCount++;
         }
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 

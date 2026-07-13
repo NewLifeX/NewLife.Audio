@@ -123,6 +123,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             offset = frameStart + 1; // 继续搜索下一帧
         }
 
+        pcm.Position = 0;
         return new ArrayPacket(pcm);
     }
 
@@ -168,6 +169,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         ms.Write(md5, 0, 16);
         ms.Position = finalPos;
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 
@@ -900,7 +902,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     private static void WriteStreamInfoBlock(MemoryStream ms, UInt16 minBlock, UInt16 maxBlock,
         Int32 sampleRate, Int32 channels, Byte bitsPerSample, UInt64 totalSamples)
     {
-        var buf = new Byte[38]; // 4 header + 34 data
+        var buf = new Byte[40]; // 4 header + 36 data
         var writer = new SpanWriter(buf) { IsLittleEndian = false };
 
         // 元数据块头（last=1, type=0, size=34）

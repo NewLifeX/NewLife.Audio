@@ -179,6 +179,7 @@ public class OpusCodec : IAudioCodec, ICodecInfo
             offset += frameBytes;
         }
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 

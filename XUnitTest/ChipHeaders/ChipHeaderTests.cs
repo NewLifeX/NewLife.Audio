@@ -32,7 +32,7 @@ public class HisiliconHeaderTests
         var data = new Byte[] { 0xAA, 0xBB, 0xCC, 0xDD };
         var result = _header.TryTrim(data, out var trimmed);
         Assert.False(result);
-        Assert.Equal(4, trimmed.Total);
+        Assert.Equal(0, trimmed.Total);
     }
 
     [Fact(DisplayName = "海思头往返：添加→去除→数据一致")]

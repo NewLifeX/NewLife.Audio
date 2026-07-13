@@ -255,6 +255,7 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 
         adpcm_coder(pcmdata, ms, state);
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 
@@ -279,6 +280,7 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 
         adpcm_decoder(audio, ms, state);
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 }

@@ -94,6 +94,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
             offset += frameLen;
         }
 
+        pcm.Position = 0;
         return new ArrayPacket(pcm);
     }
 
@@ -121,6 +122,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
                 ms.WriteByte(0);
         }
 
+        ms.Position = 0;
         return new ArrayPacket(ms);
     }
 
