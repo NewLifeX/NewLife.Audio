@@ -44,10 +44,9 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM @ 8kHz 单声道</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
-        if (data.Length < 4) return ArrayPacket.Empty;
+        if (audio.Length < 4) return ArrayPacket.Empty;
 
-        var pcm = DecodeFrame(data);
+        var pcm = DecodeFrame(audio);
         return new ArrayPacket(pcm);
     }
 
@@ -57,17 +56,16 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
     /// <returns>Speex 编码数据</returns>
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var pcmData = pcm.ToArray();
         var ms = new MemoryStream();
         var offset = 0;
         var frameBytes = FrameSizeSamples * 2;
 
-        while (offset + frameBytes <= pcmData.Length)
+        while (offset + frameBytes <= pcm.Length)
         {
             var framePcm = new Single[FrameSizeSamples];
             for (var i = 0; i < FrameSizeSamples; i++)
             {
-                var s = (Int16)(pcmData[offset + i * 2] | pcmData[offset + i * 2 + 1] << 8);
+                var s = (Int16)(pcm[offset + i * 2] | pcm[offset + i * 2 + 1] << 8);
                 framePcm[i] = s / 32768.0f;
             }
             var encoded = EncodeFrame(framePcm);
@@ -80,7 +78,7 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
     #endregion
 
     #region 解码核心
-    private Byte[] DecodeFrame(Byte[] data)
+    private Byte[] DecodeFrame(ReadOnlySpan<Byte> data)
     {
         var bitIdx = 0;
 
@@ -279,7 +277,7 @@ public class SpeexCodec : IAudioCodec, ICodecInfo
     #endregion
 
     #region 位流
-    private static Int32 ReadBits(Byte[] data, ref Int32 bitIdx, Int32 count)
+    private static Int32 ReadBits(ReadOnlySpan<Byte> data, ref Int32 bitIdx, Int32 count)
     {
         var value = 0;
         for (var i = 0; i < count; i++)

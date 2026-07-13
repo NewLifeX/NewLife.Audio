@@ -51,16 +51,14 @@ public class OpusCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM interleaved @ 48kHz</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
-        if (data.Length < 2) return ArrayPacket.Empty;
+        if (audio.Length < 2) return ArrayPacket.Empty;
 
-        var toc = data[0];
+        var toc = audio[0];
         var config = (toc >> 3) & 0x1F;
         var isCelt = config < 16;
         if (!isCelt) return ArrayPacket.Empty;
 
-        var payload = new Byte[data.Length - 1];
-        Array.Copy(data, 1, payload, 0, payload.Length);
+        var payload = audio.Slice(1).ToArray();
 
         var pcm = DecodeCELTFrame(payload);
         return new ArrayPacket(pcm);
@@ -158,13 +156,12 @@ public class OpusCodec : IAudioCodec, ICodecInfo
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var bitrate = option is Int32 br ? br : 64000;
-        var pcmData = pcm.ToArray();
         var frameBytes = FrameSize * 2;
 
         var ms = new MemoryStream();
         var offset = 0;
 
-        while (offset + frameBytes <= pcmData.Length)
+        while (offset + frameBytes <= pcm.Length)
         {
             var toc = (Byte)((8 << 3) | 4 | 0);
             ms.WriteByte(toc);
@@ -172,7 +169,7 @@ public class OpusCodec : IAudioCodec, ICodecInfo
             var framePcm = new Single[FrameSize];
             for (var i = 0; i < FrameSize; i++)
             {
-                var s = (Int16)(pcmData[offset + i * 2] | pcmData[offset + i * 2 + 1] << 8);
+                var s = (Int16)(pcm[offset + i * 2] | pcm[offset + i * 2 + 1] << 8);
                 framePcm[i] = s / 32768.0f;
             }
 

@@ -80,30 +80,29 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
         var offset = 0;
 
         // 验证 fLaC 标记
-        if (data.Length < 4) throw new InvalidDataException("数据太短，无法包含 FLAC 标记");
+        if (audio.Length < 4) throw new InvalidDataException("数据太短，无法包含 FLAC 标记");
         for (var i = 0; i < 4; i++)
-            if (data[offset + i] != FlacMarker[i])
+            if (audio[offset + i] != FlacMarker[i])
                 throw new InvalidDataException("不是有效的 FLAC 数据");
 
         offset += 4;
 
         // 解析元数据块
         var isLast = false;
-        while (!isLast && offset < data.Length)
+        while (!isLast && offset < audio.Length)
         {
-            var header = data[offset];
+            var header = audio[offset];
             isLast = (header & 0x80) != 0;
             var blockType = (MetadataType)(header & 0x7F);
-            var blockSize = (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3];
+            var blockSize = (audio[offset + 1] << 16) | (audio[offset + 2] << 8) | audio[offset + 3];
             offset += 4;
 
             if (blockType == MetadataType.StreamInfo && blockSize >= 34)
             {
-                _streamInfo = ParseStreamInfo(data, offset);
+                _streamInfo = ParseStreamInfo(audio.Slice(offset));
             }
 
             offset += blockSize;
@@ -114,12 +113,12 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
         // 解析音频帧
         var pcm = new MemoryStream();
-        while (offset < data.Length - 1)
+        while (offset < audio.Length - 1)
         {
-            var frameStart = FindFrameSync(data, ref offset);
+            var frameStart = FindFrameSync(audio, ref offset);
             if (frameStart < 0) break;
 
-            var frameData = data.AsSpan(frameStart);
+            var frameData = audio.Slice(frameStart);
             var frameSamples = DecodeFrame(frameData, pcm);
             offset = frameStart + 1; // 继续搜索下一帧
         }
@@ -134,11 +133,10 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var level = option is Int32 l ? l : 5;
-        var pcmData = pcm.ToArray();
-        var sampleCount = pcmData.Length / 2;
+        var sampleCount = pcm.Length / 2;
         var pcmSamples = new Int16[sampleCount];
         for (var i = 0; i < sampleCount; i++)
-            pcmSamples[i] = (Int16)(pcmData[i * 2 + 1] << 8 | pcmData[i * 2]);
+            pcmSamples[i] = (Int16)(pcm[i * 2 + 1] << 8 | pcm[i * 2]);
 
         // 确定块大小（4096 样本）
         var blockSize = 4096;
@@ -162,9 +160,9 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             EncodeFrame(chunk, bitsPerSample, sampleRate, ms);
         }
 
-        // 计算实际 MD5 并回填到 STREAMINFO（直接对 pcmData 计算，避免中间流）
+        // 计算实际 MD5 并回填到 STREAMINFO（从 pcm 切片拷贝，避免中间流）
         using var md5Hash = System.Security.Cryptography.MD5.Create();
-        var md5 = md5Hash.ComputeHash(pcmData);
+        var md5 = md5Hash.ComputeHash(pcm.ToArray());
         var finalPos = ms.Position;
         ms.Position = streamInfoPos + 4 + 34 - 16; // STREAMINFO header(4) + data(34) - MD5(16)
         ms.Write(md5, 0, 16);
@@ -175,7 +173,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
     #region 帧解码
 
-    private Int32 FindFrameSync(Byte[] data, ref Int32 offset)
+    private Int32 FindFrameSync(ReadOnlySpan<Byte> data, ref Int32 offset)
     {
         for (var i = offset; i < data.Length - 1; i++)
         {
@@ -189,7 +187,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         return -1;
     }
 
-    private Int32 DecodeFrame(Span<Byte> frameData, Stream output)
+    private Int32 DecodeFrame(ReadOnlySpan<Byte> frameData, Stream output)
     {
         if (frameData.Length < 6) return 0;
 
@@ -263,7 +261,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>解码一个子帧，返回样本数组</summary>
-    private Int32[] DecodeSubframe(Span<Byte> data, ref Int32 pos, Int32 blockSize, Int32 bitsPerSample)
+    private Int32[] DecodeSubframe(ReadOnlySpan<Byte> data, ref Int32 pos, Int32 blockSize, Int32 bitsPerSample)
     {
         if (pos >= data.Length) return null;
 
@@ -326,7 +324,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>解码 Fixed LPC 子帧</summary>
-    private void DecodeFixedSubframe(Span<Byte> data, ref Int32 pos, Int32 order, Int32 blockSize, Int32 bitsPerSample, Int32[] samples)
+    private void DecodeFixedSubframe(ReadOnlySpan<Byte> data, ref Int32 pos, Int32 order, Int32 blockSize, Int32 bitsPerSample, Int32[] samples)
     {
         // 读取 warm-up 样本（未压缩的前 order 个样本）
         for (var i = 0; i < order; i++)
@@ -353,7 +351,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>解码 LPC 子帧</summary>
-    private void DecodeLpcSubframe(Span<Byte> data, ref Int32 pos, Int32 order, Int32 blockSize, Int32 bitsPerSample, Int32[] samples)
+    private void DecodeLpcSubframe(ReadOnlySpan<Byte> data, ref Int32 pos, Int32 order, Int32 blockSize, Int32 bitsPerSample, Int32[] samples)
     {
         // 读取 warm-up 样本
         for (var i = 0; i < order; i++)
@@ -390,7 +388,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     /// FLAC 使用分区 Rice 编码（Partitioned Rice Coding）。<br/>
     /// 分区数 = 2^partitionOrder，每个分区有独立的 Rice 参数（4 bits）。
     /// </remarks>
-    private void DecodeRiceResidual(Span<Byte> data, ref Int32 pos, Int32 sampleCount, Int32 predictorOrder, Int32[] residual)
+    private void DecodeRiceResidual(ReadOnlySpan<Byte> data, ref Int32 pos, Int32 sampleCount, Int32 predictorOrder, Int32[] residual)
     {
         // 分区顺序（0~15，FLAC 限制 0~8）
         var partitionOrder = data[pos] >> 4;
@@ -448,7 +446,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>从字节流读取有符号整数（FLAC 大端序）</summary>
-    private static Int32 ReadSignedInt(Span<Byte> data, ref Int32 pos, Int32 bits)
+    private static Int32 ReadSignedInt(ReadOnlySpan<Byte> data, ref Int32 pos, Int32 bits)
     {
         if (bits == 0) return 0;
 
@@ -475,7 +473,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     /// <summary>位读取器，用于逐位解析 Rice 编码数据</summary>
     private ref struct BitReader
     {
-        private readonly Span<Byte> _data;
+        private readonly ReadOnlySpan<Byte> _data;
         private Int32 _bytePos;
         private Int32 _bitPos;
 
@@ -483,7 +481,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         public Int32 Position => _bytePos;
 
         /// <summary>初始化位读取器</summary>
-        public BitReader(Span<Byte> data, Int32 startByte)
+        public BitReader(ReadOnlySpan<Byte> data, Int32 startByte)
         {
             _data = data;
             _bytePos = startByte;
@@ -524,7 +522,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         }
     }
 
-    private Int32 GetBlockSize(Int32 code, ref Int32 pos, Span<Byte> data)
+    private Int32 GetBlockSize(Int32 code, ref Int32 pos, ReadOnlySpan<Byte> data)
     {
         return code switch
         {
@@ -548,7 +546,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         };
     }
 
-    private Int32 GetSampleRate(Int32 code, ref Int32 pos, Span<Byte> data)
+    private Int32 GetSampleRate(Int32 code, ref Int32 pos, ReadOnlySpan<Byte> data)
     {
         return code switch
         {
@@ -864,9 +862,9 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
     #region 元数据
 
-    private static StreamInfo ParseStreamInfo(Byte[] data, Int32 offset)
+    private static StreamInfo ParseStreamInfo(ReadOnlySpan<Byte> data)
     {
-        var reader = new SpanReader(data.AsSpan(offset)) { IsLittleEndian = false };
+        var reader = new SpanReader(data) { IsLittleEndian = false };
 
         var minBlock = reader.ReadUInt16();
         var maxBlock = reader.ReadUInt16();

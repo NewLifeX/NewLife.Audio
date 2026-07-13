@@ -36,25 +36,24 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
-        if (data.Length < 30) throw new InvalidDataException("Vorbis 数据太短");
+        if (audio.Length < 30) throw new InvalidDataException("Vorbis 数据太短");
 
         // 解析标识头（第一个包：0x01 + "vorbis"）
-        var offset = ParseIdentificationHeader(data, 0);
+        var offset = ParseIdentificationHeader(audio);
 
         // 解析注释头（跳过）
-        offset = SkipCommentHeader(data, offset);
+        offset += SkipCommentHeader(audio.Slice(offset));
 
         // 解析设置头
-        offset = ParseSetupHeader(data, offset);
+        offset += ParseSetupHeader(audio.Slice(offset));
 
         // 解码音频包
         var pcm = new MemoryStream();
-        while (offset < data.Length - 1)
+        while (offset < audio.Length - 1)
         {
-            var reader2 = new SpanReader(data.AsSpan(offset));
+            var reader2 = new SpanReader(audio.Slice(offset));
             var packetLen = reader2.ReadUInt16();
-            if (packetLen == 0 || offset + 2 + packetLen > data.Length) break;
+            if (packetLen == 0 || offset + 2 + packetLen > audio.Length) break;
 
             offset += 2;
             // 简化：输出静音采样
@@ -111,17 +110,18 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
     #region 头解析
 
-    private Int32 ParseIdentificationHeader(Byte[] data, Int32 offset)
+    private Int32 ParseIdentificationHeader(ReadOnlySpan<Byte> data)
     {
-        var reader = new SpanReader(data.AsSpan(offset));
+        var reader = new SpanReader(data);
 
         var packetType = reader.ReadByte();
         if (packetType != 1) throw new InvalidDataException("不是 Vorbis 标识头");
 
-        // "vorbis" 签名
-        var sig = System.Text.Encoding.ASCII.GetString(data, offset + 1, 6);
-        if (sig != "vorbis") throw new InvalidDataException("不是有效的 Vorbis 数据");
-        reader.Advance(6);
+        // "vorbis" 签名（6 字节）
+        var sigBytes = reader.ReadBytes(6);
+        if (sigBytes[0] != (Byte)'v' || sigBytes[1] != (Byte)'o' || sigBytes[2] != (Byte)'r' ||
+            sigBytes[3] != (Byte)'b' || sigBytes[4] != (Byte)'i' || sigBytes[5] != (Byte)'s')
+            throw new InvalidDataException("不是有效的 Vorbis 数据");
 
         // Vorbis 版本
         var version = reader.ReadUInt32();
@@ -139,12 +139,12 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
         reader.Advance(1); // framing flag
 
-        return offset + reader.Position;
+        return reader.Position;
     }
 
-    private Int32 SkipCommentHeader(Byte[] data, Int32 offset)
+    private Int32 SkipCommentHeader(ReadOnlySpan<Byte> data)
     {
-        var reader = new SpanReader(data.AsSpan(offset));
+        var reader = new SpanReader(data);
 
         var packetType = reader.ReadByte();
         if (packetType != 3) throw new InvalidDataException("不是 Vorbis 注释头");
@@ -166,15 +166,14 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
         reader.Advance(1); // framing flag
 
-        return offset + reader.Position;
+        return reader.Position;
     }
 
-    private Int32 ParseSetupHeader(Byte[] data, Int32 offset)
+    private Int32 ParseSetupHeader(ReadOnlySpan<Byte> data)
     {
-        var packetType = data[offset++];
-        if (packetType != 5) throw new InvalidDataException("不是 Vorbis 设置头");
+        if (data[0] != 5) throw new InvalidDataException("不是 Vorbis 设置头");
 
-        offset += 6; // "vorbis"
+        var offset = 7; // packetType(1) + "vorbis"(6)
 
         // 简化：跳过设置头其余部分
         // 实际实现需要解析 codebook, floor, residue, mapping 等

@@ -37,8 +37,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
-        var isAdts = option is String fmt && fmt == "adts" || IsAdtsFormat(data);
+        var isAdts = option is String fmt && fmt == "adts" || IsAdtsFormat(audio);
 
         var pcm = new MemoryStream();
         var offset = 0;
@@ -47,7 +46,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
         overlap[0] = new Single[1024];
         overlap[1] = new Single[1024];
 
-        while (offset < data.Length - 7)
+        while (offset < audio.Length - 7)
         {
             AdtsInfo adts = null;
             Int32 frameDataOffset;
@@ -55,10 +54,10 @@ public class AacCodec : IAudioCodec, ICodecInfo
 
             if (isAdts)
             {
-                adts = ParseAdtsHeader(data, offset);
+                adts = ParseAdtsHeader(audio, offset);
                 if (adts == null) { offset++; continue; }
                 frameLen = adts.FrameLength;
-                if (frameLen <= 0 || offset + frameLen > data.Length) { offset++; continue; }
+                if (frameLen <= 0 || offset + frameLen > audio.Length) { offset++; continue; }
                 frameDataOffset = offset + (adts.ProtectionAbsent ? 7 : 9);
             }
             else
@@ -74,7 +73,7 @@ public class AacCodec : IAudioCodec, ICodecInfo
 
             // 解码 AAC 原始数据块
             var rawBlock = new Byte[frameLen - (frameDataOffset - offset)];
-            Array.Copy(data, frameDataOffset, rawBlock, 0, rawBlock.Length);
+            audio.Slice(frameDataOffset, rawBlock.Length).CopyTo(rawBlock);
 
             var pcmFrame = DecodeAacFrame(rawBlock, sampleRate, channels, overlap);
             if (pcmFrame != null)
@@ -156,7 +155,14 @@ public class AacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>解析 ADTS 帧头</summary>
-    public static AdtsInfo ParseAdtsHeader(Byte[] data, Int32 offset)
+    public static AdtsInfo ParseAdtsHeader(Byte[] data, Int32 offset) =>
+        ParseAdtsHeader(data.AsSpan(), offset);
+
+    /// <summary>解析 ADTS 帧头</summary>
+    /// <param name="data">音频数据</param>
+    /// <param name="offset">偏移量</param>
+    /// <returns>ADTS 帧头信息，无效返回 null</returns>
+    public static AdtsInfo ParseAdtsHeader(ReadOnlySpan<Byte> data, Int32 offset)
     {
         if (offset + 7 > data.Length) return null;
 
@@ -209,7 +215,12 @@ public class AacCodec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>检测数据是否为 ADTS 格式</summary>
-    public static Boolean IsAdtsFormat(Byte[] data)
+    public static Boolean IsAdtsFormat(Byte[] data) => IsAdtsFormat(data.AsSpan());
+
+    /// <summary>检测数据是否为 ADTS 格式</summary>
+    /// <param name="data">音频数据</param>
+    /// <returns>true 表示 ADTS 格式</returns>
+    public static Boolean IsAdtsFormat(ReadOnlySpan<Byte> data)
     {
         return data.Length >= 2 && data[0] == 0xFF && (data[1] & 0xF0) == 0xF0;
     }

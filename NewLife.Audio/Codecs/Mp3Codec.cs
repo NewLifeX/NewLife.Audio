@@ -75,24 +75,22 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        var data = audio.ToArray();
         var pcm = new MemoryStream();
         var offset = 0;
         Int32 sampleRate = 44100;
         Int32 channels = 2;
-        var mainDataBegin = 0;
 
         // 前帧残留的主数据
         var mainDataBuffer = new Byte[8192];
         var mainDataLen = 0;
 
-        while (offset < data.Length - 4)
+        while (offset < audio.Length - 4)
         {
             // 寻找帧同步字 (0xFFE0)
             var syncFound = false;
-            while (offset < data.Length - 1)
+            while (offset < audio.Length - 1)
             {
-                if (data[offset] == 0xFF && (data[offset + 1] & 0xE0) == 0xE0)
+                if (audio[offset] == 0xFF && (audio[offset + 1] & 0xE0) == 0xE0)
                 {
                     syncFound = true;
                     break;
@@ -101,8 +99,8 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             }
             if (!syncFound) break;
 
-            var header = ParseFrameHeader(data, offset);
-            if (header == null || header.FrameSize <= 0 || offset + header.FrameSize > data.Length)
+            var header = ParseFrameHeader(audio, offset);
+            if (header == null || header.FrameSize <= 0 || offset + header.FrameSize > audio.Length)
             {
                 offset++;
                 continue;
@@ -111,8 +109,8 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             sampleRate = header.SampleRate;
             channels = header.ChannelMode == 3 ? 1 : 2;
 
-            // 解码帧
-            var pcmSamples = DecodeFrame(data, offset, header, ref mainDataBuffer, ref mainDataLen);
+            // 解码帧（DecodeFrame 内部需要 Byte[]，此处切片拷贝）
+            var pcmSamples = DecodeFrame(audio.Slice(offset, header.FrameSize).ToArray(), 0, header, ref mainDataBuffer, ref mainDataLen);
             if (pcmSamples != null)
             {
                 // 输出 PCM Int16 交错
@@ -142,8 +140,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var bitrate = option is Int32 br ? br : 128;
-        var pcmData = pcm.ToArray();
-        var sampleCount = pcmData.Length / 2;
+        var sampleCount = pcm.Length / 2;
         var samplesPerFrame = 1152; // MPEG1 Layer III
 
         var ms = new MemoryStream();
@@ -172,7 +169,14 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     #region 帧头解析
 
     /// <summary>解析 MP3 帧头</summary>
-    public static FrameHeader ParseFrameHeader(Byte[] data, Int32 offset)
+    public static FrameHeader ParseFrameHeader(Byte[] data, Int32 offset) =>
+        ParseFrameHeader(data.AsSpan(), offset);
+
+    /// <summary>解析 MP3 帧头</summary>
+    /// <param name="data">MP3 数据</param>
+    /// <param name="offset">帧起始偏移</param>
+    /// <returns>帧头信息，无效返回 null</returns>
+    public static FrameHeader ParseFrameHeader(ReadOnlySpan<Byte> data, Int32 offset)
     {
         if (offset + 4 > data.Length) return null;
         if (data[offset] != 0xFF || (data[offset + 1] & 0xE0) != 0xE0) return null;
@@ -226,7 +230,14 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     }
 
     /// <summary>检测数据是否为有效 MP3 帧</summary>
-    public static Boolean IsMp3Frame(Byte[] data, Int32 offset)
+    public static Boolean IsMp3Frame(Byte[] data, Int32 offset) =>
+        IsMp3Frame(data.AsSpan(), offset);
+
+    /// <summary>检测数据是否为有效 MP3 帧</summary>
+    /// <param name="data">MP3 数据</param>
+    /// <param name="offset">帧起始偏移</param>
+    /// <returns>true 表示有效 MP3 帧</returns>
+    public static Boolean IsMp3Frame(ReadOnlySpan<Byte> data, Int32 offset)
     {
         var header = ParseFrameHeader(data, offset);
         return header != null && header.Layer == 3 && header.FrameSize > 0;
