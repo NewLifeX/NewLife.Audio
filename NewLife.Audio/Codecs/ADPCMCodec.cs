@@ -283,24 +283,6 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
     }
 }
 
-class AdpcmState
-{
-    /// <summary>
-    /// 上一个采样数据，当index为0是该值应该为未压缩的原数据
-    /// </summary>
-    public Int16 Valprev { get; set; }
-
-    /// <summary>
-    /// 保留数据（未使用）
-    /// </summary>
-    public Byte Reserved { get; set; }
-
-    /// <summary>
-    /// 上一个block最后一个index，第一个block的index=0
-    /// </summary>
-    public Byte Index { get; set; }
-}
-
 /// <summary>ADPCM解码扩展方法</summary>
 public static class AdpcmDecoderExtension
 {
@@ -327,7 +309,7 @@ public static class AdpcmDecoderExtension
         output[32] = (Byte)(bitDepth >> 3); //Bytes per sample
         output[34] = bitDepth; //Bits per sample
         Array.Copy(Encoding.ASCII.GetBytes("data"), 0, output, 36, 4);
-        WriteUint(40, (UInt32)output.Length, output); //Date size
+        WriteUint(40, (UInt32)input.Length, output); //Date size
         Array.Copy(input, 0, output, 44, input.Length);
         return output;
     }
