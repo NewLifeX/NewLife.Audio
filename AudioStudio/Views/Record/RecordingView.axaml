@@ -1,0 +1,99 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Record"
+             x:Class="AudioStudio.Views.Record.RecordingView"
+             x:DataType="vm:RecordingViewModel">
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto" Margin="8">
+
+        <!-- 设备与格式设置 -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto,*,Auto" RowDefinitions="Auto,Auto" ColumnSpacing="8" RowSpacing="8">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="输入设备:" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="0" Grid.Column="1" ItemsSource="{Binding InputDevices}"
+                          SelectedItem="{Binding SelectedInputDevice}"
+                          DisplayMemberBinding="{Binding Name}" MinWidth="160" />
+
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="采样率:" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="0" Grid.Column="3" ItemsSource="{Binding SampleRateOptions}"
+                          SelectedItem="{Binding SampleRate}" MinWidth="80" />
+
+                <TextBlock Grid.Row="0" Grid.Column="4" Text="声道:" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="0" Grid.Column="5" ItemsSource="{Binding ChannelOptions}"
+                          SelectedIndex="{Binding SelectedChannelIndex}" MinWidth="80" />
+
+                <TextBlock Grid.Row="1" Grid.Column="0" Text="位深:" VerticalAlignment="Center" />
+                <ComboBox Grid.Row="1" Grid.Column="1" ItemsSource="{Binding BitOptions}"
+                          SelectedIndex="{Binding SelectedBitIndex}" MinWidth="80" />
+
+                <Button Grid.Row="1" Grid.Column="5" Content="刷新设备" Command="{Binding RefreshDevicesCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- 控制与电平 -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*,Auto" RowDefinitions="Auto,Auto" RowSpacing="8">
+                <!-- 录制按钮 -->
+                <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal">
+                    <Button Content="{Binding IsRecording, Converter={StaticResource RecStartStopText}}"
+                            Command="{Binding StartRecordingCommand}"
+                            Width="120" Height="32" Margin="0,0,8,0" />
+                    <Button Content="✕ 停止" Command="{Binding StopRecordingCommand}"
+                            IsEnabled="{Binding IsRecording}"
+                            Width="80" Height="32" Margin="0,0,8,0" />
+                    <Button Content="💾 保存" Command="{Binding SaveRecordingCommand}"
+                            IsEnabled="{Binding IsRecording, Converter={StaticResource InvertBool}}"
+                            Width="80" Height="32" />
+                </StackPanel>
+
+                <!-- 状态 -->
+                <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding StatusText}"
+                           VerticalAlignment="Center" FontSize="13"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+
+                <!-- 录制时长 -->
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding RecordedDuration, StringFormat='{}{hh\\:mm\\:ss}'}"
+                           VerticalAlignment="Center" FontSize="16" FontWeight="SemiBold" />
+
+                <!-- 电平表 -->
+                <Border Grid.Row="1" Grid.ColumnSpan="3"
+                        Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                        CornerRadius="2" Height="24">
+                    <Grid>
+                        <!-- 背景刻度 -->
+                        <Rectangle Fill="#33000000" />
+                        <!-- 电平条 -->
+                        <Rectangle Fill="{Binding InputLevel, Converter={StaticResource LevelColorConverter}}"
+                                   HorizontalAlignment="Left"
+                                   Width="{Binding InputLevel, Converter={StaticResource LevelWidthConverter}, ConverterParameter=400}" />
+                        <TextBlock Text="{Binding InputLevel, StringFormat='电平: {0:P0}'}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" />
+                    </Grid>
+                </Border>
+            </Grid>
+        </Border>
+
+        <!-- 录制数据信息 -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12">
+            <StackPanel>
+                <TextBlock Text="录制数据" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8" />
+                <TextBlock Text="{Binding RecordedBytes, StringFormat='已录制: {0:N0} 字节 ({0:N0} KB)'}"
+                           FontSize="13" />
+                <TextBlock Text="{Binding RecordedDuration, StringFormat='时长: {0:mm\\:ss}'}"
+                           FontSize="13" />
+            </StackPanel>
+        </Border>
+
+        <!-- 底部提示 -->
+        <TextBlock Grid.Row="3" Text="提示: 录制前请确保麦克风已连接并授予访问权限"
+                   FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                   Margin="4,4" />
+    </Grid>
+</UserControl>

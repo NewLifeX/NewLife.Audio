@@ -1,0 +1,51 @@
+<Window xmlns="https://github.com/avaloniaui"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:vm="using:AudioStudio.ViewModels"
+        xmlns:player="using:AudioStudio.Views.Player"
+        xmlns:convert="using:AudioStudio.Views.Convert"
+        xmlns:devices="using:AudioStudio.Views.Devices"
+        xmlns:record="using:AudioStudio.Views.Record"
+        xmlns:dsp="using:AudioStudio.Views.Dsp"
+        xmlns:tools="using:AudioStudio.Views.Tools"
+        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+        mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
+        x:Class="AudioStudio.Views.MainWindow"
+        x:DataType="vm:MainViewModel"
+        Icon="/Assets/avalonia-logo.ico"
+        Title="AudioStudio - 音频工作室"
+        MinWidth="700" MinHeight="450">
+
+    <Design.DataContext>
+        <vm:MainViewModel />
+    </Design.DataContext>
+
+    <Grid RowDefinitions="Auto,*">
+        <!-- 标题栏 -->
+        <TextBlock Grid.Row="0" Text="AudioStudio" FontSize="20" FontWeight="Bold"
+                   Margin="12,8" />
+
+        <!-- Tab 内容 -->
+        <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedTab}"
+                    Margin="8,0,8,8">
+            <TabItem Header="🎵 播放器">
+                <player:PlaybackView DataContext="{Binding Playback}" />
+            </TabItem>
+            <TabItem Header="🔄 格式转换">
+                <convert:ConversionView DataContext="{Binding Conversion}" />
+            </TabItem>
+            <TabItem Header="🔊 设备管理">
+                <devices:DeviceView DataContext="{Binding Device}" />
+            </TabItem>
+            <TabItem Header="🎙 录制">
+                <record:RecordingView DataContext="{Binding Recording}" />
+            </TabItem>
+            <TabItem Header="📊 DSP 处理">
+                <dsp:DspView DataContext="{Binding Dsp}" />
+            </TabItem>
+            <TabItem Header="🔧 编解码工具">
+                <tools:ToolsView DataContext="{Binding Tools}" />
+            </TabItem>
+        </TabControl>
+    </Grid>
+</Window>

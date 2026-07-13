@@ -1,0 +1,96 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Convert"
+             xmlns:converters="using:AudioStudio.Converters"
+             x:Class="AudioStudio.Views.Convert.ConversionView"
+             x:DataType="vm:ConversionViewModel">
+
+    <UserControl.Resources>
+        <converters:PercentConverter x:Key="PercentConverter" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto" Margin="8">
+
+        <!-- 输入文件选择 -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="输入:" VerticalAlignment="Center" FontSize="14" Margin="0,0,8,0" />
+                <TextBlock Grid.Column="1" Text="{Binding InputFileName}" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button Grid.Column="2" Content="选择文件" Command="{Binding SelectInputFileCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- 输出设置 -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto" RowDefinitions="Auto,Auto">
+                <TextBlock Grid.Row="0" Grid.Column="0" Text="格式:" VerticalAlignment="Center" FontSize="14" Margin="0,0,8,0" />
+                <ComboBox Grid.Row="0" Grid.Column="1"
+                          ItemsSource="{Binding SupportedFormats}"
+                          SelectedItem="{Binding SelectedOutputFormat}"
+                          Width="100" Margin="0,0,12,0" />
+                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding OutputFilePath}"
+                           VerticalAlignment="Center" TextTrimming="CharacterEllipsis"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button Grid.Row="0" Grid.Column="3" Content="选择路径" Command="{Binding SelectOutputFileCommand}" />
+
+                <!-- 进度 -->
+                <Grid Grid.Row="1" Grid.ColumnSpan="4" Margin="0,8,0,0" IsVisible="{Binding IsConverting}">
+                    <ProgressBar Value="{Binding Progress}" Maximum="1" Height="20" />
+                    <TextBlock Text="{Binding Progress, Converter={StaticResource PercentConverter}}"
+                               HorizontalAlignment="Center" VerticalAlignment="Center" FontSize="11" />
+                </Grid>
+            </Grid>
+        </Border>
+
+        <!-- 转换按钮 -->
+        <Border Grid.Row="2" Padding="0,0,0,8">
+            <Grid ColumnDefinitions="*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding StatusText}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button Grid.Column="1" Content="{Binding IsConverting, Converter={StaticResource ConvertButtonText}}"
+                        Command="{Binding ConvertCommand}"
+                        IsEnabled="{Binding IsConverting, Converter={StaticResource InvertBool}}"
+                        Width="120" Height="32" />
+            </Grid>
+        </Border>
+
+        <!-- 转换历史 -->
+        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8">
+            <Grid RowDefinitions="Auto,*">
+                <TextBlock Grid.Row="0" Text="转换历史" FontSize="14" FontWeight="SemiBold" Margin="4,0,0,4" />
+                <ListBox Grid.Row="1" ItemsSource="{Binding History}" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="*,Auto,Auto" Margin="2,3">
+                                <StackPanel Grid.Column="0">
+                                    <TextBlock Text="{Binding InputFile}" FontSize="12" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding OutputFile}" FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+                                <TextBlock Grid.Column="1" Text="{Binding TimeText}" FontSize="11"
+                                           VerticalAlignment="Center" Margin="8,0" />
+                                <TextBlock Grid.Column="2" Text="{Binding Status}" FontSize="11"
+                                           VerticalAlignment="Center"
+                                           Foreground="{DynamicResource SystemControlAccentBrush}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+        <!-- 底部信息 -->
+        <TextBlock Grid.Row="4" Text="提示: 格式转换支持 WAV/MP3/AAC/OGG/FLAC/M4A 之间的互转"
+                   FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                   Margin="4,4" />
+    </Grid>
+</UserControl>

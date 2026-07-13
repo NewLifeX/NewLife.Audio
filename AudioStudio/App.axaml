@@ -1,0 +1,29 @@
+<Application xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="using:AudioStudio"
+             xmlns:converters="using:AudioStudio.Converters"
+             x:Class="AudioStudio.App"
+             RequestedThemeVariant="Default">
+
+    <Application.Resources>
+        <converters:TimeSpanConverter x:Key="TimeSpanConverter" />
+        <converters:PercentConverter x:Key="PercentConverter" />
+        <converters:PlayPauseConverter x:Key="PlayPauseConverter" />
+        <converters:InverseBoolConverter x:Key="InvertBool" />
+        <converters:ConvertButtonTextConverter x:Key="ConvertButtonText" />
+        <converters:PlayStopTextConverter x:Key="PlayStopText" />
+        <converters:RecStartStopTextConverter x:Key="RecStartStopText" />
+        <converters:LevelColorConverter x:Key="LevelColorConverter" />
+        <converters:LevelWidthConverter x:Key="LevelWidthConverter" />
+        <converters:SpectrumBarConverter x:Key="SpectrumBarConverter" />
+        <converters:IsNotNullConverter x:Key="IsNotNullConverter" />
+    </Application.Resources>
+
+    <Application.DataTemplates>
+        <local:ViewLocator />
+    </Application.DataTemplates>
+
+    <Application.Styles>
+        <FluentTheme />
+    </Application.Styles>
+</Application>

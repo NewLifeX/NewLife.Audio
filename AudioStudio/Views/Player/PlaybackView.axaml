@@ -1,0 +1,146 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Player"
+             xmlns:converters="using:AudioStudio.Converters"
+             x:Class="AudioStudio.Views.Player.PlaybackView"
+             x:DataType="vm:PlaybackViewModel">
+
+    <UserControl.Resources>
+        <converters:TimeSpanConverter x:Key="TimeSpanConverter" />
+        <converters:PercentConverter x:Key="PercentConverter" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="8">
+
+        <!-- 信息面板 -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid RowDefinitions="Auto,Auto">
+                <!-- 文件名 -->
+                <TextBlock Grid.Row="0" Text="{Binding Player.FileName}"
+                           FontSize="18" FontWeight="SemiBold"
+                           TextTrimming="CharacterEllipsis" />
+
+                <!-- 详细信息 -->
+                <WrapPanel Grid.Row="1" Margin="0,6,0,0">
+                    <TextBlock Text="{Binding FormatInfoText}"
+                               FontSize="13" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               TextTrimming="CharacterEllipsis" />
+                </WrapPanel>
+
+                <!-- 元数据 -->
+                <TextBlock Grid.Row="2" Text="{Binding MetadataText}"
+                           FontSize="12" Foreground="{DynamicResource SystemControlForegroundBaseMediumLowBrush}"
+                           TextTrimming="CharacterEllipsis" />
+            </Grid>
+        </Border>
+
+        <!-- 进度条 -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="0,0,0,4">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="{Binding Player.Position, Converter={StaticResource TimeSpanConverter}}"
+                           VerticalAlignment="Center" FontSize="12" Margin="4,0" />
+                <Slider Grid.Column="1"
+                        Minimum="0" Maximum="{Binding Player.Duration}"
+                        Value="{Binding Player.Position}"
+                        IsEnabled="{Binding Player.IsFileOpen}"
+                        VerticalAlignment="Center" Margin="8,0" />
+                <TextBlock Grid.Column="2" Text="{Binding Player.Duration, Converter={StaticResource TimeSpanConverter}}"
+                           VerticalAlignment="Center" FontSize="12" Margin="4,0" />
+            </Grid>
+        </Border>
+
+        <!-- 播放控制栏 -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <!-- 控制按钮 -->
+                <StackPanel Grid.Column="0" Orientation="Horizontal" HorizontalAlignment="Left">
+                    <Button Content="⏮" Width="36" Height="32" FontSize="14" Margin="2"
+                            Command="{Binding PreviousCommand}"
+                            IsEnabled="{Binding Player.IsFileOpen}" />
+                    <Button Content="{Binding Player.State, Converter={StaticResource PlayPauseConverter}}"
+                            Width="48" Height="32" FontSize="16" Margin="2"
+                            Command="{Binding PlayPauseCommand}"
+                            IsEnabled="{Binding Player.IsFileOpen}" />
+                    <Button Content="⏹" Width="36" Height="32" FontSize="14" Margin="2"
+                            Command="{Binding StopCommand}"
+                            IsEnabled="{Binding Player.CanStop}" />
+                    <Button Content="⏭" Width="36" Height="32" FontSize="14" Margin="2"
+                            Command="{Binding NextCommand}"
+                            IsEnabled="{Binding Player.IsFileOpen}" />
+                </StackPanel>
+
+                <!-- 中间占位 -->
+
+                <!-- 音量 -->
+                <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                    <TextBlock Text="🔊" VerticalAlignment="Center" FontSize="14" Margin="4,0" />
+                    <Slider Width="100"
+                            Minimum="0" Maximum="1" SmallChange="0.05"
+                            Value="{Binding Player.Volume}"
+                            VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 播放列表 -->
+        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8">
+            <Grid RowDefinitions="Auto,*">
+                <!-- 列表工具栏 -->
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,4">
+                    <TextBlock Text="播放列表" FontSize="16" FontWeight="SemiBold"
+                               VerticalAlignment="Center" />
+                    <Button Content="+ 添加" Margin="12,0,0,0" FontSize="12"
+                            Command="{Binding AddFilesCommand}" />
+                    <Button Content="清空" Margin="4,0,0,0" FontSize="12"
+                            Command="{Binding ClearPlaylistCommand}" />
+                </StackPanel>
+
+                <!-- 列表 -->
+                <ListBox Grid.Row="1" ItemsSource="{Binding Playlist}"
+                         SelectedItem="{Binding CurrentItem, Mode=TwoWay}"
+                         BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Grid ColumnDefinitions="Auto,*,Auto,Auto" Margin="2,4"
+                                  PointerPressed="OnPlaylistItemPressed">
+                                <!-- 序号或状态 -->
+                                <TextBlock Grid.Column="0" Text="▶" FontSize="12"
+                                           Foreground="{DynamicResource SystemControlAccentBrush}"
+                                           VerticalAlignment="Center" Margin="0,0,8,0" />
+
+                                <!-- 文件名/标题 -->
+                                <StackPanel Grid.Column="1">
+                                    <TextBlock Text="{Binding Title}"
+                                               FontSize="13" TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Text="{Binding Artist}"
+                                               FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                               TextTrimming="CharacterEllipsis" />
+                                </StackPanel>
+
+                                <!-- 时长 -->
+                                <TextBlock Grid.Column="2" Text="{Binding DurationText}"
+                                           FontSize="12" VerticalAlignment="Center"
+                                           Margin="8,0" />
+
+                                <!-- 删除按钮 -->
+                                <Button Grid.Column="3" Content="✕" FontSize="11"
+                                        Width="24" Height="24"
+                                        Command="{Binding $parent[UserControl].DataContext.RemoveFromPlaylistCommand}"
+                                        CommandParameter="{Binding}" />
+                            </Grid>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </Border>
+
+    </Grid>
+</UserControl>

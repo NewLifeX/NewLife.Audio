@@ -1,0 +1,128 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Devices"
+             x:Class="AudioStudio.Views.Devices.DeviceView"
+             x:DataType="vm:DeviceViewModel">
+
+    <Grid RowDefinitions="Auto,*,Auto" Margin="8">
+
+        <!-- 后端选择 -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,Auto,*,Auto">
+                <TextBlock Grid.Column="0" Text="音频后端:" VerticalAlignment="Center" FontSize="14" Margin="0,0,8,0" />
+                <ComboBox Grid.Column="1" ItemsSource="{Binding BackendOptions}"
+                          SelectedItem="{Binding SelectedBackend}"
+                          Width="120" Margin="0,0,12,0" />
+                <TextBlock Grid.Column="2" Text="{Binding BackendName}" VerticalAlignment="Center"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                <Button Grid.Column="3" Content="刷新" Command="{Binding RefreshCommand}" />
+            </Grid>
+        </Border>
+
+        <!-- 设备列表 -->
+        <TabControl Grid.Row="1" Margin="0,0,0,8">
+            <!-- 输出设备 -->
+            <TabItem Header="输出设备">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                            CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock Text="测试音发生器" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <Grid ColumnDefinitions="Auto,*,Auto,*,Auto" RowDefinitions="Auto,Auto">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="频率:" VerticalAlignment="Center" Margin="0,0,4,0" />
+                                <Slider Grid.Row="0" Grid.Column="1" Minimum="100" Maximum="8000"
+                                        Value="{Binding TestFrequency}" Width="120" VerticalAlignment="Center" />
+                                <TextBlock Grid.Row="0" Grid.Column="2" Text="{Binding TestFrequency, StringFormat='{}{F0} Hz'}"
+                                           VerticalAlignment="Center" Width="60" />
+
+                                <TextBlock Grid.Row="0" Grid.Column="3" Text="音量:" VerticalAlignment="Center" Margin="8,0,4,0" />
+                                <Slider Grid.Row="0" Grid.Column="4" Minimum="0" Maximum="1"
+                                        Value="{Binding TestVolume}" Width="100" VerticalAlignment="Center" />
+                            </Grid>
+                            <Button Content="{Binding IsPlaying, Converter={StaticResource PlayStopText}}"
+                                    Command="{Binding PlayTestToneCommand}"
+                                    HorizontalAlignment="Left" Margin="0,4" />
+                        </StackPanel>
+                    </Border>
+
+                    <ListBox Grid.Row="1" ItemsSource="{Binding OutputDevices}"
+                             SelectedItem="{Binding SelectedOutputDevice}" BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="8" Margin="0,2">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Grid.Column="0" Text="🔊" FontSize="18" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <StackPanel Grid.Column="1">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding DefaultTag}" FontSize="12"
+                                                           Foreground="{DynamicResource SystemControlAccentBrush}"
+                                                           Margin="8,0" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding FormatInfo}" FontSize="11"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+
+            <!-- 输入设备 -->
+            <TabItem Header="输入设备">
+                <Grid RowDefinitions="Auto,*">
+                    <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                            CornerRadius="4" Padding="8" Margin="0,0,0,8">
+                        <StackPanel>
+                            <TextBlock Text="录制测试" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,8" />
+                            <StackPanel Orientation="Horizontal">
+                                <Button Content="{Binding IsRecording, Converter={StaticResource RecStartStopText}}"
+                                        Command="{Binding StartCaptureCommand}" Margin="0,0,8,0" />
+                                <Button Content="停止" Command="{Binding StopCaptureCommand}"
+                                        IsEnabled="{Binding IsRecording}" />
+                            </StackPanel>
+                            <TextBlock Text="{Binding StatusText}" FontSize="12" Margin="0,4,0,0"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                        </StackPanel>
+                    </Border>
+
+                    <ListBox Grid.Row="1" ItemsSource="{Binding InputDevices}"
+                             SelectedItem="{Binding SelectedInputDevice}" BorderThickness="0">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Border Padding="8" Margin="0,2">
+                                    <Grid ColumnDefinitions="Auto,*">
+                                        <TextBlock Grid.Column="0" Text="🎤" FontSize="18" VerticalAlignment="Center" Margin="0,0,8,0" />
+                                        <StackPanel Grid.Column="1">
+                                            <StackPanel Orientation="Horizontal">
+                                                <TextBlock Text="{Binding Name}" FontSize="14" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding DefaultTag}" FontSize="12"
+                                                           Foreground="{DynamicResource SystemControlAccentBrush}"
+                                                           Margin="8,0" />
+                                            </StackPanel>
+                                            <TextBlock Text="{Binding FormatInfo}" FontSize="11"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Grid>
+            </TabItem>
+        </TabControl>
+
+        <!-- 状态栏 -->
+        <Border Grid.Row="2" Padding="8,4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                CornerRadius="4">
+            <TextBlock Text="{Binding StatusText}" FontSize="12"
+                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+        </Border>
+    </Grid>
+</UserControl>
