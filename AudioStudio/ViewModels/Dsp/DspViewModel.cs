@@ -1,4 +1,5 @@
 using System;
+using System.Collections.ObjectModel;
 using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
@@ -260,5 +261,113 @@ public partial class DspViewModel : ViewModelBase
             FrequencyBands[i] = Math.Max(0, Math.Min(1, baseLevel * Volume + noise));
         }
         SpectrumBins = [.. FrequencyBands];
+    }
+
+    // ─── DSP 管线编辑器 ───
+
+    /// <summary>DSP 管线节点项</summary>
+    public sealed class PipelineNode : ObservableObject
+    {
+        /// <summary>处理器显示名称</summary>
+        public String DisplayName { get; set; } = "";
+
+        /// <summary>处理器类型描述</summary>
+        public String TypeName { get; set; } = "";
+
+        /// <summary>主要参数摘要</summary>
+        public String ParamSummary { get; set; } = "";
+
+        /// <summary>处理器在链表中的序号</summary>
+        public Int32 Index { get; set; }
+    }
+
+    /// <summary>管线节点列表</summary>
+    public ObservableCollection<PipelineNode> PipelineNodes { get; } = [];
+
+    /// <summary>可选处理器类型列表</summary>
+    public ObservableCollection<PipelineNode> AvailableProcessors { get; } =
+    [
+        new() { DisplayName = "音量控制", TypeName = "VolumeControl", ParamSummary = "增益 0~2x" },
+        new() { DisplayName = "BiQuad 低通", TypeName = "LowPassFilter", ParamSummary = "截止 20~20kHz" },
+        new() { DisplayName = "BiQuad 高通", TypeName = "HighPassFilter", ParamSummary = "截止 20~20kHz" },
+        new() { DisplayName = "均衡器 10段", TypeName = "Equalizer", ParamSummary = "31Hz~16kHz ±12dB" },
+        new() { DisplayName = "均衡器 3段", TypeName = "ToneControl", ParamSummary = "低音/中音/高音" },
+        new() { DisplayName = "动态压缩器", TypeName = "DynamicCompressor", ParamSummary = "阈值/比例/启音/释放" },
+        new() { DisplayName = "淡入淡出", TypeName = "FadeProcessor", ParamSummary = "淡入/淡出/淡变" },
+        new() { DisplayName = "变速器", TypeName = "SpeedChanger", ParamSummary = "0.25x~4x" },
+        new() { DisplayName = "变调器", TypeName = "PitchShifter", ParamSummary = "0.25x~4x" },
+        new() { DisplayName = "重采样", TypeName = "Resampler", ParamSummary = "任意采样率互转" },
+        new() { DisplayName = "声道转换", TypeName = "ChannelConverter", ParamSummary = "单声道↔立体声" },
+        new() { DisplayName = "位深转换", TypeName = "BitDepthConverter", ParamSummary = "8/16↔浮点" },
+    ];
+
+    [ObservableProperty]
+    private PipelineNode? _selectedAvailable;
+
+    [ObservableProperty]
+    private PipelineNode? _selectedPipelineNode;
+
+    /// <summary>管线总节点数</summary>
+    public Int32 NodeCount => PipelineNodes.Count;
+
+    /// <summary>添加处理器到管线末尾</summary>
+    [RelayCommand]
+    private void AddToPipeline()
+    {
+        if (SelectedAvailable == null) return;
+        PipelineNodes.Add(new PipelineNode
+        {
+            DisplayName = SelectedAvailable.DisplayName,
+            TypeName = SelectedAvailable.TypeName,
+            ParamSummary = SelectedAvailable.ParamSummary,
+            Index = PipelineNodes.Count,
+        });
+        OnPropertyChanged(nameof(NodeCount));
+    }
+
+    /// <summary>从管线移除选中处理器</summary>
+    [RelayCommand]
+    private void RemoveFromPipeline()
+    {
+        if (SelectedPipelineNode == null) return;
+        PipelineNodes.Remove(SelectedPipelineNode);
+        Reindex();
+    }
+
+    /// <summary>上移选中处理器</summary>
+    [RelayCommand]
+    private void MoveUp()
+    {
+        var node = SelectedPipelineNode;
+        if (node == null || node.Index <= 0) return;
+        var idx = node.Index;
+        (PipelineNodes[idx], PipelineNodes[idx - 1]) = (PipelineNodes[idx - 1], PipelineNodes[idx]);
+        Reindex();
+    }
+
+    /// <summary>下移选中处理器</summary>
+    [RelayCommand]
+    private void MoveDown()
+    {
+        var node = SelectedPipelineNode;
+        if (node == null || node.Index >= PipelineNodes.Count - 1) return;
+        var idx = node.Index;
+        (PipelineNodes[idx], PipelineNodes[idx + 1]) = (PipelineNodes[idx + 1], PipelineNodes[idx]);
+        Reindex();
+    }
+
+    /// <summary>清空整个管线</summary>
+    [RelayCommand]
+    private void ClearPipeline()
+    {
+        PipelineNodes.Clear();
+        OnPropertyChanged(nameof(NodeCount));
+    }
+
+    private void Reindex()
+    {
+        for (var i = 0; i < PipelineNodes.Count; i++)
+            PipelineNodes[i].Index = i;
+        OnPropertyChanged(nameof(NodeCount));
     }
 }

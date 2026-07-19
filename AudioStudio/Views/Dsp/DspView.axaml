@@ -135,32 +135,106 @@
             </Grid>
         </Border>
 
-        <!-- 频谱分析 -->
-        <Border Grid.Row="4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
-                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
-                CornerRadius="4" Padding="12">
-            <Grid RowDefinitions="Auto,*,Auto">
-                <TextBlock Grid.Row="0" Text="频谱分析（模拟数据）" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
-                <ItemsControl Grid.Row="1" ItemsSource="{Binding SpectrumBins}">
-                    <ItemsControl.ItemsPanel>
-                        <ItemsPanelTemplate>
-                            <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
-                        </ItemsPanelTemplate>
-                    </ItemsControl.ItemsPanel>
-                    <ItemsControl.ItemTemplate>
-                        <DataTemplate>
-                            <Border Background="{DynamicResource SystemControlAccentBrush}"
-                                    Width="12" Margin="1,0"
-                                    Height="{Binding Converter={StaticResource SpectrumBarConverter}}" />
-                        </DataTemplate>
-                    </ItemsControl.ItemTemplate>
-                </ItemsControl>
-                <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
-                    <TextBlock Text="FFT: 1024" FontSize="11" Margin="0,0,16,0"
-                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
-                    <Button Content="频谱模拟" Command="{Binding ResetAllCommand}" FontSize="11" />
-                </StackPanel>
-            </Grid>
-        </Border>
+        <!-- 频谱 + DSP管线 双标签 -->
+        <TabControl Grid.Row="4" Margin="0">
+            <TabItem Header="频谱分析">
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="12">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <TextBlock Grid.Row="0" Text="频谱分析" FontSize="14" FontWeight="SemiBold" Margin="0,0,0,4" />
+                        <ItemsControl Grid.Row="1" ItemsSource="{Binding SpectrumBins}">
+                            <ItemsControl.ItemsPanel>
+                                <ItemsPanelTemplate>
+                                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Bottom" />
+                                </ItemsPanelTemplate>
+                            </ItemsControl.ItemsPanel>
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Background="{DynamicResource SystemControlAccentBrush}"
+                                            Width="12" Margin="1,0"
+                                            Height="{Binding Converter={StaticResource SpectrumBarConverter}}" />
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock Text="FFT: 1024" FontSize="11" Margin="0,0,16,0"
+                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                            <Button Content="频谱模拟" Command="{Binding ResetAllCommand}" FontSize="11" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </TabItem>
+            <TabItem Header="DSP 管线">
+                <Border Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                        CornerRadius="4" Padding="12">
+                    <Grid RowDefinitions="Auto,*,Auto">
+                        <!-- 可用处理器列表 + 添加按钮 -->
+                        <Grid Grid.Row="0" ColumnDefinitions="*,Auto" Margin="0,0,0,8">
+                            <ComboBox Grid.Column="0" ItemsSource="{Binding AvailableProcessors}"
+                                      SelectedItem="{Binding SelectedAvailable}"
+                                      PlaceholderText="选择处理器..." Margin="0,0,8,0">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                            <TextBlock Text="{Binding ParamSummary}" FontSize="11"
+                                                       Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                            </ComboBox>
+                            <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                <Button Content="+" Width="32" Height="28" FontSize="16"
+                                        Command="{Binding AddToPipelineCommand}"
+                                        IsEnabled="{Binding SelectedAvailable, Converter={StaticResource IsNotNullConverter}}" />
+                                <Button Content="清空" Margin="8,0,0,0" FontSize="11"
+                                        Command="{Binding ClearPipelineCommand}" />
+                            </StackPanel>
+                        </Grid>
+
+                        <!-- 管线节点列表 -->
+                        <ListBox Grid.Row="1" ItemsSource="{Binding PipelineNodes}"
+                                 SelectedItem="{Binding SelectedPipelineNode}"
+                                 BorderThickness="0">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate>
+                                    <Border Padding="8" Margin="0,2"
+                                            Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                                            BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}"
+                                            BorderThickness="1" CornerRadius="4">
+                                        <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="8">
+                                            <TextBlock Grid.Column="0" Text="{Binding Index, StringFormat='#{0}'}"
+                                                       FontWeight="Bold" VerticalAlignment="Center" Width="24" />
+                                            <StackPanel Grid.Column="1" Orientation="Vertical">
+                                                <TextBlock Text="{Binding DisplayName}" FontWeight="SemiBold" />
+                                                <TextBlock Text="{Binding ParamSummary}" FontSize="11"
+                                                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                            </StackPanel>
+                                            <TextBlock Grid.Column="2" Text="→" FontSize="18"
+                                                       VerticalAlignment="Center" />
+                                        </Grid>
+                                    </Border>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+
+                        <!-- 操作按钮 -->
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Margin="0,8,0,0">
+                            <Button Content="▲ 上移" Command="{Binding MoveUpCommand}"
+                                    IsEnabled="{Binding SelectedPipelineNode, Converter={StaticResource IsNotNullConverter}}" Margin="0,0,8,0" />
+                            <Button Content="▼ 下移" Command="{Binding MoveDownCommand}"
+                                    IsEnabled="{Binding SelectedPipelineNode, Converter={StaticResource IsNotNullConverter}}" Margin="0,0,8,0" />
+                            <Button Content="✕ 移除" Command="{Binding RemoveFromPipelineCommand}"
+                                    IsEnabled="{Binding SelectedPipelineNode, Converter={StaticResource IsNotNullConverter}}" />
+                            <TextBlock Text="{Binding NodeCount, StringFormat='共 {0} 个处理器'}"
+                                       FontSize="11" Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                                       VerticalAlignment="Center" Margin="16,0,0,0" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </TabItem>
+        </TabControl>
     </Grid>
 </UserControl>
