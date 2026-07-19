@@ -179,11 +179,41 @@ public class DeviceService : IDisposable
     public void StopRecording()
     {
         IsRecording = false;
+
+        if (_loopbackRecorder != null)
+        {
+            try { _loopbackRecorder.StopRecording(); } catch { }
+            try { _loopbackRecorder.Dispose(); } catch { }
+            _loopbackRecorder = null;
+        }
+
         if (_recorder != null)
         {
             try { _recorder.StopRecording(); } catch { }
             try { _recorder.Dispose(); } catch { }
             _recorder = null;
+        }
+    }
+
+    private LoopbackRecorder? _loopbackRecorder;
+
+    /// <summary>开始环路录制（系统音频输出捕获）</summary>
+    /// <param name="format">音频格式</param>
+    public void StartLoopbackRecording(AudioFormat format)
+    {
+        StopRecording();
+
+        try
+        {
+            _loopbackRecorder = new LoopbackRecorder();
+            _loopbackRecorder.Init(format);
+            _loopbackRecorder.DataAvailable += OnDataAvailable;
+            _loopbackRecorder.StartRecording();
+            IsRecording = true;
+        }
+        catch (Exception ex)
+        {
+            System.Diagnostics.Debug.WriteLine($"开始环路录制失败: {ex.Message}");
         }
     }
 

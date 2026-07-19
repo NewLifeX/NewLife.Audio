@@ -7,6 +7,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using AudioStudio.Models;
 using AudioStudio.Services;
+using NewLife.Audio.DSP;
 
 namespace AudioStudio.ViewModels.Convert;
 
@@ -27,6 +28,22 @@ public partial class ConversionViewModel : ViewModelBase
     [ObservableProperty]
     private String _selectedOutputFormat = ".wav";
 
+    /// <summary>目标采样率（0=沿用源格式）</summary>
+    [ObservableProperty]
+    private Int32 _targetSampleRate;
+
+    /// <summary>目标声道数（0=沿用源格式）</summary>
+    [ObservableProperty]
+    private Int32 _targetChannels;
+
+    /// <summary>目标位深（0=沿用源格式）</summary>
+    [ObservableProperty]
+    private Int32 _targetBitDepth;
+
+    /// <summary>是否自定义音频参数</summary>
+    [ObservableProperty]
+    private Boolean _customizeFormat;
+
     [ObservableProperty]
     private Double _progress;
 
@@ -38,6 +55,15 @@ public partial class ConversionViewModel : ViewModelBase
 
     /// <summary>支持的输出格式</summary>
     public String[] SupportedFormats => ConversionService.GetSupportedOutputFormats();
+
+    /// <summary>采样率选项</summary>
+    public Int32[] SampleRateOptions => [0, 8000, 11025, 16000, 22050, 44100, 48000, 96000];
+
+    /// <summary>声道选项</summary>
+    public String[] ChannelOptions => ["自动", "单声道", "立体声"];
+
+    /// <summary>位深选项</summary>
+    public String[] BitDepthOptions => ["自动", "8 bit", "16 bit", "32 bit"];
 
     /// <summary>转换历史</summary>
     public ObservableCollection<ConversionTaskItem> History { get; } = [];
@@ -104,7 +130,18 @@ public partial class ConversionViewModel : ViewModelBase
         {
             var progress = new Progress<Double>(p => Progress = p);
 
+            // 构建目标格式参数
+            AudioFormat? targetFormat = null;
+            if (_customizeFormat)
+            {
+                targetFormat = new AudioFormat();
+                if (_targetSampleRate > 0) targetFormat.SampleRate = _targetSampleRate;
+                if (_targetChannels > 0) targetFormat.Channels = _targetChannels;
+                if (_targetBitDepth > 0) targetFormat.BitsPerSample = _targetBitDepth;
+            }
+
             await _service.ConvertFileAsync(InputFilePath, OutputFilePath,
+                targetFormat: targetFormat,
                 progress: progress);
 
             StatusText = "转换完成 ✓";

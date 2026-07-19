@@ -47,6 +47,10 @@ public partial class RecordingViewModel : ViewModelBase
     [ObservableProperty]
     private TimeSpan _recordedDuration;
 
+    /// <summary>环路录制模式（录制系统音频输出）</summary>
+    [ObservableProperty]
+    private Boolean _loopbackMode;
+
     /// <summary>采样率选项</summary>
     public Int32[] SampleRateOptions => [8000, 11025, 16000, 22050, 44100, 48000];
 
@@ -113,9 +117,19 @@ public partial class RecordingViewModel : ViewModelBase
             _recordedBytes = 0;
             RecordedDuration = TimeSpan.Zero;
 
-            _deviceService.StartRecording(SelectedInputDevice?.Id, format);
+            if (_loopbackMode)
+            {
+                // 环路录制：直接捕获系统音频输出
+                _deviceService.StartLoopbackRecording(format);
+            }
+            else
+            {
+                // 普通录制：从麦克风输入设备
+                _deviceService.StartRecording(SelectedInputDevice?.Id, format);
+            }
+
             IsRecording = true;
-            StatusText = "正在录制...";
+            StatusText = _loopbackMode ? "正在环路录制系统音频..." : "正在录制...";
 
             // 启动电平监控
             _levelCts = new CancellationTokenSource();

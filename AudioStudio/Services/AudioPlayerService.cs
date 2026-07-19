@@ -93,6 +93,9 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
     /// <summary>是否有文件打开</summary>
     public Boolean IsFileOpen => _reader != null;
 
+    /// <summary>PCM 数据可用事件（用于频谱分析等外部消费）</summary>
+    public event EventHandler<Byte[]>? PcmDataAvailable;
+
     partial void OnStateChanged(PlaybackState value)
     {
         OnPropertyChanged(nameof(CanPlay));
@@ -242,6 +245,9 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
                 {
                     ApplyVolume(pcmData, _volume);
                 }
+
+                // 触发 PCM 数据事件（用于频谱分析）
+                PcmDataAvailable?.Invoke(this, pcmData);
 
                 // 写入播放缓冲区（非阻塞）
                 player.Write(pcmData);
