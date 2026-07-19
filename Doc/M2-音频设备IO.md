@@ -1,6 +1,6 @@
 # M2-音频设备IO
 
-> 版本：v1.0 | 日期：2026-06-29 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
+> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 3 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -21,18 +21,17 @@
 
 | 组件 | 说明 |
 |---|---|
-| `AudioDeviceManager` | 设备管理器：枚举设备、默认设备选择、设备变更事件 |
+| `AudioDeviceManager` | 设备管理器：后端注册、设备枚举、默认设备选择、播放器/录制器创建 |
+| `AudioBackendFactory` | 后端工厂：根据运行时平台自动选择最优后端（Windows→WaveOut，其他→FallbackBackend） |
 | `IAudioPlayer` | 播放器接口：`Play()`/`Pause()`/`Stop()`/`Init(WaveFormat)` |
 | `IAudioRecorder` | 录音器接口：`StartRecording()`/`StopRecording()`/`DataAvailable` 事件 |
+| `IAudioBackend` | 后端适配器统一接口：枚举设备、创建播放器/录制器 |
 | `WaveFormat` | 音频格式描述：采样率、位深、声道数、编码类型 |
-| `WaveOutBackend` | Windows WaveOut API 后端实现 |
-| `WASAPIBackend` | Windows WASAPI 后端实现（共享/独占模式） |
-| `ASIOBackend` | Windows ASIO 后端实现 |
-| `ALSABackend` | Linux ALSA 后端实现 |
-| `PulseAudioBackend` | Linux PulseAudio 后端实现 |
-| `CoreAudioBackend` | macOS CoreAudio 后端实现 |
-| `IAudioBackend` | 后端适配器统一接口 |
-| `AudioBackendFactory` | 后端工厂：根据平台自动选择最优后端 |
+| `WaveOutNativeBackend` | Windows WaveOut API 后端实现 |
+| `WasapiBackend` | Windows WASAPI 后端实现 |
+| `AsioBackend` | Windows ASIO 后端实现 |
+| `LoopbackRecorder` | 系统音频回路录制（WASAPI Loopback） |
+| `AudioDeviceInfo` | 音频设备元数据：名称、ID、输入/输出、支持格式 |
 
 ---
 
@@ -176,8 +175,9 @@ public interface IAudioBackend
 | 后端适配器模式 | 不同平台/API 差异巨大，适配器模式隔离变化，核心接口保持稳定 |
 | 同步 `Write()` + 异步事件 `DataAvailable` | 播放是调用方主动推送（同步写），录制是被动接收（事件回调），符合各自语义 |
 | `WaveFormat` 包含 `AVTypes` | 支持编码音频直接播放（如 G.711 设备输出），不只是原始 PCM |
-| 后端按平台条件编译 | `net461` 加载 WaveOut/WASAPI/ASIO；Linux 加载 ALSA/PulseAudio；macOS 加载 CoreAudio |
+| 后端按平台条件编译 + 运行时选择 | `net461`/Windows 加载 WaveOut/WASAPI/ASIO；其他平台使用 `FallbackBackend` 回退 |
 | 优先平台原生 API | 不用第三方跨平台抽象库（增加原生依赖），直接调用 OS API，零依赖 |
+| Linux/macOS 原生后端暂缓 | ALSA/PulseAudio/CoreAudio 需求低频，当前以回退后端覆盖，待需求明确后补充 |
 
 ---
 

@@ -1,6 +1,6 @@
 namespace NewLife.Audio.Speech;
 
-/// <summary>声学回声消除器接口（远期规划）</summary>
+/// <summary>声学回声消除器接口</summary>
 public interface IAcousticEchoCanceller
 {
     void ProcessFarEnd(Byte[] farEnd);
@@ -9,7 +9,7 @@ public interface IAcousticEchoCanceller
     void Reset();
 }
 
-/// <summary>噪声抑制器接口（远期规划）</summary>
+/// <summary>噪声抑制器接口</summary>
 public interface INoiseSuppressor
 {
     Byte[] Suppress(Byte[] audio);

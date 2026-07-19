@@ -1,6 +1,6 @@
 # M3-音频处理DSP
 
-> 版本：v1.0 | 日期：2026-06-29 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
+> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 4 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -99,27 +99,30 @@ flowchart TD
 public interface IAudioProcessor
 {
     /// <summary>处理器的输入格式</summary>
-    WaveFormat InputFormat { get; }
+    AudioFormat InputFormat { get; }
 
     /// <summary>处理器的输出格式（可能因处理改变）</summary>
-    WaveFormat OutputFormat { get; }
+    AudioFormat OutputFormat { get; }
 
-    /// <summary>读取处理后的采样数据</summary>
+    /// <summary>上游数据源。设为 null 表示这是管线起点</summary>
+    IAudioProcessor Source { get; set; }
+
+    /// <summary>从处理器拉取处理后的浮点采样数据</summary>
     /// <param name="buffer">输出缓冲区（32-bit 浮点，交错声道）</param>
     /// <param name="offset">起始偏移</param>
     /// <param name="count">采样数（非字节数）</param>
-    /// <returns>实际读取的采样数</returns>
+    /// <returns>实际读取的采样数，0 表示结束</returns>
     Int32 Read(Single[] buffer, Int32 offset, Int32 count);
 
-    /// <summary>设置输入源（链式组合）</summary>
-    IAudioProcessor Source { get; set; }
+    /// <summary>重置处理器状态</summary>
+    void Reset();
 }
 
 /// <summary>音频处理管线</summary>
 public class AudioPipeline : IAudioProcessor
 {
-    /// <summary>按顺序添加处理器</summary>
-    public void AddProcessor(IAudioProcessor processor);
+    /// <summary>添加处理器到管线末尾（流畅 API，返回自身）</summary>
+    public AudioPipeline AddProcessor(IAudioProcessor processor);
 
     /// <summary>移除处理器</summary>
     public Boolean RemoveProcessor(IAudioProcessor processor);
@@ -151,10 +154,10 @@ public class AudioMixer : IAudioProcessor
 // 处理器链的流畅 API
 var pipeline = new AudioPipeline();
 pipeline
-    .Append(new BitDepthConverter())   // 16-bit → float32
-    .Append(new VolumeControl(0.8f))   // 80% 音量
-    .Append(new BiQuadFilter.LowPass(3000, 44100)) // 3kHz 低通
-    .Append(new Resampler(8000));      // 重采样到 8kHz
+    .AddProcessor(new BitDepthConverter())   // 16-bit → float32
+    .AddProcessor(new VolumeControl(0.8f))   // 80% 音量
+    .AddProcessor(new BiQuadFilter.LowPass(3000, 44100)) // 3kHz 低通
+    .AddProcessor(new Resampler(8000));      // 重采样到 8kHz
 ```
 
 ---
