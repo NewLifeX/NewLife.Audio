@@ -17,6 +17,7 @@
         <converters:LevelWidthConverter x:Key="LevelWidthConverter" />
         <converters:SpectrumBarConverter x:Key="SpectrumBarConverter" />
         <converters:IsNotNullConverter x:Key="IsNotNullConverter" />
+        <converters:VadStateConverter x:Key="VadStateConverter" />
     </Application.Resources>
 
     <Application.DataTemplates>

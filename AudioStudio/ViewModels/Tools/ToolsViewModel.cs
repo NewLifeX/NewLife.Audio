@@ -1,10 +1,12 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
+using NewLife.Audio.Speech;
 using NewLife.Audio.Streaming;
 using NewLife.Data;
 
@@ -62,9 +64,169 @@ public partial class ToolsViewModel : ViewModelBase
     /// <summary>已解析的 RTP 包列表</summary>
     public ObservableCollection<RtpPacketInfo> RtpPackets { get; } = [];
 
+    // ─── VAD 测试 ───
+    [ObservableProperty]
+    private Boolean _vadIsRunning;
+
+    [ObservableProperty]
+    private Boolean _vadResult;
+
+    [ObservableProperty]
+    private Double _vadProbability;
+
+    [ObservableProperty]
+    private Int32 _vadAggressiveness = 1;
+
+    [ObservableProperty]
+    private Int32 _vadTestToneFrequency = 440;
+
+    [ObservableProperty]
+    private String _vadStatus = "就绪";
+
+    [ObservableProperty]
+    private ObservableCollection<String> _vadLog = [];
+
+    private CancellationTokenSource? _vadCts;
+    private readonly GmmVad _vad;
+
     public ToolsViewModel()
     {
+        _vad = new GmmVad(8000, _vadAggressiveness);
         LoadCodecRegistry();
+    }
+
+    /// <summary>VAD 测试：生成测试音并检测</summary>
+    [RelayCommand]
+    private void VadStartTest()
+    {
+        if (VadIsRunning) return;
+
+        _vadCts = new CancellationTokenSource();
+        VadIsRunning = true;
+        VadLog.Clear();
+        VadStatus = "测试中...";
+
+        var token = _vadCts.Token;
+        ThreadPool.QueueUserWorkItem(_ =>
+        {
+            var vad = new GmmVad(8000, VadAggressiveness);
+            var sampleRate = 8000;
+            var frameSize = 160; // 20ms @ 8kHz
+            var rng = new Random();
+
+            for (var phase = 0; phase < 5 && !token.IsCancellationRequested; phase++)
+            {
+                // Phase0-3: 440Hz 正弦波（语音模拟）
+                // Phase1: silence
+                // Phase2: 复合频率
+                // Phase3: 噪声
+                // Phase4: 混合
+                for (var f = 0; f < 50 && !token.IsCancellationRequested; f++)
+                {
+                    var frame = new Byte[frameSize * 2];
+                    var isSpeech = false;
+
+                    switch (phase)
+                    {
+                        case 0: // 440Hz 纯音（语音模拟）
+                            for (var i = 0; i < frameSize; i++)
+                            {
+                                var val = (Int16)(Math.Sin(2 * Math.PI * VadTestToneFrequency * (f * frameSize + i) / sampleRate) * 20000);
+                                frame[i * 2] = (Byte)(val & 0xFF);
+                                frame[i * 2 + 1] = (Byte)(val >> 8 & 0xFF);
+                            }
+                            isSpeech = true;
+                            break;
+                        case 1: // 静音
+                            isSpeech = false;
+                            break;
+                        case 2: // 多频复合
+                            for (var i = 0; i < frameSize; i++)
+                            {
+                                var idx = f * frameSize + i;
+                                var val = (Int16)((Math.Sin(2 * Math.PI * 300 * idx / sampleRate) * 0.5 +
+                                                   Math.Sin(2 * Math.PI * 1000 * idx / sampleRate) * 0.3 +
+                                                   Math.Sin(2 * Math.PI * 3000 * idx / sampleRate) * 0.2) * 20000);
+                                frame[i * 2] = (Byte)(val & 0xFF);
+                                frame[i * 2 + 1] = (Byte)(val >> 8 & 0xFF);
+                            }
+                            isSpeech = true;
+                            break;
+                        case 3: // 白噪声
+                            for (var i = 0; i < frameSize; i++)
+                            {
+                                var val = (Int16)((rng.NextDouble() - 0.5) * 20000);
+                                frame[i * 2] = (Byte)(val & 0xFF);
+                                frame[i * 2 + 1] = (Byte)(val >> 8 & 0xFF);
+                            }
+                            isSpeech = false;
+                            break;
+                        case 4: // 交替
+                            isSpeech = f % 10 < 6;
+                            for (var i = 0; i < frameSize; i++)
+                            {
+                                var val = isSpeech
+                                    ? (Int16)(Math.Sin(2 * Math.PI * 440 * (f * frameSize + i) / sampleRate) * 20000)
+                                    : (Int16)0;
+                                frame[i * 2] = (Byte)(val & 0xFF);
+                                frame[i * 2 + 1] = (Byte)(val >> 8 & 0xFF);
+                            }
+                            break;
+                    }
+
+                    var prob = vad.GetSpeechProbability(frame);
+                    var detected = vad.IsSpeech(frame);
+
+                    var phaseName = phase switch
+                    {
+                        0 => "正弦波 440Hz",
+                        1 => "静音",
+                        2 => "复合频率",
+                        3 => "白噪声",
+                        _ => "交替模式"
+                    };
+
+                    var logLine = $"[{phaseName}] 帧{f:D2}: 概率={prob:P1} 判定={(detected ? "🗣 语音" : "🔇 静音")}";
+                    Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+                    {
+                        VadResult = detected;
+                        VadProbability = prob;
+                        if (VadLog.Count > 100) VadLog.RemoveAt(0);
+                        VadLog.Add(logLine);
+                    });
+
+                    Thread.Sleep(20); // 模拟实时
+                }
+            }
+
+            Avalonia.Threading.Dispatcher.UIThread.Post(() =>
+            {
+                VadIsRunning = false;
+                VadStatus = "测试完成 ✓";
+            });
+        });
+    }
+
+    [RelayCommand]
+    private void VadStop()
+    {
+        _vadCts?.Cancel();
+        VadIsRunning = false;
+        VadStatus = "已停止";
+    }
+
+    [RelayCommand]
+    private void VadClear()
+    {
+        VadLog.Clear();
+        VadProbability = 0;
+        VadResult = false;
+        VadStatus = "就绪";
+    }
+
+    partial void OnVadAggressivenessChanged(Int32 value)
+    {
+        _vad.Aggressiveness = value;
     }
 
     private void LoadCodecRegistry()

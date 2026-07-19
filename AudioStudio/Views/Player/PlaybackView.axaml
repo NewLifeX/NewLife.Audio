@@ -2,6 +2,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="using:AudioStudio.ViewModels.Player"
              xmlns:converters="using:AudioStudio.Converters"
+             xmlns:controls="using:AudioStudio.Controls"
              x:Class="AudioStudio.Views.Player.PlaybackView"
              x:DataType="vm:PlaybackViewModel">
 
@@ -10,7 +11,7 @@
         <converters:PercentConverter x:Key="PercentConverter" />
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,Auto,*" Margin="8">
+    <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="8">
 
         <!-- 信息面板 -->
         <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
@@ -53,8 +54,15 @@
             </Grid>
         </Border>
 
-        <!-- 播放控制栏 -->
+        <!-- 波形显示 -->
         <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="4" Margin="0,0,0,4" Height="80">
+            <controls:WaveformControl PcmData="{Binding WaveformData}" />
+        </Border>
+
+        <!-- 播放控制栏 -->
+        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                 CornerRadius="4" Padding="8" Margin="0,0,0,8">
             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -89,7 +97,7 @@
         </Border>
 
         <!-- 播放列表 -->
-        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                 CornerRadius="4" Padding="8">
             <Grid RowDefinitions="Auto,*">

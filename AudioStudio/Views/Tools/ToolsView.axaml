@@ -95,5 +95,58 @@
                            Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" FontSize="12" />
             </Grid>
         </TabItem>
+
+        <!-- VAD 测试 -->
+        <TabItem Header="VAD 测试">
+            <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="4" RowSpacing="8">
+                <!-- 参数 -->
+                <Grid Grid.Row="0" ColumnDefinitions="Auto,*,Auto,*" ColumnSpacing="8" RowDefinitions="Auto,Auto" RowSpacing="4">
+                    <TextBlock Grid.Row="0" Grid.Column="0" Text="激进模式:" VerticalAlignment="Center" />
+                    <Slider Grid.Row="0" Grid.Column="1" Minimum="0" Maximum="3" TickFrequency="1"
+                            Value="{Binding VadAggressiveness}" IsSnapToTickEnabled="True" />
+                    <TextBlock Grid.Row="0" Grid.Column="2" Text="测试频率(Hz):" VerticalAlignment="Center" />
+                    <NumericUpDown Grid.Row="0" Grid.Column="3" Minimum="100" Maximum="4000"
+                                   Value="{Binding VadTestToneFrequency}" Increment="100" Width="120" />
+                </Grid>
+
+                <!-- 状态指示 -->
+                <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        BorderThickness="1" CornerRadius="4" Padding="8">
+                    <Grid ColumnDefinitions="Auto,*,Auto" ColumnSpacing="12">
+                        <Ellipse Grid.Column="0" Width="24" Height="24" Stroke="Gray" StrokeThickness="2"
+                                 Fill="{Binding VadResult, Converter={StaticResource VadStateConverter}}" />
+                        <StackPanel Grid.Column="1" Orientation="Vertical">
+                            <TextBlock Text="{Binding VadProbability, StringFormat='语音概率: {0:P1}'}" FontSize="14" FontWeight="SemiBold" />
+                            <TextBlock Text="{Binding VadStatus}" FontSize="12" />
+                        </StackPanel>
+                        <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
+                            <Button Content="▸ 开始测试" Command="{Binding VadStartTestCommand}" Margin="0,0,8,0"
+                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBoolConverter}}" />
+                            <Button Content="■ 停止" Command="{Binding VadStopCommand}" Margin="0,0,8,0"
+                                    IsEnabled="{Binding VadIsRunning}" />
+                            <Button Content="清空" Command="{Binding VadClearCommand}"
+                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBoolConverter}}" />
+                        </StackPanel>
+                    </Grid>
+                </Border>
+
+                <!-- 概率条 -->
+                <ProgressBar Grid.Row="2" Minimum="0" Maximum="1" Value="{Binding VadProbability}"
+                             Height="20" CornerRadius="4" />
+
+                <!-- 日志 -->
+                <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                        Padding="4" CornerRadius="4">
+                    <TextBlock Text="VAD 检测日志" FontSize="12" FontWeight="SemiBold" />
+                </Border>
+                <ListBox Grid.Row="4" ItemsSource="{Binding VadLog}" BorderThickness="0">
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <TextBlock Text="{Binding}" FontSize="11" FontFamily="Consolas" Margin="2,1" />
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </Grid>
+        </TabItem>
     </TabControl>
 </UserControl>

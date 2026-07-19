@@ -37,6 +37,10 @@ public partial class PlaybackViewModel : ViewModelBase
     /// <summary>元数据信息文本</summary>
     [ObservableProperty]
     private String _metadataText = String.Empty;
+
+    /// <summary>波形数据（最新的 PCM 帧）</summary>
+    [ObservableProperty]
+    private Byte[] _waveformData = [];
     #endregion
 
     #region 构造
@@ -55,6 +59,27 @@ public partial class PlaybackViewModel : ViewModelBase
                 UpdateInfoText();
             }
         };
+
+        // 订阅 PCM 数据用于波形显示
+        _player.PcmDataAvailable += OnPcmData;
+    }
+
+    private void OnPcmData(Object? sender, Byte[] data)
+    {
+        // 降采样到约 10K 字节用于波形渲染
+        if (data == null || data.Length == 0) return;
+        var step = Math.Max(1, data.Length / 10000);
+        var sampled = new Byte[(data.Length + step - 1) / step / 2 * 2];
+        var idx = 0;
+        for (var i = 0; i < data.Length && idx < sampled.Length; i += step * 2)
+        {
+            if (i + 1 < data.Length)
+            {
+                sampled[idx++] = data[i];
+                sampled[idx++] = data[i + 1];
+            }
+        }
+        WaveformData = sampled;
     }
     #endregion
 
