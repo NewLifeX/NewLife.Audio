@@ -4,7 +4,7 @@ namespace NewLife.Audio.Speech;
 
 /// <summary>自动增益控制器。动态调整音频电平至目标范围</summary>
 /// <remarks>
-/// 实现 IAudioProcessor 接口，无缝接入 M3 信号链。
+/// 实现 IAudioProcessor 接口，无缝接入 DSP 信号链。
 /// 慢启快放策略：Attack ~10ms, Release ~500ms。
 /// </remarks>
 public class AutomaticGainControl : IAudioProcessor

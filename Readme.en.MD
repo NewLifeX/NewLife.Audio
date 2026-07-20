@@ -17,7 +17,7 @@ NuGet: `NewLife.Audio`
 
 ## Features
 
-### 🎵 Codec Engine (M1)
+### 🎵 Codec Engine (CODEC)
 Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** sub-band ADPCM
@@ -31,14 +31,14 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 - Pluggable factory via `CodecRegistry` + `ICodecInfo` metadata
 - IoT chip header adaptation (Hisilicon / Dahua / Uniview)
 
-### 🔊 Audio Device I/O (M2)
+### 🔊 Audio Device I/O (DEVIO)
 Cross-platform audio device abstraction:
 - Device enumeration & discovery
 - **WaveOut** / **WASAPI** / **ASIO** backends on Windows
 - Audio capture & loopback recording
 - Multi-device concurrent management via `AudioDeviceManager`
 
-### 🎛️ DSP Pipeline (M3)
+### 🎛️ DSP Pipeline (DSP)
 Composable audio signal processing chain:
 - Resampling (linear interpolation)
 - Channel conversion (mono ↔ stereo)
@@ -53,7 +53,7 @@ Composable audio signal processing chain:
 - Speed change (OLA) & pitch shift
 - Chainable `IAudioProcessor` + `AudioPipeline`
 
-### 🗣️ Speech Processing (M4)
+### 🗣️ Speech Processing (VOP)
 Real-time voice communication front-end:
 - **VAD** — Voice Activity Detection (GMM model, 6 sub-bands + hangover)
 - **AEC** — Acoustic Echo Cancellation (NLMS adaptive filter + double-talk detection + comfort noise)
@@ -61,7 +61,7 @@ Real-time voice communication front-end:
 - **NS** — Noise Suppression (spectral subtraction + FFT/IFFT + OLA synthesis)
 - Voice preprocessor pipeline: HPF → VAD → AGC
 
-### 📦 Container Formats (M5)
+### 📦 Container Formats (CONT)
 Audio file format read/write:
 - **WAV** — Full RIFF parsing & writing
 - **Ogg** — Page-level read/write (Opus/Vorbis)
@@ -69,7 +69,7 @@ Audio file format read/write:
 - **FLAC** — Native fLaC metadata block parsing
 - **Raw PCM** — Auto-detect or manual format specification
 
-### 📡 Streaming & Transport (M6)
+### 📡 Streaming & Transport (STRM)
 Network audio streaming:
 - **RTP** packetization & depacketization (RFC 3550) + session management
 - **RTSP** client (TCP: OPTIONS→DESCRIBE→SETUP→PLAY→TEARDOWN, SDP parsing)

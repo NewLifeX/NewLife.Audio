@@ -9,7 +9,7 @@ namespace NewLife.Audio.Speech;
 /// 6子带能量分析 + 2分量高斯混合模型 + Hangover防抖动。
 /// 参考 WebRTC VAD 原理，纯 C# 实现。
 /// 帧长固定 10ms（80/160/240/320/480 样本对应 8k/16k/24k/32k/48kHz）。
-/// 实现 IAudioProcessor 接口，可直接接入 M3 信号链。Read() 透传样本不修改数据，仅更新检测状态。
+/// 实现 IAudioProcessor 接口，可直接接入 DSP 信号链。Read() 透传样本不修改数据，仅更新检测状态。
 /// </remarks>
 public class GmmVad : IVoiceActivityDetector, IAudioProcessor
 {

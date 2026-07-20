@@ -1,4 +1,4 @@
-# M4-语音处理
+# VOP-语音处理
 
 > 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 5 章 | 功能清单：[功能模块清单](功能模块清单.md)
@@ -150,9 +150,9 @@ public class VoicePreprocessor : IAudioProcessor
 | 决策 | 理由 |
 |---|---|
 | GMM VAD 纯 C# 实现 | 算法简单、参数少、无外部依赖，纯 C# 实现完全可行 |
-| VAD 只支持 8k/16k/32kHz | 与标准实现一致，其他采样率先经 M3 重采样到 8kHz 再送入 |
+| VAD 只支持 8k/16k/32kHz | 与标准实现一致，其他采样率先经 DSP 重采样到 8kHz 再送入 |
 | AGC 使用慢启快放策略 | 防止语音起始被增益压掉（慢启），静音后快速恢复增益（快放） |
-| AGC / VAD 实现 `IAudioProcessor` | 可无缝接入 M3 信号链管线 |
+| AGC / VAD 实现 `IAudioProcessor` | 可无缝接入 DSP 信号链管线 |
 | AEC 纯托管 NLMS 滤波器 | 自适应滤波器 + 双讲检测 + 舒适噪声注入，无需原生依赖 |
 | NS 频谱减法 | 基础算法纯 C#（FFT/IFFT + OLA 合成），高质量方案远期引入 ML 模型 |
 | 语音前置管线默认静音输出为静音包 | IoT 对讲场景下，带宽敏感时不应传输静音帧（DTX） |

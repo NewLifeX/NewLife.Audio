@@ -1,4 +1,4 @@
-# M6-流媒体传输
+# STRM-流媒体传输
 
 > 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 7 章 | 功能清单：[功能模块清单](功能模块清单.md)
@@ -83,8 +83,8 @@ sequenceDiagram
 ```mermaid
 flowchart LR
     A[浏览器<br/>WebSocket 客户端] <-->|双向音频帧| B[WebSocketAudioPipe<br/>服务端]
-    B <-->|PCM/编码帧| C[M4 语音处理]
-    C <-->|处理后的 PCM| D[M1 编解码引擎]
+    B <-->|PCM/编码帧| C[VOP 语音处理]
+    C <-->|处理后的 PCM| D[CODEC 编解码引擎]
     D <-->|编码帧| E[IoT 设备]
 ```
 

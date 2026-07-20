@@ -1,4 +1,4 @@
-# M2-音频设备IO
+# DEVIO-音频设备IO
 
 > 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 3 章 | 功能清单：[功能模块清单](功能模块清单.md)
@@ -79,7 +79,7 @@ sequenceDiagram
     Backend->>Device: 停止采集
 ```
 
-### 3.3 播放器 + 信号链整合（与 M3 协同）
+### 3.3 播放器 + 信号链整合（与 DSP 协同）
 
 ```mermaid
 flowchart LR

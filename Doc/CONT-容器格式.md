@@ -1,4 +1,4 @@
-# M5-容器格式
+# CONT-容器格式
 
 > 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
 > 需求对应：[需求文档](需求文档.md) 第 6 章 | 功能清单：[功能模块清单](功能模块清单.md)
@@ -41,7 +41,7 @@ sequenceDiagram
     participant App as 调用方
     participant Factory as AudioContainerFactory
     participant Reader as IAudioContainerReader
-    participant Codec as M1 编解码引擎
+    participant Codec as CODEC 编解码引擎
     App->>Factory: OpenRead("audio.ogg")
     Factory->>Factory: 魔术字节检测 → Ogg
     Factory->>Reader: Create OggFileReader
@@ -62,7 +62,7 @@ sequenceDiagram
     participant App as 调用方
     participant Factory as AudioContainerFactory
     participant Writer as IAudioContainerWriter
-    participant Codec as M1 编解码引擎
+    participant Codec as CODEC 编解码引擎
     App->>Factory: OpenWrite("output.wav", waveFormat)
     Factory-->>App: WaveFileWriter
     App->>Writer: WriteMetadata(metadata)
@@ -184,7 +184,7 @@ data Chunk
 
 | 决策 | 理由 |
 |---|---|
-| 容器与编解码分离 | 容器只负责解析/封装，编码数据交给 M1 处理，职责清晰 |
+| 容器与编解码分离 | 容器只负责解析/封装，编码数据交给 CODEC 处理，职责清晰 |
 | 读取器不自动解码 | 调用方按需选择解码或不解码（如仅需转发编码数据），灵活性最高 |
 | `RawPcmReader` 支持格式推断 | IoT 场景大量原始 PCM 数据，自动推断减少调用方心智负担 |
 | 元数据与音频数据分离 | 写入时元数据可提前设置，不与帧数据混在一起 |

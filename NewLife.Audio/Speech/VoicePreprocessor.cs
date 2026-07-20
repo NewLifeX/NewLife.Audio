@@ -6,7 +6,7 @@ namespace NewLife.Audio.Speech;
 
 /// <summary>语音前置处理管线。串联高通滤波 → VAD → AGC，即开即用</summary>
 /// <remarks>
-/// 实现 IAudioProcessor 接口，可直接接入 M3 信号链。
+/// 实现 IAudioProcessor 接口，可直接接入 DSP 信号链。
 /// 可配置开关：EnableVAD / EnableAGC / SilenceOnVad。
 /// VAD 判断静音时默认输出静音包（DTX），适应 IoT 带宽敏感场景。
 /// </remarks>
