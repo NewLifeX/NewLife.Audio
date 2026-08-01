@@ -10,6 +10,8 @@
 
 A cross-platform, pure-managed .NET audio processing library supporting codec, device I/O, DSP effects, speech processing, container format I/O, and streaming — all in one NuGet package.
 
+🎧 Bundled [AudioStudio](AudioStudio/) cross-platform desktop demo client (Avalonia) with six tool modules: playback, conversion, devices, recording, DSP, and diagnostics.
+
 Source: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
 

@@ -5,6 +5,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationManifest>app.manifest</ApplicationManifest>
+    <VersionPrefix>1.2</VersionPrefix>
+    <VersionSuffix>$([System.DateTime]::Now.ToString(`yyyy.MMdd`))</VersionSuffix>
+    <Version>$(VersionPrefix).$(VersionSuffix)</Version>
   </PropertyGroup>
 
   <ItemGroup>
@@ -13,10 +16,10 @@
   </ItemGroup>
 
   <ItemGroup>
-    <PackageReference Include="Avalonia" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Desktop" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.0" />
-    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.0" />
+    <PackageReference Include="Avalonia" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Desktop" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Themes.Fluent" Version="12.1.1" />
+    <PackageReference Include="Avalonia.Fonts.Inter" Version="12.1.1" />
     <PackageReference Include="AvaloniaUI.DiagnosticsSupport" Version="2.2.3">
       <IncludeAssets Condition="'$(Configuration)' != 'Debug'">None</IncludeAssets>
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
