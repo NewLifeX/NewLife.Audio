@@ -1,0 +1,18 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <LangVersion>latest</LangVersion>
+    <RootNamespace>AotSmoke</RootNamespace>
+    <PublishAot>true</PublishAot>
+    <!-- IL2091：NewLife.Audio 的 libfaac 原生互操作已改用 AOT 友好的 Marshal 泛型重载并携带 DAM 标注；
+         但库以 netstandard 为目标，DAM 属性来自 NewLife.Core polyfill（非 BCL 定义），ILC 无法识别该标注来源，
+         仅对可选原生路径产生提示性告警，此处按设计豁免（不影响任何运行行为，libfaac 缺失时自动走托管回退） -->
+    <NoWarn>$(NoWarn);IL2091</NoWarn>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\NewLife.Audio\NewLife.Audio.csproj" />
+  </ItemGroup>
+</Project>

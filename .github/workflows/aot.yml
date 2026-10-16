@@ -1,0 +1,100 @@
+name: aot
+
+# AOT 兼容性矩阵：win-x64 / linux-x64 / linux-arm64 使用原生 runner 发布并运行 NativeAOT 冒烟；
+# linux-la64（龙芯）无 NativeAOT 后端（官方不支持），以 QEMU 用户态仿真 + 龙芯 SDK 跑 JIT 冒烟覆盖运行期兼容性。
+# 触发：push / pull_request / 手动（workflow_dispatch）；不采用夜间定时。NativeAOT 官方不支持跨 OS 编译，
+# 每个 RID 使用原生 runner 发布运行。冒烟工程 AotSmoke 以非 0 退出码即失败作为门禁。
+
+on:
+  push:
+    branches: [ '*' ]
+  pull_request:
+    branches: [ '*' ]
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  # NativeAOT 冒烟矩阵：同二进制先以 JIT 运行（对照基线），再以 NativeAOT 发布运行（17 场景，非 0 退出码即失败）
+  aot:
+    name: aot (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - rid: win-x64
+            os: windows-latest
+            bin: AotSmoke.exe
+          - rid: linux-x64
+            os: ubuntu-latest
+            bin: AotSmoke
+          - rid: linux-arm64
+            os: ubuntu-24.04-arm
+            bin: AotSmoke
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+    - name: Install NativeAOT Prerequisites (Linux)
+      if: runner.os == 'Linux'
+      run: sudo apt-get update && sudo apt-get install -y clang zlib1g-dev
+    - name: JIT Baseline
+      # 同一冒烟工程以 JIT 运行，为 AOT 结果提供对照（JIT 不支持该 RID 时也能留下行为数据）
+      run: dotnet run -c Release --project AotSmoke/AotSmoke.csproj
+    - name: Publish NativeAOT Smoke
+      run: dotnet publish AotSmoke/AotSmoke.csproj -c Release -r ${{ matrix.rid }} -o AotSmoke/bin/aot-out
+    - name: Run NativeAOT Smoke
+      # 任一场景失败即非 0 退出码
+      shell: bash
+      run: ./AotSmoke/bin/aot-out/${{ matrix.bin }}
+
+  # linux-la64（龙芯）：官方无 runner、无 runtime pack、无 NativeAOT（ILCompiler 未见 LA64 后端）。
+  # 方案：docker + QEMU 用户态仿真（loong64 binfmt）+ 龙芯 SDK 在 loong64 容器内运行 ——
+  # 宿主完成构建（QEMU 内不跑 MSBuild），容器内以 LA64 运行时执行同一冒烟件。
+  loongarch64:
+    name: smoke (linux-loongarch64 / QEMU)
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET (host，用于构建)
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+    - name: Set up QEMU (loong64)
+      uses: docker/setup-qemu-action@v3
+      with:
+        platforms: loong64
+    - name: Download Loongson .NET SDK (linux-loongarch64)
+      # 宿主下载（GitHub 直连快），容器通过挂载点使用；容器内 --info 是 QEMU 通路的第一道验证
+      run: |
+        curl -fL --retry 3 -o "$RUNNER_TEMP/la64-sdk.tar.gz" \
+          https://github.com/loongson/dotnet/releases/download/v10.0.113-loongarch64/dotnet-sdk-10.0.113-linux-loongarch64.tar.gz
+        mkdir -p "$HOME/la64" && tar -xzf "$RUNNER_TEMP/la64-sdk.tar.gz" -C "$HOME/la64"
+        chmod +x "$HOME/la64/dotnet" || true
+    - name: Build AotSmoke (host，QEMU 内不跑 MSBuild)
+      # 龙芯 SDK 在 QEMU 下的 MSBuild 链路不稳，还原与构建均放宿主 x64 SDK（产出 RID 无关 IL），容器内仅执行
+      run: dotnet build AotSmoke/AotSmoke.csproj -c Release
+    - name: JIT Smoke in loong64 Container
+      env:
+        DOTNET_CLI_TELEMETRY_OPTOUT: 1
+      run: |
+        docker run --rm --platform linux/loong64 \
+          -v "$PWD:/src" -w /src \
+          -v "$HOME/la64:/opt/dotnet" \
+          -v "$HOME/.nuget/packages:/home/runner/.nuget/packages" \
+          -e NUGET_PACKAGES=/home/runner/.nuget/packages \
+          -e DOTNET_ROOT=/opt/dotnet \
+          -e DOTNET_CLI_TELEMETRY_OPTOUT=1 \
+          -e DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
+          -e DOTNET_EnableHWIntrinsic=0 \
+          lcr.loongnix.cn/debian:14-slim \
+          sh -c '/opt/dotnet/dotnet --info && /opt/dotnet/dotnet /src/AotSmoke/bin/Release/net10.0/AotSmoke.dll'

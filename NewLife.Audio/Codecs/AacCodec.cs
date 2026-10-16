@@ -1,3 +1,4 @@
+using NewLife.Audio.AAC;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
@@ -128,52 +129,34 @@ public class AacCodec : IAudioCodec, ICodecInfo
     {
         var ms = new MemoryStream();
 
-        // 使用 FaacEncoder 进行原生编码（from AAC namespace）
-        var encoderType = Type.GetType("NewLife.Audio.AAC.FaacEncoder, NewLife.Audio");
-        if (encoderType == null) return EncodePassthrough(pcm, sampleRate, bitrate);
+        // 直接使用 FaacEncoder 原生编码（同程序集内类型，无需反射，兼容裁剪与 NativeAOT）；
+        // libfaac 不可用时构造抛出 DllNotFoundException，由 FromPcm 回退到透传模式
+        using var encoder = new FaacEncoder(sampleRate, channels, 16, false);
 
-        var encoder = Activator.CreateInstance(encoderType, sampleRate, channels, 16, false) as IDisposable;
-        if (encoder == null) return EncodePassthrough(pcm, sampleRate, bitrate);
+        var inputBuf = new Byte[encoder.InputSamples * channels * 2];
+        var outputBuf = new Byte[encoder.MaxOutput];
+        var pcmBytes = pcm.ToArray();
+        var offset = 0;
 
-        try
+        while (offset + inputBuf.Length <= pcmBytes.Length)
         {
-            var encodeMethod = encoderType.GetMethod("Encode");
-            if (encodeMethod == null) return EncodePassthrough(pcm, sampleRate, bitrate);
-
-            var inputSamplesField = encoderType.GetProperty("InputSamples");
-            var maxOutputField = encoderType.GetProperty("MaxOutput");
-            var inputSamples = inputSamplesField != null ? (Int32)inputSamplesField.GetValue(encoder) : 1024;
-            var maxOutput = maxOutputField != null ? (Int32)maxOutputField.GetValue(encoder) : 2048;
-
-            var inputBuf = new Byte[inputSamples * channels * 2];
-            var outputBuf = new Byte[maxOutput];
-            var pcmBytes = pcm.ToArray();
-            var offset = 0;
-
-            while (offset + inputBuf.Length <= pcmBytes.Length)
+            Array.Copy(pcmBytes, offset, inputBuf, 0, inputBuf.Length);
+            var encoded = encoder.Encode(inputBuf, outputBuf);
+            if (encoded > 0)
             {
-                Array.Copy(pcmBytes, offset, inputBuf, 0, inputBuf.Length);
-                var encoded = (Int32)encodeMethod.Invoke(encoder, [inputBuf, outputBuf]);
-                if (encoded > 0)
-                {
-                    // 包装为 ADTS 帧
-                    WriteAdtsHeader(ms, sampleRate, encoded);
-                    ms.Write(outputBuf, 0, encoded);
-                }
-                offset += inputBuf.Length;
+                // 包装为 ADTS 帧
+                WriteAdtsHeader(ms, sampleRate, encoded);
+                ms.Write(outputBuf, 0, encoded);
             }
-
-            // 刷新残余数据
-            var final = (Int32)encodeMethod.Invoke(encoder, [Array.Empty<Byte>(), outputBuf]);
-            if (final > 0)
-            {
-                WriteAdtsHeader(ms, sampleRate, final);
-                ms.Write(outputBuf, 0, final);
-            }
+            offset += inputBuf.Length;
         }
-        finally
+
+        // 刷新残余数据
+        var final = encoder.Encode(Array.Empty<Byte>(), outputBuf);
+        if (final > 0)
         {
-            encoder.Dispose();
+            WriteAdtsHeader(ms, sampleRate, final);
+            ms.Write(outputBuf, 0, final);
         }
 
         ms.Position = 0;

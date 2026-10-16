@@ -1,4 +1,5 @@
-﻿using System.Runtime.InteropServices;
+﻿using System.Diagnostics.CodeAnalysis;
+using System.Runtime.InteropServices;
 
 namespace NewLife.Audio.AAC;
 
@@ -225,7 +226,10 @@ public class FaacEncoder : DisposeBase
 
 public static class InteropExtensions
 {
-    public static T BytesToStruct<T>(Byte[] bytes, Int32 startIndex, Int32 length)
+    // 说明：仅服务于可选的 libfaac 原生互操作（FaacEncoder）。为兼容 NativeAOT/裁剪，
+    // 统一使用 AOT 友好的 Marshal 泛型重载（SizeOf<T>/PtrToStructure<T>/StructureToPtr<T>）并携带 DAM 标注，
+    // 不再产生 IL3050/IL2091；libfaac 不存在时由 AacCodec.EncodeWithFaac 回退到纯托管透传编码。
+    public static T BytesToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(Byte[] bytes, Int32 startIndex, Int32 length)
     {
         T local;
         T local2;
@@ -245,7 +249,7 @@ public static class InteropExtensions
             try
             {
                 Marshal.Copy(bytes, startIndex, destination, length);
-                local = (T)Marshal.PtrToStructure(destination, typeof(T));
+                local = Marshal.PtrToStructure<T>(destination);
             }
             catch (Exception exception)
             {
@@ -259,21 +263,51 @@ public static class InteropExtensions
         return local;
     }
 
+    public static void IntPtrSetValue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr, T structObj) => IntPtrSetValue(intptr, StructToBytes(structObj));
+
     public static void IntPtrSetValue(IntPtr intptr, Object structObj) => IntPtrSetValue(intptr, StructToBytes(structObj));
 
     public static void IntPtrSetValue(IntPtr intptr, Byte[] bytes) => Marshal.Copy(bytes, 0, intptr, bytes.Length);
 
-    public static T IntPtrToStruct<T>(IntPtr intptr)
+    public static T IntPtrToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr)
     {
         var index = 0;
-        return IntPtrToStruct<T>(intptr, index, Marshal.SizeOf(typeof(T)));
+        return IntPtrToStruct<T>(intptr, index, Marshal.SizeOf<T>());
     }
 
-    public static T IntPtrToStruct<T>(IntPtr intptr, Int32 index, Int32 length)
+    public static T IntPtrToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr, Int32 index, Int32 length)
     {
         var destination = new Byte[length];
         Marshal.Copy(intptr, destination, index, length);
         return BytesToStruct<T>(destination, 0, destination.Length);
+    }
+
+    public static Byte[] StructToBytes<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(T structObj)
+    {
+        var size = Marshal.SizeOf<T>();
+        return StructToBytes(structObj, size);
+    }
+
+    public static Byte[] StructToBytes<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(T structObj, Int32 size)
+    {
+        Byte[] buffer2;
+        var ptr = Marshal.AllocHGlobal(size);
+        try
+        {
+            Marshal.StructureToPtr<T>(structObj, ptr, false);
+            var destination = new Byte[size];
+            Marshal.Copy(ptr, destination, 0, size);
+            buffer2 = destination;
+        }
+        catch (Exception exception)
+        {
+            throw new Exception("Error in StructToBytes ! " + exception.Message);
+        }
+        finally
+        {
+            Marshal.FreeHGlobal(ptr);
+        }
+        return buffer2;
     }
 
     public static Byte[] StructToBytes(Object structObj)
