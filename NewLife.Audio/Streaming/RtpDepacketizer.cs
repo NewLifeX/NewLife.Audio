@@ -62,37 +62,38 @@ public class RtpDepacketizer
         // 检查是否 Marker 位（帧尾）
         if (packet.Marker)
         {
-            // 收集从起始序列号到当前序列号的所有包
+            // 收集从起始序列号到当前序列号的所有包（按 UInt16 回绕安全遍历）
             var startSeq = FindFrameStart(seq);
-            if (startSeq <= seq)
-            {
-                var totalLen = 0;
-                for (var s = startSeq; s <= seq; s++)
-                {
-                    if (_pendingPackets.TryGetValue(s, out var p))
-                        totalLen += p.Payload?.Length ?? 0;
-                }
+            var count = (UInt16)(seq - startSeq) + 1;
 
-                if (totalLen > 0)
+            var totalLen = 0;
+            for (var i = 0; i < count; i++)
+            {
+                var s = (UInt16)(startSeq + i);
+                if (_pendingPackets.TryGetValue(s, out var p))
+                    totalLen += p.Payload?.Length ?? 0;
+            }
+
+            if (totalLen > 0)
+            {
+                completeFrame = new Byte[totalLen];
+                var offset = 0;
+                for (var i = 0; i < count; i++)
                 {
-                    completeFrame = new Byte[totalLen];
-                    var offset = 0;
-                    for (var s = startSeq; s <= seq; s++)
+                    var s = (UInt16)(startSeq + i);
+                    if (_pendingPackets.TryGetValue(s, out var p) && p.Payload != null)
                     {
-                        if (_pendingPackets.TryGetValue(s, out var p) && p.Payload != null)
-                        {
-                            Array.Copy(p.Payload, 0, completeFrame, offset, p.Payload.Length);
-                            offset += p.Payload.Length;
-                        }
-                        _pendingPackets.Remove(s);
+                        Array.Copy(p.Payload, 0, completeFrame, offset, p.Payload.Length);
+                        offset += p.Payload.Length;
                     }
-                    return true;
+                    _pendingPackets.Remove(s);
                 }
+                return true;
             }
 
             // 清理
-            for (var s = startSeq; s <= seq; s++)
-                _pendingPackets.Remove(s);
+            for (var i = 0; i < count; i++)
+                _pendingPackets.Remove((UInt16)(startSeq + i));
         }
 
         return false;
