@@ -18,7 +18,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  # 全解决方案编译校验：覆盖 netstandard2.0 / netstandard2.1 / net461（核心库）、net8.0（测试/示例）、net10.0（客户端/AOT 冒烟）
+  # 全解决方案编译校验：覆盖 netstandard2.0 / netstandard2.1 / net461（核心库）、net10.0（测试/客户端/AOT 冒烟）
   build:
     name: build solution
     runs-on: windows-latest
@@ -33,7 +33,7 @@ jobs:
           8.x
           10.x
     - name: Build
-      run: dotnet build -c Release
+      run: dotnet build NewLife.Audio.slnx -c Release
 
   # win-x64：原生 runner 直接运行单元测试
   test-win-x64:
@@ -50,7 +50,7 @@ jobs:
           8.x
           10.x
     - name: Test
-      run: dotnet test XUnitTest\XUnitTest.csproj -c Release --logger "trx;LogFileName=test-win-x64.trx" --results-directory TestResults
+      run: dotnet test XUnitTest\XUnitTest.csproj -c Release -- --report-trx --report-trx-filename test-win-x64.trx --results-directory TestResults
     - name: Upload Test Results
       if: always()
       uses: actions/upload-artifact@v4
@@ -74,7 +74,7 @@ jobs:
           8.x
           10.x
     - name: Test
-      run: dotnet test XUnitTest/XUnitTest.csproj -c Release --logger "trx;LogFileName=test-linux-x64.trx" --results-directory TestResults
+      run: dotnet test XUnitTest/XUnitTest.csproj -c Release -- --report-trx --report-trx-filename test-linux-x64.trx --results-directory TestResults
     - name: Upload Test Results
       if: always()
       uses: actions/upload-artifact@v4
@@ -98,7 +98,7 @@ jobs:
           8.x
           10.x
     - name: Test
-      run: dotnet test XUnitTest/XUnitTest.csproj -c Release --logger "trx;LogFileName=test-linux-arm64.trx" --results-directory TestResults
+      run: dotnet test XUnitTest/XUnitTest.csproj -c Release -- --report-trx --report-trx-filename test-linux-arm64.trx --results-directory TestResults
     - name: Upload Test Results
       if: always()
       uses: actions/upload-artifact@v4
@@ -108,7 +108,7 @@ jobs:
         if-no-files-found: ignore
 
   # linux-la64（龙芯）：QEMU 用户态仿真 + 龙芯 SDK + loong64 Debian 容器。
-  # VSTest 不支持 LoongArch64，改用 xunit 控制台运行器执行；构建与还原在宿主 x64 SDK 完成（RID 无关 IL）。
+  # 测试项目为 xUnit v3 独立可执行程序（MTP），构建在宿主 x64 SDK 完成，容器内直接用 dotnet 执行。
   test-linux-la64:
     name: test (linux-la64 / QEMU)
     runs-on: ubuntu-latest
@@ -124,12 +124,6 @@ jobs:
           10.x
     - name: Build for loong64 (host，QEMU 内不跑 MSBuild)
       run: dotnet build XUnitTest/XUnitTest.csproj -c Release
-    - name: Download xunit console runner (host，VSTest 不支持 LoongArch64)
-      run: |
-        curl -fsSL -o "$RUNNER_TEMP/xrc.nupkg" https://api.nuget.org/v3-flatcontainer/xunit.runner.console/2.9.3/xunit.runner.console.2.9.3.nupkg
-        mkdir -p "$HOME/xrc"
-        unzip -oj "$RUNNER_TEMP/xrc.nupkg" "tools/net6.0/*" -d "$HOME/xrc"
-        ls "$HOME/xrc"
     - name: Download Loongson .NET SDK (linux-loongarch64)
       run: |
         curl -fL --retry 3 -o "$RUNNER_TEMP/la64-sdk.tar.gz" \
@@ -142,7 +136,7 @@ jobs:
     - name: Unit Tests (loong64 container)
       run: |
         docker run --rm --platform linux/loong64 -w /src \
-          -v "$PWD:/src" -v "$HOME/la64:/opt/dotnet:ro" -v "$HOME/.nuget:/home/runner/.nuget" -v "$HOME/xrc:/opt/xunit:ro" \
+          -v "$PWD:/src" -v "$HOME/la64:/opt/dotnet:ro" -v "$HOME/.nuget:/home/runner/.nuget" \
           -e HOME=/home/runner -e DOTNET_CLI_HOME=/home/runner -e NUGET_PACKAGES=/home/runner/.nuget/packages \
           -e DOTNET_ROOT=/opt/dotnet -e PATH=/opt/dotnet:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin \
           -e DOTNET_CLI_TELEMETRY_OPTOUT=1 -e DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1 \
@@ -153,11 +147,9 @@ jobs:
             apt-get install -y -qq ca-certificates libstdc++6 zlib1g libunwind8 || true
             apt-get install -y -qq libssl3t64 || apt-get install -y -qq libssl3 || true
             dotnet --info
-            # 把 xunit 控制台运行器放入测试输出目录，作为入口程序集保证 BaseDirectory 与 dotnet test 一致
-            cp /opt/xunit/* /src/Bin/UnitTest/net8.0/
             mkdir -p /src/TestResults
-            cd /src/Bin/UnitTest/net8.0
-            timeout 150m dotnet xunit.console.dll XUnitTest.dll -parallel none -xml /src/TestResults/test-linux-la64.xml
+            cd /src/Bin/UnitTest/net10.0
+            timeout 150m dotnet XUnitTest.dll -parallelMode none -result-xml /src/TestResults/test-linux-la64.xml
           '
     - name: Upload Test Results
       if: always()

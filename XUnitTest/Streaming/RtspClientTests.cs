@@ -1,4 +1,7 @@
 using System;
+using System.Net;
+using System.Net.Sockets;
+using System.Text;
 using System.Threading.Tasks;
 using NewLife.Audio.Streaming;
 using Xunit;
@@ -59,19 +62,57 @@ public class RtspClientTests
         Assert.NotNull(client);
     }
 
-    [Fact(DisplayName = "RTSP连接失败抛异常不抛NullRef")]
-    public async Task ConnectAsync_InvalidHost_ThrowsConnectionException()
+    [Fact(DisplayName = "RTSP OPTIONS成功解析Public头")]
+    public async Task OptionsAsync_ValidResponse_ReturnsPublic()
     {
-        var client = new RtspClient("rtsp://127.0.0.1:1/stream");
-        // 无服务器监听，应抛 SocketException 而非 NullReferenceException
-        await Assert.ThrowsAnyAsync<Exception>(() => client.OptionsAsync());
+        var ct = TestContext.Current.CancellationToken;
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var server = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptSocketAsync(ct);
+            var buffer = new Byte[2048];
+            await socket.ReceiveAsync(buffer, SocketFlags.None, ct);
+
+            var response = "RTSP/1.0 200 OK\r\nCSeq: 1\r\nPublic: OPTIONS, DESCRIBE, SETUP, PLAY, PAUSE, TEARDOWN\r\n\r\n";
+            await socket.SendAsync(Encoding.ASCII.GetBytes(response), SocketFlags.None, ct);
+        }, ct);
+
+        using var client = new RtspClient($"rtsp://127.0.0.1:{port}/stream");
+        var methods = await client.OptionsAsync(ct);
+
+        Assert.Contains("DESCRIBE", methods);
+        await server.WaitAsync(TimeSpan.FromSeconds(5), ct);
+    }
+
+    [Fact(DisplayName = "RTSP服务端断开连接时请求抛异常")]
+    public async Task OptionsAsync_ServerDropsConnection_Throws()
+    {
+        var ct = TestContext.Current.CancellationToken;
+        using var listener = new TcpListener(IPAddress.Loopback, 0);
+        listener.Start();
+        var port = ((IPEndPoint)listener.LocalEndpoint).Port;
+
+        var server = Task.Run(async () =>
+        {
+            using var socket = await listener.AcceptSocketAsync(ct);
+            var buffer = new Byte[2048];
+            await socket.ReceiveAsync(buffer, SocketFlags.None, ct);
+            socket.LingerState = new LingerOption(true, 0);
+        }, ct);
+
+        using var client = new RtspClient($"rtsp://127.0.0.1:{port}/stream");
+        await Assert.ThrowsAnyAsync<Exception>(() => client.OptionsAsync(ct));
+        await server.WaitAsync(TimeSpan.FromSeconds(5), ct);
     }
 
     [Fact(DisplayName = "RTSP未连接时Pause返回false不抛异常")]
     public async Task PauseAsync_NotConnected_ReturnsFalse()
     {
         var client = new RtspClient("rtsp://localhost:554/stream");
-        var result = await client.PauseAsync();
+        var result = await client.PauseAsync(TestContext.Current.CancellationToken);
         Assert.False(result);
     }
 }

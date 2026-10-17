@@ -63,7 +63,7 @@ public class WavStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new WavStreamWriter(16000);
 
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
 
         Assert.True(ms.Length >= 44);
         var data = ms.ToArray();
@@ -89,10 +89,10 @@ public class WavStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new WavStreamWriter();
 
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
         var len1 = ms.Length;
 
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
         var len2 = ms.Length;
 
         Assert.Equal(len1, len2);
@@ -104,11 +104,11 @@ public class WavStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new WavStreamWriter();
 
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
         var headerLen = ms.Length;
 
         var chunk = new Byte[160 * 2]; // 20ms 16-bit PCM
-        await writer.WriteChunkAsync(ms, chunk);
+        await writer.WriteChunkAsync(ms, chunk, TestContext.Current.CancellationToken);
 
         Assert.Equal(headerLen + chunk.Length, ms.Length);
     }
@@ -128,7 +128,7 @@ public class Mp3StreamWriterTests
     {
         using var ms = new MemoryStream();
         var writer = new Mp3StreamWriter();
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
         Assert.Equal(0, ms.Length);
     }
 
@@ -138,7 +138,7 @@ public class Mp3StreamWriterTests
         using var ms = new MemoryStream();
         var writer = new Mp3StreamWriter();
         var chunk = new Byte[] { 0xFF, 0xFB, 0x90, 0x00 };
-        await writer.WriteChunkAsync(ms, chunk);
+        await writer.WriteChunkAsync(ms, chunk, TestContext.Current.CancellationToken);
 
         var data = ms.ToArray();
         Assert.Equal(chunk.Length, data.Length);
@@ -162,7 +162,7 @@ public class OggOpusStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new OggOpusStreamWriter();
 
-        await writer.WriteHeaderAsync(ms);
+        await writer.WriteHeaderAsync(ms, TestContext.Current.CancellationToken);
 
         var data = ms.ToArray();
         Assert.True(data.Length > 54); // 至少 2×27 字节
@@ -172,8 +172,11 @@ public class OggOpusStreamWriterTests
         Assert.Equal((Byte)'g', data[2]);
         Assert.Equal((Byte)'S', data[3]);
 
-        // 第二页应在第一个 OpusHead 之后
-        var secondPageOffset = data.Length > 50 ? data[19 + 19 + 8] != 0 ? 0 : 0 : 0;
+        // 第二页应从第一个 OpusHead 页之后开始
+        var first = data.AsSpan().IndexOf("OggS"u8);
+        var second = first >= 0 ? data.AsSpan(first + 4).IndexOf("OggS"u8) : -1;
+        Assert.True(first >= 0);
+        Assert.True(second >= 0);
     }
 
     [Fact(DisplayName = "OGG Opus写入器WriteChunk自动调用WriteHeader")]
@@ -184,7 +187,7 @@ public class OggOpusStreamWriterTests
 
         // 不调用 WriteHeader，直接写 chunk
         var opusPacket = new Byte[80]; // 模拟 Opus 包
-        await writer.WriteChunkAsync(ms, opusPacket);
+        await writer.WriteChunkAsync(ms, opusPacket, TestContext.Current.CancellationToken);
 
         // 应该自动写了头
         var data = ms.ToArray();
@@ -197,7 +200,7 @@ public class OggOpusStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new OggOpusStreamWriter();
 
-        await writer.WriteTrailerAsync(ms);
+        await writer.WriteTrailerAsync(ms, TestContext.Current.CancellationToken);
         var data = ms.ToArray();
         Assert.True(data.Length > 0);
 
@@ -212,10 +215,10 @@ public class OggOpusStreamWriterTests
         using var ms = new MemoryStream();
         var writer = new OggOpusStreamWriter();
 
-        await writer.WriteTrailerAsync(ms);
+        await writer.WriteTrailerAsync(ms, TestContext.Current.CancellationToken);
         var len1 = ms.Length;
 
-        await writer.WriteTrailerAsync(ms);
+        await writer.WriteTrailerAsync(ms, TestContext.Current.CancellationToken);
         var len2 = ms.Length;
 
         Assert.Equal(len1, len2);
