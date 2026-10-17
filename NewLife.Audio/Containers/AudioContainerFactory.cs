@@ -31,10 +31,11 @@ public static class AudioContainerFactory
         // 尝试魔术字节识别
         var magic = new Byte[8];
         var pos = stream.Position;
-        if (stream.Read(magic, 0, 4) >= 4)
-        {
-            stream.Seek(pos, SeekOrigin.Begin);
+        var count = stream.Read(magic, 0, magic.Length);
+        if (stream.CanSeek) stream.Seek(pos, SeekOrigin.Begin);
 
+        if (count >= 4)
+        {
             if (magic[0] == 'R' && magic[1] == 'I' && magic[2] == 'F' && magic[3] == 'F')
                 return new WaveFileReader(stream);
 
@@ -45,12 +46,8 @@ public static class AudioContainerFactory
                 return new FlacContainerReader(stream);
 
             // MP4/M4A: bytes 4-7 = 'ftyp'
-            if (stream.Read(magic, 0, 8) >= 8 &&
-                magic[4] == 'f' && magic[5] == 't' && magic[6] == 'y' && magic[7] == 'p')
-            {
-                stream.Seek(pos, SeekOrigin.Begin);
+            if (count >= 8 && magic[4] == 'f' && magic[5] == 't' && magic[6] == 'y' && magic[7] == 'p')
                 return new Mp4FileReader(stream);
-            }
         }
 
         // 回退到原始 PCM
