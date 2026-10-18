@@ -2,6 +2,7 @@ using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
 using NewLife.Audio.Writers;
+using NewLife;
 
 namespace NewLife.Audio.Streaming;
 
@@ -50,7 +51,7 @@ public class WebSocketAudioPipe
     /// <returns>WebSocket 消息字节</returns>
     public Byte[] SendFrame(Byte[] audioData)
     {
-        if (!_isOpen) throw new InvalidOperationException("管道已关闭");
+        if (!_isOpen) throw new InvalidOperationException(L.T("The pipe has been closed."));
 
         var headerSize = 5;
         var message = new Byte[headerSize + audioData.Length];

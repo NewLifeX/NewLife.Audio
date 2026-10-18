@@ -2,6 +2,7 @@ using System.Runtime.InteropServices;
 using System.Text;
 using NewLife.Buffers;
 using NewLife.Data;
+using NewLife;
 
 namespace NewLife.Audio.Codecs;
 
@@ -37,7 +38,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
     /// <returns>16-bit PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        if (audio.Length < 30) throw new InvalidDataException("Vorbis 数据太短");
+        if (audio.Length < 30) throw new InvalidDataException(L.T("Vorbis data is too short."));
 
         // 解析标识头（第一个包：0x01 + "vorbis"）
         var offset = ParseIdentificationHeader(audio);
@@ -118,15 +119,15 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
         var reader = new SpanReader(data);
 
         var packetType = reader.ReadByte();
-        if (packetType != 1) throw new InvalidDataException("不是 Vorbis 标识头");
+        if (packetType != 1) throw new InvalidDataException(L.T("Not a Vorbis identification header."));
 
         // "vorbis" 签名（6 字节）
         if (reader.ReadBytes(6).ToStr(Encoding.ASCII) != "vorbis")
-            throw new InvalidDataException("不是有效的 Vorbis 数据");
+            throw new InvalidDataException(L.T("Not valid Vorbis data."));
 
         // Vorbis 版本
         var version = reader.ReadUInt32();
-        if (version != 0) throw new NotSupportedException($"Vorbis 版本 {version} 不支持");
+        if (version != 0) throw new NotSupportedException(L.T("Vorbis version {0} is not supported.", version));
 
         _channels = reader.ReadByte();
         _sampleRate = (Int32)reader.ReadUInt32();
@@ -148,7 +149,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
         var reader = new SpanReader(data);
 
         var packetType = reader.ReadByte();
-        if (packetType != 3) throw new InvalidDataException("不是 Vorbis 注释头");
+        if (packetType != 3) throw new InvalidDataException(L.T("Not a Vorbis comment header."));
 
         // 跳过 "vorbis" (6 bytes)
         reader.Advance(6);
@@ -172,7 +173,7 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
 
     private Int32 ParseSetupHeader(ReadOnlySpan<Byte> data)
     {
-        if (data[0] != 5) throw new InvalidDataException("不是 Vorbis 设置头");
+        if (data[0] != 5) throw new InvalidDataException(L.T("Not a Vorbis setup header."));
 
         var offset = 7; // packetType(1) + "vorbis"(6)
 

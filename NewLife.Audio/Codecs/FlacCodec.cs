@@ -1,5 +1,6 @@
 using NewLife.Buffers;
 using NewLife.Data;
+using NewLife;
 
 namespace NewLife.Audio.Codecs;
 
@@ -83,10 +84,10 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         var offset = 0;
 
         // 验证 fLaC 标记
-        if (audio.Length < 4) throw new InvalidDataException("数据太短，无法包含 FLAC 标记");
+        if (audio.Length < 4) throw new InvalidDataException(L.T("The data is too short to contain a FLAC marker."));
         for (var i = 0; i < 4; i++)
             if (audio[offset + i] != FlacMarker[i])
-                throw new InvalidDataException("不是有效的 FLAC 数据");
+                throw new InvalidDataException(L.T("Not valid FLAC data."));
 
         offset += 4;
 
@@ -109,7 +110,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
         }
 
         if (_streamInfo == null)
-            throw new InvalidDataException("FLAC 数据中未找到 STREAMINFO 元数据块");
+            throw new InvalidDataException(L.T("No STREAMINFO metadata block was found in the FLAC data."));
 
         // 解析音频帧
         var pcm = new MemoryStream();

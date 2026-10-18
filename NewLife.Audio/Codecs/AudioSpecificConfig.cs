@@ -1,4 +1,5 @@
 using NewLife.Audio.Codecs;
+using NewLife;
 
 namespace NewLife.Audio.Codecs;
 
@@ -118,7 +119,7 @@ public sealed class AudioSpecificConfig
     /// <returns>AudioSpecificConfig 实例</returns>
     public static AudioSpecificConfig Parse(ReadOnlySpan<Byte> data)
     {
-        if (data.Length < 2) throw new ArgumentException("数据长度不足 2 字节", nameof(data));
+        if (data.Length < 2) throw new ArgumentException(L.T("The data is shorter than 2 bytes."), nameof(data));
 
         var reader = new BitReader(data);
 

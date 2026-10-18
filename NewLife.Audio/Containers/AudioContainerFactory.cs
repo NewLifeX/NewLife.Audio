@@ -1,4 +1,5 @@
 using NewLife.Audio.DSP;
+using NewLife;
 
 namespace NewLife.Audio.Containers;
 
@@ -81,7 +82,7 @@ public static class AudioContainerFactory
             ".ogg" or ".opus" => new OggFileWriter(stream, format, AVTypes.Transparent),
             ".mp3" => new Mp3FileWriter(stream, format),
             ".mp4" or ".m4a" => new Mp4FileWriter(stream, format),
-            _ => throw new NotSupportedException($"不支持的容器格式: {formatHint}"),
+            _ => throw new NotSupportedException(L.T("Unsupported container format: {0}.", formatHint)),
         };
     }
 }

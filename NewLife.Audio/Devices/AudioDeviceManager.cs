@@ -1,3 +1,5 @@
+using NewLife;
+
 namespace NewLife.Audio.Devices;
 
 /// <summary>音频设备管理器。统一管理设备枚举、默认设备选择、后端工厂</summary>
@@ -30,14 +32,14 @@ public class AudioDeviceManager
     /// <summary>创建播放器</summary>
     public IAudioPlayer CreatePlayer()
     {
-        if (_activeBackend == null) throw new InvalidOperationException("没有可用的音频后端");
+        if (_activeBackend == null) throw new InvalidOperationException(L.T("No audio backend is available."));
         return _activeBackend.CreatePlayer();
     }
 
     /// <summary>创建录制器</summary>
     public IAudioRecorder CreateRecorder()
     {
-        if (_activeBackend == null) throw new InvalidOperationException("没有可用的音频后端");
+        if (_activeBackend == null) throw new InvalidOperationException(L.T("No audio backend is available."));
         return _activeBackend.CreateRecorder();
     }
 }

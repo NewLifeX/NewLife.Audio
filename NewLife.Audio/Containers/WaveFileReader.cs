@@ -1,6 +1,7 @@
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
+using NewLife;
 
 namespace NewLife.Audio.Containers;
 
@@ -77,12 +78,12 @@ public class WaveFileReader : IAudioContainerReader
 
         // RIFF
         if (reader.ReadUInt32() != 0x46464952u)
-            throw new InvalidDataException("不是有效的 WAV 文件");
+            throw new InvalidDataException(L.T("Not a valid WAV file."));
         reader.Advance(4); // file size
 
         // WAVE
         if (reader.ReadUInt32() != 0x45564157u)
-            throw new InvalidDataException("不是有效的 WAV 文件");
+            throw new InvalidDataException(L.T("Not a valid WAV file."));
 
         // fmt sub-chunk: skip "fmt " and chunk size
         reader.Advance(8);

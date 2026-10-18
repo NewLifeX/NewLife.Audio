@@ -1,6 +1,7 @@
 using System.Text;
 using NewLife.Audio.Codecs;
 using NewLife.Audio.DSP;
+using NewLife;
 
 namespace NewLife.Audio.Containers;
 
@@ -43,7 +44,7 @@ public class Mp4FileWriter : IAudioContainerWriter
     /// <param name="frame">AAC 编码数据帧</param>
     public void WriteFrame(ReadOnlySpan<Byte> frame)
     {
-        if (_flushed) throw new InvalidOperationException("MP4 文件已完成写入，不能再写入帧");
+        if (_flushed) throw new InvalidOperationException(L.T("The MP4 file has been finalized and cannot accept more frames."));
 
         var copy = new Byte[frame.Length];
         frame.CopyTo(copy);

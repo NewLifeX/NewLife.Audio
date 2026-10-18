@@ -1,4 +1,5 @@
 using NewLife.Data;
+using NewLife;
 
 namespace NewLife.Audio.Codecs;
 
@@ -55,7 +56,7 @@ public class G726Codec : IAudioCodec, ICodecInfo
     public G726Codec(Int32 bitsPerSample = 4)
     {
         if (bitsPerSample < 2 || bitsPerSample > 5)
-            throw new ArgumentOutOfRangeException(nameof(bitsPerSample), "比特数必须在 2~5 之间");
+            throw new ArgumentOutOfRangeException(nameof(bitsPerSample), L.T("The bit count must be between 2 and 5."));
 
         _bitsPerSample = bitsPerSample;
         _levels = 1 << bitsPerSample;

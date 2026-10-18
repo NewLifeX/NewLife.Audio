@@ -1,6 +1,7 @@
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
+using NewLife;
 
 namespace NewLife.Audio.Containers;
 
@@ -29,7 +30,7 @@ public class FlacContainerReader : IAudioContainerReader
         var magic = new Byte[4];
         _stream.Read(magic, 0, 4);
         if (magic[0] != 'f' || magic[1] != 'L' || magic[2] != 'a' || magic[3] != 'C')
-            throw new InvalidDataException("不是有效的 FLAC 文件");
+            throw new InvalidDataException(L.T("Not a valid FLAC file."));
 
         var sampleRate = 44100u;
         var channels = (Byte)2;

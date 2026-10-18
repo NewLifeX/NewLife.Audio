@@ -1,6 +1,7 @@
 using NewLife.Buffers;
 using NewLife.Data;
 using NewLife.Audio.DSP;
+using NewLife;
 
 namespace NewLife.Audio.Containers;
 
@@ -36,7 +37,7 @@ public class OggFileReader : IAudioContainerReader
 
         // 尝试解析第一页识别编码类型
         var firstPage = ReadOggPage();
-        if (firstPage == null) throw new InvalidDataException("无法读取 OGG 页");
+        if (firstPage == null) throw new InvalidDataException(L.T("Unable to read an OGG page."));
 
         var headPacket = firstPage.Value.Packets[0];
         var headStr = System.Text.Encoding.ASCII.GetString(headPacket, 0, Math.Min(headPacket.Length, 8));

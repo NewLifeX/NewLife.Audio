@@ -1,4 +1,5 @@
 using NewLife.Buffers;
+using NewLife;
 
 namespace NewLife.Audio.Streaming;
 
@@ -44,7 +45,7 @@ public struct RtpPacket
     public static RtpPacket FromBytes(Byte[] data)
     {
         if (data == null || data.Length < 12)
-            throw new ArgumentException("RTP 包至少需要 12 字节头");
+            throw new ArgumentException(L.T("An RTP packet requires at least a 12-byte header."));
 
         var reader = new SpanReader(data);
         reader.IsLittleEndian = false; // RTP 网络字节序为大端
