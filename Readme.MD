@@ -1,10 +1,19 @@
 # NewLife.Audio - 音频编解码库
 
 ![GitHub top language](https://img.shields.io/github/languages/top/newlifex/NewLife.Audio?logo=github)
-![GitHub License](https://img.shields.io/github/license/newlifex/NewLife.Audio?logo=github)
-![Nuget Downloads](https://img.shields.io/nuget/dt/NewLife.Audio?logo=nuget)
-![Nuget](https://img.shields.io/nuget/v/NewLife.Audio?logo=nuget)
-![Nuget (with prereleases)](https://img.shields.io/nuget/vpre/NewLife.Audio?label=dev%20nuget&logo=nuget)
+
+
+![GitHub License](https://img.shields.io/github/license/NewLifeX/NewLife.Audio?logo=github)
+![NuGet Downloads](https://img.shields.io/nuget/dt/NewLife.Audio?logo=nuget)
+![NuGet](https://img.shields.io/nuget/v/NewLife.Audio?logo=nuget)
+![NuGet prerelease](https://img.shields.io/nuget/vpre/NewLife.Audio?label=dev%20nuget&logo=nuget)
+[![test](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/test.yml)
+![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue)
+[![contributors](https://img.shields.io/github/contributors/NewLifeX/NewLife.Audio?logo=github)](https://github.com/NewLifeX/NewLife.Audio/graphs/contributors)
+
+<!-- lang:start -->
+🌐 [繁體中文](README.zh-TW.md) | [English](README.en.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
+<!-- lang:end -->
 
 [English](Readme.en.MD) | 简体中文
 
@@ -16,7 +25,6 @@
 Nuget：NewLife.Audio  
 
 📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [各模块架构设计](Doc/)
-
 
 ## 新生命项目矩阵
 各项目默认支持net9.0/netstandard2.1/netstandard2.0/net462/net45，旧版（2024.0801）支持net4.0/net2.0  
@@ -53,8 +61,6 @@ Nuget：NewLife.Audio
 |          [SmartA2](https://github.com/NewLifeX/SmartA2)          | 2019  | 嵌入式工业计算机，物联网边缘网关，高性能.NET8主机，应用于工业、农业、交通、医疗             |
 |                          FIoT物联网平台                          | 2020  | 物联网整体解决方案，建筑、环保、农业，软硬件及大数据分析一体化，单机十万级点位项目验证      |
 |                        UWB高精度室内定位                         | 2020  | 厘米级（10~20cm）高精度室内定位，软硬件一体化，与其它系统联动，大型展厅项目验证             |
-
-
 
 ## 新生命开发团队
 ![XCode](https://newlifex.com/logo.png)  
