@@ -14,6 +14,16 @@ on:
       - 'NewLife.Audio/**'
       - '.github/workflows/mobile.yml'
   workflow_dispatch:
+    inputs:
+      mode:
+        description: Android 构建模式
+        required: false
+        default: Jit
+        type: choice
+        options:
+          - Jit
+          - Aot
+          - NativeAot
 
 jobs:
   # Android 模拟器：启动 APK 执行冒烟，logcat 出现 SMOKE_OK 即通过。
@@ -44,7 +54,7 @@ jobs:
         target: google_apis
         arch: x86_64
         disable-animations: true
-        script: pwsh ./Samples/MobileSmoke/run-android.ps1 -Configuration Release
+        script: pwsh ./Samples/MobileSmoke/run-android.ps1 -Configuration Release -Mode ${{ github.event.inputs.mode || 'Jit' }}
     - name: Upload Android artifacts
       if: always()
       uses: actions/upload-artifact@v4

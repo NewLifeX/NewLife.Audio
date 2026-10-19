@@ -7,6 +7,7 @@
 - **核心链路实测全通**：19 场景冒烟 JIT/AOT 双通，覆盖编解码往返、容器读写、RTP 封包组帧、DSP 信号链、语音处理、芯片头、统一工厂入口，以及 **31 种语言词表查表与英文回退**。
 - **原生互操作**：libfaac 为可选原生依赖，缺失时自动回退纯托管 AAC 编码；AOT 分析器仅对可选原生路径产生提示性告警，已在 `AotSmoke.csproj` 按设计豁免 `IL2091`。
 - **不变全球化**：同一 AOT 二进制在 `DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=1` 下运行，语言表注册被跳过，运行时按英文回退且不抛异常。
+- **Android NativeAOT**：`Samples/MobileSmoke/pack-android.ps1` 支持 JIT/AOT/NativeAOT 打包；NativeAOT arm64 APK 本机实测 6.32 MB，`mobile.yml` 手动触发可选择 NativeAot 模式跑模拟器冒烟。
 - **设备 I/O 不在冒烟范围**：AotSmoke 不调用 winmm/WASAPI/ASIO，避免 CI 无音频设备；设备后端由单元测试与各平台桌面客户端覆盖。
 
 ## 2. 覆盖矩阵

@@ -1,6 +1,8 @@
 param(
     [String]$Configuration = "Release",
-    [Int32]$TimeoutSec = 180
+    [Int32]$TimeoutSec = 180,
+    [ValidateSet("Jit", "Aot", "NativeAot")]
+    [String]$Mode = "Jit"
 )
 
 $ErrorActionPreference = "Stop"
@@ -9,8 +11,14 @@ $root = Resolve-Path "$PSScriptRoot/../.."
 $project = Join-Path $PSScriptRoot "MobileSmoke.csproj"
 $package = "com.newlife.smoke.audio"
 
-dotnet build $project -c $Configuration -f net10.0-android --nologo
-if ($LASTEXITCODE -ne 0) { throw "Android build failed" }
+if ($Mode -eq "Jit") {
+    dotnet build $project -c $Configuration -f net10.0-android --nologo
+    if ($LASTEXITCODE -ne 0) { throw "Android build failed" }
+}
+else {
+    & (Join-Path $PSScriptRoot "pack-android.ps1") -Mode $Mode -Configuration $Configuration -RuntimeIdentifier android-x64
+    if ($LASTEXITCODE -ne 0) { throw "Android $Mode build failed" }
+}
 
 $apk = Get-ChildItem (Join-Path $root "Bin/MobileSmoke") -Recurse -Filter *.apk |
     Sort-Object LastWriteTime -Descending | Select-Object -First 1
