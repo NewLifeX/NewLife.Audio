@@ -3,11 +3,13 @@
 // Same binary is run under JIT (dotnet run) and NativeAOT (publish -r <rid>) to compare.
 //
 // 说明：AOT 能力验收冒烟件，由 .github/workflows/aot.yml 的多 RID 矩阵自动执行（非 0 退出码即失败）。
-// 场景覆盖：编解码往返、容器读写、RTP 封包组帧、DSP 信号链、语音处理、芯片头、统一工厂入口。
-// 全部为纯托管计算，无网络与设备 I/O，可运行在 win-x64/linux-x64/linux-arm64/linux-la64。
+// 场景覆盖：编解码往返、容器读写、RTP 封包组帧、DSP 信号链、语音处理、芯片头、统一工厂入口、31 种语言词表与英文回退。
+// 全部为纯托管计算，无网络与设备 I/O，可运行在 win-x64/win-x86/win-arm64/linux-x64/linux-arm64/linux-musl/osx/linux-la64。
 using System.Diagnostics.CodeAnalysis;
+using System.Globalization;
 using System.Reflection;
 using System.Text;
+using NewLife;
 using NewLife.Audio;
 using NewLife.Audio.ChipHeaders;
 using NewLife.Audio.Codecs;
@@ -41,6 +43,13 @@ void Run(String name, Action action)
         results.Add((name, false, $"{ex.GetType().Name}: {ex.Message}"));
         Console.WriteLine($"[FAIL] {name} -> {ex.GetType().Name}: {ex.Message}");
     }
+}
+
+// 不变全球化模式下具名区域性不可用（GetCultureInfo 抛异常），据此判定
+static Boolean IsInvariantGlobalization()
+{
+    try { return CultureInfo.GetCultureInfo("zh-Hans").Name.Length == 0; }
+    catch (CultureNotFoundException) { return true; }
 }
 
 // 生成 16-bit 小端单声道正弦波 PCM
@@ -332,6 +341,52 @@ Run("AudioCodecFactory 统一编解码入口", () =>
     Array.Copy(payload, 0, withHi, 4, 100);
     var trimmedPacket = factory.TrimHI(new ArrayPacket(withHi), out var trimmed);
     if (!trimmed || trimmedPacket.Total != 100) throw new Exception("工厂芯片头去除失败");
+});
+
+Run("多语言 31 种语言表在 AOT 下可用", () =>
+{
+    if (IsInvariantGlobalization())
+    {
+        if (Localization.Translate("Default device") != "Default device") throw new Exception("不变全球化下未回退英文");
+        return;
+    }
+
+    var cultures = new[]
+    {
+        "ar", "bn", "cs", "da", "de", "el", "es", "fa", "fi", "fr", "he", "hi", "hu", "id", "it", "ja",
+        "ko", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh-Hans", "zh-Hant",
+    };
+
+    var saved = Localization.Culture;
+    var missing = new List<String>();
+    try
+    {
+        foreach (var name in cultures)
+        {
+            Localization.Culture = CultureInfo.GetCultureInfo(name);
+            if (Localization.Translate("Default device") == "Default device") missing.Add(name);
+        }
+    }
+    finally
+    {
+        Localization.Culture = saved;
+    }
+
+    if (missing.Count > 0) throw new Exception("以下语言缺少译文: " + String.Join(", ", missing));
+});
+
+Run("多语言 未知语言回退英文", () =>
+{
+    var saved = Localization.Culture;
+    try
+    {
+        Localization.Culture = CultureInfo.InvariantCulture;
+        if (Localization.Translate("Default device") != "Default device") throw new Exception("未知语言未回退英文");
+    }
+    finally
+    {
+        Localization.Culture = saved;
+    }
 });
 
 // ---- 汇总 ----
