@@ -19,10 +19,10 @@
 [![contributors](https://img.shields.io/github/contributors/NewLifeX/NewLife.Audio?logo=github)](https://github.com/NewLifeX/NewLife.Audio/graphs/contributors)
 
 <!-- lang:start -->
-🌐 [繁體中文](README.zh-TW.md) | [English](README.en.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
+🌐 [English](README.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
 <!-- lang:end -->
 
-[English](Readme.en.MD) | 简体中文
+[English](README.md) | 简体中文
 
 跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、容器格式读写（WAV/Ogg/MP4/FLAC）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
 
@@ -32,6 +32,90 @@
 Nuget：NewLife.Audio  
 
 📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [AOT 兼容性](Doc/AOT兼容性分析.md) | [多语言本地化](Doc/多语言本地化.md) | [各模块架构设计](Doc/)
+
+> ℹ️ 本中文版与 [English README](README.md) 同批维护；若两者内容不一致，以英文版为对外口径。
+
+## 功能特性
+
+### 🎵 编解码引擎（CODEC）
+纯托管 C# 实现 10+ 音频编解码器的 PCM 双向转换：
+- **G.711** μ-law / A-law
+- **G.722** / **G.726** 子带 ADPCM
+- **IMA ADPCM**（DVI4）
+- **Opus**（纯托管 CELT 实现）
+- **MP3**（Huffman 解码 + 反量化 + IMDCT + 子带合成）
+- **AAC-LC**（ICS 解析 + Huffman 解码 + IMDCT + 窗函数重叠相加）
+- **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
+- **Ogg Vorbis**（3 个头部包编码/解码）
+- **Speex**（纯托管窄带 CELP）
+- 基于 `CodecRegistry` + `ICodecInfo` 元数据的可插拔工厂
+- IoT 芯片头适配（海思 / 大华 / 宇视）
+
+### 🔊 音频设备 I/O（DEVIO）
+跨平台音频设备抽象：
+- 设备枚举与发现
+- Windows 下的 **WaveOut** / **WASAPI** / **ASIO** 后端
+- 音频采集与环回录制
+- 通过 `AudioDeviceManager` 进行多设备并发管理
+
+### 🎛️ DSP 处理链（DSP）
+可组合的音频信号处理链：
+- 重采样（线性插值）
+- 声道转换（单声道 ↔ 立体声）
+- 位深 / 采样格式转换（8/16/32 位 ↔ 浮点）
+- 音量控制与增益（线性 / 对数）
+- 多源混音与归一化
+- **FFT** 频谱分析（Cooley-Tukey，Hann/Hamming/Blackman 窗）
+- **均衡器**（10 段图示均衡 + 3 段音调，BiQuad 级联）
+- **BiQuad 滤波器**（RBJ 标准：LP/HP/BP/Notch/Peaking/LowShelf/HighShelf）
+- 动态范围压缩器（软拐点，RMS 包络）
+- 淡入/淡出与交叉淡化（线性/对数/余弦）
+- 变速（OLA）与变调
+- 可串联的 `IAudioProcessor` + `AudioPipeline`
+
+### 🗣️ 语音处理（VOP）
+实时语音通信前端：
+- **VAD** — 语音活动检测（GMM 模型，6 个子带 + 挂起）
+- **AEC** — 声学回声消除（NLMS 自适应滤波 + 双讲检测 + 舒适噪声）
+- **AGC** — 自动增益控制（慢启动快释放，RMS 包络）
+- **NS** — 噪声抑制（谱减法 + FFT/IFFT + OLA 合成）
+- 语音预处理链：HPF → VAD → AGC
+
+### 📦 容器格式（CONT）
+音频文件格式读写：
+- **WAV** — 完整的 RIFF 解析与写入
+- **Ogg** — 页级读写（Opus/Vorbis）
+- **MP4/M4A** — ISO BMFF：ftyp/moov/mdat box 解析与生成
+- **FLAC** — 原生 fLaC 元数据块解析
+- **Raw PCM** — 自动探测或手动指定格式
+
+### 📡 流媒体与传输（STRM）
+网络音频流传输：
+- **RTP** 打包与解包（RFC 3550）+ 会话管理
+- **RTSP** 客户端（TCP：OPTIONS→DESCRIBE→SETUP→PLAY→TEARDOWN，SDP 解析）
+- **HTTP** 音频流（Icecast/SHOUTcast）
+- **WebSocket** 双向音频管道（5 字节帧头）
+
+## 安装
+
+```bash
+dotnet add package NewLife.Audio
+```
+
+## 快速开始
+
+```csharp
+using NewLife.Audio;
+using NewLife.Audio.Codecs;
+
+// 将 G.711 μ-law 解码为 PCM
+var codec = new G711UCodec();
+var pcm = codec.ToPcm(encodedData);
+
+// 将 PCM 编码为 G.711 A-law
+var g711a = new G711ACodec();
+var encoded = g711a.FromPcm(pcmData);
+```
 
 ## 新生命项目矩阵
 各项目默认支持net9.0/netstandard2.1/netstandard2.0/net462/net45，旧版（2024.0801）支持net4.0/net2.0  

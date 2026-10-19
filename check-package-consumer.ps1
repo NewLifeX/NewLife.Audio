@@ -45,7 +45,7 @@ try {
         "lib/net461/NewLife.Audio.dll",
         "lib/netstandard2.0/NewLife.Audio.dll",
         "lib/netstandard2.1/NewLife.Audio.dll",
-        "Readme.MD",
+        "README.nuget.md",
         "leaf.png"
     )
     foreach ($item in $required) {

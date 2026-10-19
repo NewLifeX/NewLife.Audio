@@ -1,3 +1,5 @@
+<!-- generated from README.md by sync-readme-package.ps1; do not edit -->
+
 # NewLife.Audio - Audio Codec Library
 
 ![GitHub top language](https://img.shields.io/github/languages/top/newlifex/NewLife.Audio?logo=github)
@@ -10,28 +12,28 @@
 [![test](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/test.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/test.yml)
 [![NativeAOT](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml)
 <!-- metrics:start -->
-[![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](Doc/AOT兼容性分析.md)
+[![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/AOT兼容性分析.md)
 [![TFM](https://img.shields.io/badge/TFM-3%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
-[![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](Doc/多语言本地化.md)
+[![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/多语言本地化.md)
 <!-- metrics:end -->
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue)
 ![arch](https://img.shields.io/badge/arch-x64%20%7C%20x86%20%7C%20arm64%20%7C%20arm%20%7C%20loongarch64%20%7C%20riscv64%20%7C%20s390x-orange)
 [![contributors](https://img.shields.io/github/contributors/NewLifeX/NewLife.Audio?logo=github)](https://github.com/NewLifeX/NewLife.Audio/graphs/contributors)
 
 <!-- lang:start -->
-🌐 [中文](Readme.MD) | [繁體中文](README.zh-TW.md) | [Español](README.es.md) | [Deutsch](README.de.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
+🌐 [简体中文](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.zh-CN.md) | [繁體中文](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.zh-TW.md) | [Español](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.es.md) | [Deutsch](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.de.md) | [日本語](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.ja.md) | [Français](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.fr.md) | [Português](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.pt.md) | [Русский](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.ru.md) | [한국어](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.ko.md) | [العربية](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.ar.md)
 <!-- lang:end -->
 
-[简体中文](Readme.MD) | English
+[简体中文](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.zh-CN.md) | English
 
 A cross-platform, pure-managed .NET audio processing library supporting codec, device I/O, DSP effects, speech processing, container format I/O, and streaming — all in one NuGet package.
 
-🎧 Bundled [AudioStudio](AudioStudio/) cross-platform desktop demo client (Avalonia) with six tool modules: playback, conversion, devices, recording, DSP, and diagnostics.
+🎧 Bundled [AudioStudio](https://github.com/NewLifeX/NewLife.Audio/blob/master/AudioStudio/) cross-platform desktop demo client (Avalonia) with six tool modules: playback, conversion, devices, recording, DSP, and diagnostics.
 
 Source: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
 
-> 📖 Detailed design docs are available in the [Doc/](Doc/) directory (Chinese). See [功能模块清单](Doc/功能模块清单.md) for feature status.
+> 📖 Detailed documentation (Chinese): [Requirements](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/需求文档.md) | [Feature module list](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/功能模块清单.md) | [Client requirements](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/需求文档-客户端.md) | [Client feature list](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/功能模块清单-客户端.md) | [Competitive analysis](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/竞品分析报告.md) | [AOT compatibility](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/AOT兼容性分析.md) | [Localization](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/多语言本地化.md) | [Module architecture designs](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/)
 
 ## Features
 
@@ -159,6 +161,10 @@ All projects target `net9.0` / `netstandard2.1` / `netstandard2.0` / `net462` / 
 The NewLife team, founded in 2002, is a next-generation IoT solution provider specializing in hardware/software consulting, system architecture, and development services.
 
 Over 80 open-source projects led by the team are widely adopted across industries, with 4M+ total NuGet downloads. Core products — NewLife.XCode big-data ORM, AntJob distributed computing platform, Stardust distributed service platform, NewLife.Redis caching & queue, and the FIoT IoT platform — have been successfully deployed in power utilities, education, internet, telecom, transportation, logistics, industrial control, healthcare, and cultural heritage sectors.
+
+We will keep improving our services to become a long-term trusted partner, and through continuous innovation and development, grow into a leading IoT service provider in China.
+
+> The NewLife team started in 2002. Some open-source projects have a history of more than 20 years, and the source repositories keep all modification records since 2010.
 
 Website: https://newlifex.com  
 Open Source: https://github.com/newlifex  

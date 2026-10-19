@@ -1,6 +1,6 @@
 # STRM-流媒体传输
 
-> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../Readme.MD) | [English README](../Readme.en.MD)
+> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 7 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 > ✅ 本模块全部 4 项功能已实现，详见[功能模块清单](功能模块清单.md)。
