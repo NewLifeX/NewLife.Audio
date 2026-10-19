@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
     <AssemblyTitle>音频编解码</AssemblyTitle>
@@ -43,7 +43,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="NewLife.Core" Version="12.0.2026.1019-beta0659" />
+    <PackageReference Include="NewLife.Core" Version="12.0.2026.1019-beta1413" />
   </ItemGroup>
 
   <ItemGroup>

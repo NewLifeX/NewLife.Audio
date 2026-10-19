@@ -1,4 +1,4 @@
-﻿<Project Sdk="Microsoft.NET.Sdk">
+<Project Sdk="Microsoft.NET.Sdk">
 
   <PropertyGroup>
     <TargetFramework>net10.0</TargetFramework>
@@ -17,7 +17,7 @@
     <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="10.0.10" />
     <PackageReference Include="Microsoft.Testing.Extensions.TrxReport" Version="2.5.1" />
     <PackageReference Include="NewLife.IoT" Version="3.1.2026.801" />
-    <PackageReference Include="NewLife.PC" Version="1.0.2026.609" />
+    <PackageReference Include="NewLife.PC" Version="1.0.2026.609-beta0428" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
   </ItemGroup>
 
