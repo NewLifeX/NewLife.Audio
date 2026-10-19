@@ -1,0 +1,11 @@
+{
+  "updated": "2026-10-19",
+  "doc": "Doc/多语言本地化.md",
+  "values": {
+    "aotSmoke": "19/19",
+    "aotScenarios": 19,
+    "tfmCount": 3,
+    "localeCount": 31,
+    "readmeLocaleCount": 11
+  }
+}
