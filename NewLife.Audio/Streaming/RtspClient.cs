@@ -1,6 +1,7 @@
 using System.Net.Sockets;
 using System.Text;
 using System.Text.RegularExpressions;
+using NewLife;
 using NewLife.Data;
 using NewLife.Audio.DSP;
 
@@ -107,7 +108,7 @@ public class RtspClient : IDisposable
         var rtspResponse = ParseResponse(response);
 
         if (rtspResponse.StatusCode != 200)
-            throw new InvalidOperationException($"DESCRIBE 返回 {rtspResponse.StatusCode} {rtspResponse.ReasonPhrase}");
+            throw new InvalidOperationException(L.T("DESCRIBE returned {0} {1}", rtspResponse.StatusCode, rtspResponse.ReasonPhrase));
 
         var sdp = rtspResponse.Body;
         ParseSdp(sdp);

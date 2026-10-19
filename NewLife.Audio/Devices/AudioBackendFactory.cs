@@ -1,3 +1,4 @@
+using NewLife;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Devices;
@@ -34,13 +35,13 @@ internal class FallbackBackend : IAudioBackend
     public String Name => "Fallback";
 
     public IReadOnlyList<AudioDeviceInfo> EnumerateDevices() =>
-        new List<AudioDeviceInfo> { new() { Id = "0", Name = "默认设备", IsDefault = true } };
+        new List<AudioDeviceInfo> { new() { Id = "0", Name = L.T("Default device"), IsDefault = true } };
 
     public AudioDeviceInfo GetDefaultOutputDevice() =>
-        new() { Id = "0", Name = "默认设备", IsDefault = true };
+        new() { Id = "0", Name = L.T("Default device"), IsDefault = true };
 
     public AudioDeviceInfo GetDefaultInputDevice() =>
-        new() { Id = "0", Name = "默认设备", IsInput = true, IsDefault = true };
+        new() { Id = "0", Name = L.T("Default device"), IsInput = true, IsDefault = true };
 
     public IAudioPlayer CreatePlayer() => new WaveOutPlayer();
 

@@ -61,8 +61,8 @@ public class AsioBackend : IAudioBackend
         if (devices.Count == 0)
         {
             // 没有任何 ASIO 驱动 → 提供占位设备
-            devices.Add(new() { Id = "asio_default", Name = "ASIO 默认设备（未检测到驱动）", IsDefault = true });
-            XTrace.WriteLine("AsioBackend: 未检测到已安装的 ASIO 驱动，设备列表为空壳");
+            devices.Add(new() { Id = "asio_default", Name = L.T("ASIO default device (no driver detected)"), IsDefault = true });
+            XTrace.Log.InfoPrefixed("AsioBackend: ", "No ASIO driver is installed; the device list is a placeholder.");
         }
 
         return devices;
@@ -73,7 +73,7 @@ public class AsioBackend : IAudioBackend
     {
         var devices = EnumerateDevices();
         return devices.Count > 0 ? devices[0]
-            : new() { Id = "asio_default", Name = "ASIO 默认设备（未安装驱动）", IsDefault = true };
+            : new() { Id = "asio_default", Name = L.T("ASIO default device (no driver installed)"), IsDefault = true };
     }
 
     /// <summary>获取默认输入设备</summary>
@@ -88,7 +88,7 @@ public class AsioBackend : IAudioBackend
     public IAudioPlayer CreatePlayer()
     {
         var devices = EnumerateDevices();
-        var hasDriver = devices.Any(d => !d.Name.Contains("未检测到"));
+        var hasDriver = devices.Any(d => d.Id != "asio_default");
 
         if (hasDriver)
         {

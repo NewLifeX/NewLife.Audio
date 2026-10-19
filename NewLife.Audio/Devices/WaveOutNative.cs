@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using NewLife;
 using NewLife.Audio.DSP;
 using NewLife.Log;
 
@@ -34,7 +35,7 @@ public class WaveOutNativeBackend : IAudioBackend
             }
         }
         if (devices.Count == 0)
-            devices.Add(new() { Id = "0", Name = "默认音频设备", IsInput = false, IsDefault = true });
+            devices.Add(new() { Id = "0", Name = L.T("Default audio device"), IsInput = false, IsDefault = true });
 
         return devices;
     }
@@ -43,12 +44,12 @@ public class WaveOutNativeBackend : IAudioBackend
     public AudioDeviceInfo GetDefaultOutputDevice()
     {
         var devices = EnumerateDevices();
-        return devices.Count > 0 ? devices[0] : new() { Id = "0", Name = "默认音频设备", IsDefault = true };
+        return devices.Count > 0 ? devices[0] : new() { Id = "0", Name = L.T("Default audio device"), IsDefault = true };
     }
 
     /// <summary>获取默认输入设备</summary>
     public AudioDeviceInfo GetDefaultInputDevice() =>
-        new() { Id = "capture", Name = "默认录音设备", IsInput = true, IsDefault = true };
+        new() { Id = "capture", Name = L.T("Default recording device"), IsInput = true, IsDefault = true };
 
     /// <summary>创建播放器</summary>
     public IAudioPlayer CreatePlayer() => new WaveOutPlayer();
@@ -102,7 +103,7 @@ internal class WaveOutPlayer : IAudioPlayer
             NativeMethods.CALLBACK_NULL);
 
         if (result != 0)
-            XTrace.WriteLine($"WaveOut: waveOutOpen 返回 {result}, 回退到空壳模式");
+            XTrace.Log.InfoPrefixed("WaveOut: ", "waveOutOpen returned {0}; falling back to the null player.", result);
     }
 
     /// <summary>开始播放</summary>

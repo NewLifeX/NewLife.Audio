@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using NewLife;
 using NewLife.Audio.DSP;
 using NewLife.Log;
 
@@ -62,7 +63,7 @@ public class LoopbackRecorder : IAudioRecorder, IDisposable
         }
         catch (Exception ex)
         {
-            XTrace.WriteLine($"LoopbackRecorder: 启动捕获线程失败: {ex.Message}");
+            XTrace.Log.InfoPrefixed("LoopbackRecorder: ", "Failed to start the capture thread: {0}", ex.Message);
             _isRecording = false;
         }
     }

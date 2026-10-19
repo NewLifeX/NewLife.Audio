@@ -1,5 +1,6 @@
 ﻿using System.Diagnostics.CodeAnalysis;
 using System.Runtime.InteropServices;
+using NewLife;
 
 namespace NewLife.Audio.AAC;
 
@@ -35,7 +36,7 @@ public class FaacEncoder : DisposeBase
         configuration.bitRate = 0;
         InteropExtensions.IntPtrSetValue(ptr, configuration);
 
-        if (FaacEncSetConfiguration(_handle, ptr) < 0) throw new Exception("set faac configuration failed!");
+        if (FaacEncSetConfiguration(_handle, ptr) < 0) throw new Exception(L.T("Failed to set the FAAC configuration."));
     }
 
     protected override void Dispose(Boolean disposing)
@@ -253,7 +254,7 @@ public static class InteropExtensions
             }
             catch (Exception exception)
             {
-                throw new Exception("Error in BytesToStruct ! " + exception.Message);
+                throw new Exception(L.T("Error in BytesToStruct: {0}", exception.Message));
             }
             finally
             {
@@ -301,7 +302,7 @@ public static class InteropExtensions
         }
         catch (Exception exception)
         {
-            throw new Exception("Error in StructToBytes ! " + exception.Message);
+            throw new Exception(L.T("Error in StructToBytes: {0}", exception.Message));
         }
         finally
         {
@@ -329,7 +330,7 @@ public static class InteropExtensions
         }
         catch (Exception exception)
         {
-            throw new Exception("Error in StructToBytes ! " + exception.Message);
+            throw new Exception(L.T("Error in StructToBytes: {0}", exception.Message));
         }
         finally
         {

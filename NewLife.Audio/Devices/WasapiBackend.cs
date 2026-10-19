@@ -1,4 +1,5 @@
 using System.Runtime.InteropServices;
+using NewLife;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Devices;
@@ -26,8 +27,8 @@ public class WasapiBackend : IAudioBackend
             if (enumerator is not IMMDeviceEnumerator devEnum) return FallbackDevices();
 
             // 尝试枚举
-            devices.Add(new() { Id = "wasapi_default", Name = "WASAPI 默认输出", IsDefault = true });
-            devices.Add(new() { Id = "wasapi_capture", Name = "WASAPI 默认输入", IsInput = true, IsDefault = true });
+            devices.Add(new() { Id = "wasapi_default", Name = L.T("WASAPI default output"), IsDefault = true });
+            devices.Add(new() { Id = "wasapi_capture", Name = L.T("WASAPI default input"), IsInput = true, IsDefault = true });
         }
         catch
         {
@@ -39,16 +40,16 @@ public class WasapiBackend : IAudioBackend
 
     private static List<AudioDeviceInfo> FallbackDevices()
     {
-        return [new() { Id = "wasapi_default", Name = "WASAPI 默认输出", IsDefault = true }];
+        return [new() { Id = "wasapi_default", Name = L.T("WASAPI default output"), IsDefault = true }];
     }
 
     /// <summary>获取默认输出设备</summary>
     public AudioDeviceInfo GetDefaultOutputDevice() =>
-        new() { Id = "wasapi_default", Name = "WASAPI 默认输出", IsDefault = true };
+        new() { Id = "wasapi_default", Name = L.T("WASAPI default output"), IsDefault = true };
 
     /// <summary>获取默认输入设备</summary>
     public AudioDeviceInfo GetDefaultInputDevice() =>
-        new() { Id = "wasapi_capture", Name = "WASAPI 默认输入", IsInput = true, IsDefault = true };
+        new() { Id = "wasapi_capture", Name = L.T("WASAPI default input"), IsInput = true, IsDefault = true };
 
     /// <summary>创建播放器</summary>
     public IAudioPlayer CreatePlayer() => new WasapiPlayer();
