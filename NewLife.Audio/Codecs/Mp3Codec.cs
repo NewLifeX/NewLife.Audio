@@ -333,7 +333,6 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             }
 
             // 简单量化：线性到 3-bit（0~7 级别）
-            var scaleFac = 1.0f / 32768f;
             var maxVal = 0f;
             for (var i = 0; i < 576; i++)
             {

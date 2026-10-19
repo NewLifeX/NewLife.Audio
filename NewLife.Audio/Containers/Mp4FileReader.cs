@@ -88,7 +88,6 @@ public class Mp4FileReader : IAudioContainerReader
         var stszData = Array.Empty<Byte>();
         var stcoData = Array.Empty<Byte>();
         var stcoVersion = 0;
-        var mdatFound = false;
 
         // 扫描全部 box：收集 stbl 数据 + 定位 mdat
         while (_stream.Position < _stream.Length - 8)
@@ -103,7 +102,6 @@ public class Mp4FileReader : IAudioContainerReader
                     ParseMoov(boxData, ref stsdData, ref sttsData, ref stscData, ref stszData, ref stcoData, ref stcoVersion);
                     break;
                 case "mdat":
-                    mdatFound = true;
                     // 记录 mdat 数据起始（box header 之后）
                     // 不在此处 return，继续扫描（可能有 moov 在 mdat 之后）
                     break;
