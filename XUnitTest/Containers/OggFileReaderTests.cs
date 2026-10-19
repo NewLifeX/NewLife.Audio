@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Buffers.Binary;
 using System.IO;
 using System.Linq;
 using NewLife.Audio.Containers;
@@ -83,11 +84,14 @@ public class OggFileReaderTests
         var flags = (Byte)(isEos ? 0x04 : 0x00);
         if (segmentTableSize == 1 && packetData.Length < 255) flags |= 0x01; // first page of stream
         stream.WriteByte(flags);
-        var granule = BitConverter.GetBytes(granulePosition);
+        var granule = new Byte[8];
+        BinaryPrimitives.WriteInt64LittleEndian(granule, granulePosition);
         stream.Write(granule, 0, 8);
-        var serial = BitConverter.GetBytes(123456u);
+        var serial = new Byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(serial, 123456u);
         stream.Write(serial, 0, 4);
-        var pageSeq = BitConverter.GetBytes((UInt32)0);
+        var pageSeq = new Byte[4];
+        BinaryPrimitives.WriteUInt32LittleEndian(pageSeq, 0);
         stream.Write(pageSeq, 0, 4);
         // CRC (placeholder, 4 bytes of zero)
         stream.Write(new Byte[4], 0, 4);
