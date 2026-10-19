@@ -148,7 +148,7 @@ public class RtpDepacketizerTests
     }
 
     [Fact(DisplayName = "RTP解包器序列号回绕时正常重组不挂死")]
-    public void Submit_SequenceWrap_Reassembles()
+    public async Task Submit_SequenceWrap_Reassembles()
     {
         var task = Task.Run(() =>
         {
@@ -158,8 +158,8 @@ public class RtpDepacketizerTests
             return frame;
         });
 
-        Assert.True(task.Wait(TimeSpan.FromSeconds(5)), "序列号回绕时解包器挂死");
-        Assert.Equal(new Byte[] { 1, 2 }, task.Result);
+        var frame = await task.WaitAsync(TimeSpan.FromSeconds(5), TestContext.Current.CancellationToken);
+        Assert.Equal(new Byte[] { 1, 2 }, frame);
     }
 
     [Fact(DisplayName = "RTP解包器Reset清空统计与缓存")]
