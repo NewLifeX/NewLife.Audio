@@ -67,7 +67,7 @@ public class FlacContainerReader : IAudioContainerReader
                 blockSizeMax = (UInt32)((info[2] << 8) | info[3]);
                 sampleRate = (UInt32)((info[10] << 12) | (info[11] << 4) | (info[12] >> 4));
                 channels = (Byte)(((info[12] & 0x0E) >> 1) + 1);
-                bitsPerSample = (Byte)(((info[12] & 0x01) << 4) | ((info[13] & 0xF0) >> 4) + 1);
+                bitsPerSample = (Byte)((((info[12] & 0x01) << 4) | ((info[13] & 0xF0) >> 4)) + 1);
                 totalSamples = ((UInt64)(info[13] & 0x0F) << 32) | ((UInt64)info[14] << 24) |
                                ((UInt64)info[15] << 16) | ((UInt64)info[16] << 8) | info[17];
             }
@@ -88,7 +88,7 @@ public class FlacContainerReader : IAudioContainerReader
             SamplesPerFrame = (Int32)blockSizeMax,
         };
 
-        TotalFrames = totalSamples > 0 ? (Int64)(totalSamples / blockSizeMax) : 0;
+        TotalFrames = totalSamples > 0 && blockSizeMax > 0 ? (Int64)(totalSamples / blockSizeMax) : 0;
         Duration = sampleRate > 0 ? (Double)totalSamples / sampleRate : 0;
     }
 

@@ -886,8 +886,8 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
         var sampleRate = (UInt32)((raw[0] << 12) | (raw[1] << 4) | (raw[2] >> 4));
         var channels = (Byte)(((raw[2] & 0x0E) >> 1) + 1);
-        var bitsPerSample = (Byte)(((raw[2] & 0x01) << 4) | ((raw[3] & 0xF0) >> 4) + 1);
-        var totalSamples = (UInt64)((raw[3] & 0x0F) << 28) |
+        var bitsPerSample = (Byte)((((raw[2] & 0x01) << 4) | ((raw[3] & 0xF0) >> 4)) + 1);
+        var totalSamples = ((UInt64)(raw[3] & 0x0F) << 28) |
                            ((UInt64)raw[4] << 20) |
                            ((UInt64)raw[5] << 12) |
                            ((UInt64)raw[6] << 4) |
