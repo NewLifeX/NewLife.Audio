@@ -152,7 +152,7 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
     /// <summary>
     /// 将adpcm转为pcm
     /// </summary>
-    /// <see cref="https://github.com/ctuning/ctuning-programs/blob/master/program/cbench-telecom-adpcm-d/adpcm.c"/>
+    /// <remarks>参考实现：https://github.com/ctuning/ctuning-programs/blob/master/program/cbench-telecom-adpcm-d/adpcm.c</remarks>
     /// <param name="audio"></param>
     /// <param name="outdata"></param>
     /// <param name="state"></param>
