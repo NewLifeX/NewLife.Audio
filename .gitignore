@@ -24,3 +24,5 @@ TestResults/
 *.nupkg
 /BinTest
 /BinUnitTest
+/.tmp/
+/out-*/

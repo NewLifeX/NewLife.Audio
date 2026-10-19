@@ -1,6 +1,7 @@
 name: test
 
-# 多 RID 单元测试矩阵：win-x64 / linux-x64 / linux-arm64 / linux-la64（龙芯）。
+# 多 RID 单元测试矩阵：win-x64 / linux-x64 / linux-arm64 / linux-la64（龙芯）为阻断门禁；
+# win-arm64 / osx-arm64 / osx-x64 / musl（alpine x64、arm64）为观察期。
 # 触发：push / pull_request / 手动（workflow_dispatch）；不采用夜间定时。
 # linux-la64 无托管 runner，使用 QEMU 用户态仿真 + 龙芯 .NET SDK（github.com/loongson/dotnet），
 # 载体为 ghcr.io/loong64/debian:trixie 容器（loong64 社区移植镜像）；宿主完成构建，容器内仅执行测试。
@@ -34,6 +35,24 @@ jobs:
           10.x
     - name: Build
       run: dotnet build NewLife.Audio.slnx -c Release
+
+  # 包消费级验证：打包后用临时项目仅以 PackageReference 引用，验证三 TFM、词表与编解码可用
+  pack:
+    name: pack consumer check
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+        cache: true
+        cache-dependency-path: '**/*.csproj'
+    - name: Package consumer smoke
+      shell: pwsh
+      run: pwsh -File ./check-package-consumer.ps1
 
   # win-x64：原生 runner 直接运行单元测试
   test-win-x64:
@@ -159,6 +178,88 @@ jobs:
         path: TestResults/*.xml
         if-no-files-found: ignore
 
+  # macOS / Windows arm64：观察期，稳定全绿后转阻断
+  test-osx-arm64:
+    name: test (osx-arm64)
+    runs-on: macos-latest
+    timeout-minutes: 40
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+    - name: Test
+      run: dotnet test XUnitTest/XUnitTest.csproj -c Release
+
+  test-osx-x64:
+    name: test (osx-x64)
+    runs-on: macos-15-intel
+    timeout-minutes: 40
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+    - name: Test
+      run: dotnet test XUnitTest/XUnitTest.csproj -c Release
+
+  test-win-arm64:
+    name: test (win-arm64)
+    runs-on: windows-11-arm
+    timeout-minutes: 40
+    continue-on-error: true
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+    - name: Test
+      run: dotnet test XUnitTest\XUnitTest.csproj -c Release
+
+  # musl 容器矩阵（观察期）：alpine 内原生运行单测（x64/arm64 各一档）
+  # 容器内 actions/setup-dotnet 不可用，改用 dotnet-install.sh；宿主先 warm NuGet 缓存并挂载进容器复用
+  test-musl:
+    name: test (musl-${{ matrix.arch }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 40
+    continue-on-error: true
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: x64
+            os: ubuntu-latest
+          - arch: arm64
+            os: ubuntu-24.04-arm
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET (warm NuGet cache)
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+        cache: true
+        cache-dependency-path: '**/*.csproj'
+    - name: Test (alpine, net10.0)
+      run: |
+        docker run --rm -v "$PWD:/src" -v "$HOME/.nuget/packages:/nuget-packages" -e NUGET_PACKAGES=/nuget-packages -w /src alpine:3.20 sh -c '
+          set -e
+          apk add --no-cache bash curl icu-libs krb5-libs libgcc libstdc++ tzdata >/dev/null
+          curl -sSL https://dot.net/v1/dotnet-install.sh -o /tmp/dotnet-install.sh
+          bash /tmp/dotnet-install.sh --channel 10.0 --install-dir /usr/share/dotnet >/dev/null
+          ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
+          export DOTNET_CLI_TELEMETRY_OPTOUT=1
+          dotnet test XUnitTest/XUnitTest.csproj -c Release
+        '
+
   localization:
     name: localization checks
     runs-on: ubuntu-latest
@@ -166,6 +267,9 @@ jobs:
 
     steps:
     - uses: actions/checkout@v4
+    - name: Check English exception messages
+      shell: pwsh
+      run: pwsh -File ./check-english-exceptions.ps1
     - name: Check locales
       shell: pwsh
       run: |
