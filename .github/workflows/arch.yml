@@ -40,7 +40,14 @@ jobs:
           ln -s /usr/share/dotnet/dotnet /usr/bin/dotnet
           export DOTNET_CLI_TELEMETRY_OPTOUT=1
           export DOTNET_EnableHWIntrinsic=0
-          dotnet /src/Bin/ArchSmoke/AotSmoke.dll
+          dotnet /src/Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+          if [ ${RC:-0} -ne 0 ] && ! grep -q "^=== " /tmp/smoke.log; then
+            echo "仿真层崩溃，重试一次"
+            RC=0
+            dotnet /src/Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+          fi
+          cat /tmp/smoke.log
+          exit ${RC:-0}
         '
 
   riscv64:
@@ -82,7 +89,14 @@ jobs:
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends libicu74 libssl3 libstdc++6 ca-certificates >/dev/null
             /opt/dotnet/dotnet --info
-            cd /src && /opt/dotnet/dotnet Bin/ArchSmoke/AotSmoke.dll
+            cd /src && /opt/dotnet/dotnet Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+            if [ ${RC:-0} -ne 0 ] && ! grep -q "^=== " /tmp/smoke.log; then
+              echo "仿真层崩溃，重试一次"
+              RC=0
+              /opt/dotnet/dotnet Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+            fi
+            cat /tmp/smoke.log
+            exit ${RC:-0}
           '
 
   s390x:
@@ -114,5 +128,12 @@ jobs:
             apt-get update -qq
             apt-get install -y -qq --no-install-recommends dotnet-runtime-10.0 ca-certificates >/dev/null
             dotnet --info
-            cd /src && dotnet Bin/ArchSmoke/AotSmoke.dll
+            cd /src && dotnet Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+            if [ ${RC:-0} -ne 0 ] && ! grep -q "^=== " /tmp/smoke.log; then
+              echo "仿真层崩溃，重试一次"
+              RC=0
+              dotnet Bin/ArchSmoke/AotSmoke.dll > /tmp/smoke.log 2>&1 || RC=$?
+            fi
+            cat /tmp/smoke.log
+            exit ${RC:-0}
           '
