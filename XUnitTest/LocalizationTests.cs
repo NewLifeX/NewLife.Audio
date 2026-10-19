@@ -20,7 +20,7 @@ public class LocalizationTests
     }
 
     [Fact(DisplayName = "简体中文：运行时消息命中词表")]
-    public void Translate_runtime_messages()
+    public void TranslateRuntimeMessages()
     {
         var zh = TryGetCulture("zh-Hans");
         if (zh == null) return;
@@ -48,7 +48,7 @@ public class LocalizationTests
     }
 
     [Fact(DisplayName = "简体中文：带占位符的运行时消息")]
-    public void Translate_runtime_messages_with_placeholders()
+    public void TranslateRuntimeMessagesWithPlaceholders()
     {
         var zh = TryGetCulture("zh-Hans");
         if (zh == null) return;
@@ -63,7 +63,7 @@ public class LocalizationTests
     }
 
     [Fact(DisplayName = "多语言词表：未知语言回退英文原文")]
-    public void Translate_unknown_culture_falls_back()
+    public void TranslateUnknownCultureFallsBack()
     {
         WithCulture(CultureInfo.InvariantCulture, () =>
         {
@@ -72,7 +72,7 @@ public class LocalizationTests
     }
 
     [Fact(DisplayName = "带前缀日志：先翻译消息再拼接前缀")]
-    public void Prefixed_log_translates_message_before_prefix()
+    public void PrefixedLogTranslatesMessageBeforePrefix()
     {
         if (!OperatingSystem.IsWindows()) return;
 
