@@ -12,12 +12,19 @@ public class BiQuadFilter : IAudioProcessor
     /// <summary>滤波器类型</summary>
     public enum FilterType
     {
+        /// <summary>低通</summary>
         LowPass,
+        /// <summary>高通</summary>
         HighPass,
+        /// <summary>带通</summary>
         BandPass,
+        /// <summary>陷波</summary>
         Notch,
+        /// <summary>峰值均衡</summary>
         Peaking,
+        /// <summary>低频搁架</summary>
         LowShelf,
+        /// <summary>高频搁架</summary>
         HighShelf,
     }
 

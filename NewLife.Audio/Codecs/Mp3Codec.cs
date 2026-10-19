@@ -11,7 +11,15 @@ namespace NewLife.Audio.Codecs;
 public class Mp3Codec : IAudioCodec, ICodecInfo
 {
     /// <summary>MPEG 版本</summary>
-    public enum MpegVersion { Mpeg1, Mpeg2, Mpeg2_5 }
+    public enum MpegVersion
+    {
+        /// <summary>MPEG-1</summary>
+        Mpeg1,
+        /// <summary>MPEG-2</summary>
+        Mpeg2,
+        /// <summary>MPEG-2.5</summary>
+        Mpeg2_5,
+    }
 
     /// <summary>MP3 帧头信息</summary>
     public sealed class FrameHeader

@@ -30,6 +30,7 @@ public class G711UCodec : IAudioCodec, ICodecInfo
     private readonly Int32 CLIP = 8159;
     private readonly Int16[] seg_uend = { 0x3F, 0x7F, 0xFF, 0x1FF, 0x3FF, 0x7FF, 0xFFF, 0x1FFF };
 
+    /// <summary>创建 G.711 μ-law 编解码器并初始化转换表</summary>
     public G711UCodec()
     {
         // 初始化ulaw表

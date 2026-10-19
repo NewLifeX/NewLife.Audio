@@ -16,12 +16,23 @@ public class FlacContainerReader : IAudioContainerReader
     /// <summary>FLAC 帧同步码（14-bit: 0x3FFE）</summary>
     private const Int16 FrameSyncCode = 0x3FFE;
 
+    /// <summary>音频格式（采样率、声道数、位深、每帧采样数）</summary>
     public AudioFormat Format { get; }
+
+    /// <summary>编解码类型，FLAC 容器统一按 LPCM 暴露</summary>
     public AVTypes CodecType => AVTypes.LPCM;
+
+    /// <summary>总帧数；STREAMINFO 缺失总采样数时为 0</summary>
     public Int64 TotalFrames { get; }
+
+    /// <summary>音频总时长（秒）</summary>
     public Double Duration { get; }
+
+    /// <summary>FLAC 元数据（标题、艺术家、专辑等）</summary>
     public AudioMetadata Metadata { get; } = new();
 
+    /// <summary>从流中解析 fLaC 标记与 STREAMINFO 元数据</summary>
+    /// <param name="stream">FLAC 数据流，读取后定位到音频帧起始位置</param>
     public FlacContainerReader(Stream stream)
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
@@ -135,6 +146,8 @@ public class FlacContainerReader : IAudioContainerReader
         return new ArrayPacket(_readBuffer, frameStart, read - frameStart);
     }
 
+    /// <summary>定位到指定帧索引</summary>
+    /// <param name="frameIndex">从 0 开始的帧索引</param>
     public void SeekFrame(Int64 frameIndex)
     {
         _currentPos = _audioStart;
@@ -146,5 +159,6 @@ public class FlacContainerReader : IAudioContainerReader
         }
     }
 
+    /// <summary>释放底层数据流</summary>
     public void Dispose() => _stream?.Dispose();
 }

@@ -9,10 +9,24 @@ public class FadeProcessor : IAudioProcessor
     private Int32 _processedSamples;
 
     /// <summary>淡入淡出类型</summary>
-    public enum FadeType { FadeIn, FadeOut }
+    public enum FadeType
+    {
+        /// <summary>淡入（音量从 0 到 1）</summary>
+        FadeIn,
+        /// <summary>淡出（音量从 1 到 0）</summary>
+        FadeOut,
+    }
 
     /// <summary>曲线类型</summary>
-    public enum CurveType { Linear, Logarithmic, Cosine }
+    public enum CurveType
+    {
+        /// <summary>线性</summary>
+        Linear,
+        /// <summary>对数</summary>
+        Logarithmic,
+        /// <summary>余弦</summary>
+        Cosine,
+    }
 
     private readonly FadeType _fadeType;
     private readonly CurveType _curve;

@@ -4,15 +4,31 @@ using NewLife;
 
 namespace NewLife.Audio.AAC;
 
-/// <summary>AAC编码器</summary>
+/// <summary>FAAC AAC 编码器（可选 libfaac 原生实现）</summary>
+/// <remarks>
+/// 依赖 Windows 下的 <c>Audio/libfaac.dll</c>；原生库不可用时由 <see cref="Codecs.AacCodec"/> 回退到托管编码。
+/// 编码器需要凑满一帧（<see cref="FrameSize"/> 字节）后才能输出，调用方应持续写入并处理返回的 0 长度结果。
+/// </remarks>
 public class FaacEncoder : DisposeBase
 {
     private IntPtr _handle = IntPtr.Zero;
+
+    /// <summary>每帧输入采样数</summary>
     public Int32 InputSamples { get; private set; }
+
+    /// <summary>每帧最大输出字节数</summary>
     public Int32 MaxOutput { get; private set; }
+
+    /// <summary>每帧输入字节数（采样数 × 声道数 × 位深 / 8）</summary>
     public Int32 FrameSize { get; private set; }
+
     private Stream _cache = new MemoryStream();
 
+    /// <summary>创建 FAAC 编码器</summary>
+    /// <param name="sampleRate">采样率（Hz）</param>
+    /// <param name="channels">声道数</param>
+    /// <param name="sampleBit">采样位深</param>
+    /// <param name="adts">是否输出 ADTS 封装，默认 false 输出原始 AAC</param>
     public FaacEncoder(Int32 sampleRate, Int32 channels, Int32 sampleBit, Boolean adts = false)
     {
         var inputSampleBytes = new Byte[4];
@@ -39,6 +55,8 @@ public class FaacEncoder : DisposeBase
         if (FaacEncSetConfiguration(_handle, ptr) < 0) throw new Exception(L.T("Failed to set the FAAC configuration."));
     }
 
+    /// <summary>释放原生编码器句柄</summary>
+    /// <param name="disposing">是否释放托管资源</param>
     protected override void Dispose(Boolean disposing)
     {
         base.Dispose(disposing);
@@ -50,6 +68,10 @@ public class FaacEncoder : DisposeBase
         }
     }
 
+    /// <summary>写入 PCM 数据并编码一帧</summary>
+    /// <param name="input">PCM 数据；为空时只尝试输出已缓存的完整帧</param>
+    /// <param name="output">接收 AAC 数据的缓冲区，长度应不小于 <see cref="MaxOutput"/></param>
+    /// <returns>实际写入 <paramref name="output"/> 的字节数；数据不足一帧时返回 0</returns>
     public Int32 Encode(Byte[] input, Byte[] output)
     {
         // 写入缓存数据尾部
@@ -74,6 +96,10 @@ public class FaacEncoder : DisposeBase
         return FaacEncEncode(_handle, buf, InputSamples, output, output.Length);
     }
 
+    /// <summary>从输入流逐帧读取 PCM 并编码到输出流</summary>
+    /// <param name="inStream">PCM 输入流</param>
+    /// <param name="outStream">AAC 输出流</param>
+    /// <returns>累计写入输出流的字节数</returns>
     public async Task<Int32> EncodeAsync(Stream inStream, Stream outStream)
     {
         var input = new Byte[FrameSize];
@@ -225,11 +251,20 @@ public class FaacEncoder : DisposeBase
     #endregion
 }
 
+/// <summary>FAAC 原生互操作辅助方法</summary>
+/// <remarks>
+/// 仅服务于可选的 libfaac 原生互操作（<see cref="FaacEncoder"/>）。为兼容 NativeAOT/裁剪，
+/// 统一使用 AOT 友好的 Marshal 泛型重载（SizeOf&lt;T&gt;/PtrToStructure&lt;T&gt;/StructureToPtr&lt;T&gt;）并携带 DAM 标注，
+/// 不产生 IL3050/IL2091；libfaac 不存在时由 <see cref="Codecs.AacCodec"/> 回退到纯托管透传编码。
+/// </remarks>
 public static class InteropExtensions
 {
-    // 说明：仅服务于可选的 libfaac 原生互操作（FaacEncoder）。为兼容 NativeAOT/裁剪，
-    // 统一使用 AOT 友好的 Marshal 泛型重载（SizeOf<T>/PtrToStructure<T>/StructureToPtr<T>）并携带 DAM 标注，
-    // 不再产生 IL3050/IL2091；libfaac 不存在时由 AacCodec.EncodeWithFaac 回退到纯托管透传编码。
+    /// <summary>将字节数组指定区间复制到非托管内存并解析为结构体</summary>
+    /// <typeparam name="T">目标结构体类型</typeparam>
+    /// <param name="bytes">源字节数组</param>
+    /// <param name="startIndex">起始偏移</param>
+    /// <param name="length">复制长度</param>
+    /// <returns>解析出的结构体；源数组为空时返回默认值</returns>
     public static T BytesToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(Byte[] bytes, Int32 startIndex, Int32 length)
     {
         T local;
@@ -264,18 +299,38 @@ public static class InteropExtensions
         return local;
     }
 
+    /// <summary>将结构体写入非托管指针</summary>
+    /// <typeparam name="T">结构体类型</typeparam>
+    /// <param name="intptr">目标非托管指针</param>
+    /// <param name="structObj">待写入的结构体</param>
     public static void IntPtrSetValue<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr, T structObj) => IntPtrSetValue(intptr, StructToBytes(structObj));
 
+    /// <summary>将对象写入非托管指针</summary>
+    /// <param name="intptr">目标非托管指针</param>
+    /// <param name="structObj">待写入的对象</param>
     public static void IntPtrSetValue(IntPtr intptr, Object structObj) => IntPtrSetValue(intptr, StructToBytes(structObj));
 
+    /// <summary>将字节数组写入非托管指针</summary>
+    /// <param name="intptr">目标非托管指针</param>
+    /// <param name="bytes">待写入的字节数组</param>
     public static void IntPtrSetValue(IntPtr intptr, Byte[] bytes) => Marshal.Copy(bytes, 0, intptr, bytes.Length);
 
+    /// <summary>从非托管指针读取结构体</summary>
+    /// <typeparam name="T">目标结构体类型</typeparam>
+    /// <param name="intptr">源非托管指针</param>
+    /// <returns>解析出的结构体</returns>
     public static T IntPtrToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr)
     {
         var index = 0;
         return IntPtrToStruct<T>(intptr, index, Marshal.SizeOf<T>());
     }
 
+    /// <summary>从非托管指针读取结构体</summary>
+    /// <typeparam name="T">目标结构体类型</typeparam>
+    /// <param name="intptr">源非托管指针</param>
+    /// <param name="index">源偏移</param>
+    /// <param name="length">读取长度</param>
+    /// <returns>解析出的结构体</returns>
     public static T IntPtrToStruct<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(IntPtr intptr, Int32 index, Int32 length)
     {
         var destination = new Byte[length];
@@ -283,12 +338,21 @@ public static class InteropExtensions
         return BytesToStruct<T>(destination, 0, destination.Length);
     }
 
+    /// <summary>将结构体序列化为字节数组</summary>
+    /// <typeparam name="T">结构体类型</typeparam>
+    /// <param name="structObj">待序列化的结构体</param>
+    /// <returns>结构体的字节表示</returns>
     public static Byte[] StructToBytes<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(T structObj)
     {
         var size = Marshal.SizeOf<T>();
         return StructToBytes(structObj, size);
     }
 
+    /// <summary>将结构体序列化为指定长度的字节数组</summary>
+    /// <typeparam name="T">结构体类型</typeparam>
+    /// <param name="structObj">待序列化的结构体</param>
+    /// <param name="size">序列化长度</param>
+    /// <returns>结构体的字节表示</returns>
     public static Byte[] StructToBytes<[DynamicallyAccessedMembers(DynamicallyAccessedMemberTypes.PublicConstructors | DynamicallyAccessedMemberTypes.NonPublicConstructors)] T>(T structObj, Int32 size)
     {
         Byte[] buffer2;
@@ -311,12 +375,19 @@ public static class InteropExtensions
         return buffer2;
     }
 
+    /// <summary>将对象序列化为字节数组</summary>
+    /// <param name="structObj">待序列化的对象</param>
+    /// <returns>对象的字节表示</returns>
     public static Byte[] StructToBytes(Object structObj)
     {
         var size = Marshal.SizeOf(structObj);
         return StructToBytes(structObj, size);
     }
 
+    /// <summary>将对象序列化为指定长度的字节数组</summary>
+    /// <param name="structObj">待序列化的对象</param>
+    /// <param name="size">序列化长度</param>
+    /// <returns>对象的字节表示</returns>
     public static Byte[] StructToBytes(Object structObj, Int32 size)
     {
         Byte[] buffer2;

@@ -31,7 +31,17 @@ public class FftAnalyzer : IAudioProcessor
     public IAudioProcessor Source { get; set; }
 
     /// <summary>窗函数类型</summary>
-    public enum WindowType { Rectangular, Hann, Hamming, Blackman }
+    public enum WindowType
+    {
+        /// <summary>矩形窗（不做加窗）</summary>
+        Rectangular,
+        /// <summary>Hann 窗</summary>
+        Hann,
+        /// <summary>Hamming 窗</summary>
+        Hamming,
+        /// <summary>Blackman 窗</summary>
+        Blackman,
+    }
 
     /// <summary>初始化 FFT 分析器</summary>
     /// <param name="fftSize">FFT 点数（2的幂，默认1024）</param>

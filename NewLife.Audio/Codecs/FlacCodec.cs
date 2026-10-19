@@ -21,12 +21,19 @@ public class FlacCodec : IAudioCodec, ICodecInfo
     /// <summary>元数据块类型</summary>
     public enum MetadataType : Byte
     {
+        /// <summary>流信息（采样率、声道、位深、总采样数）</summary>
         StreamInfo = 0,
+        /// <summary>填充块</summary>
         Padding = 1,
+        /// <summary>应用自定义数据</summary>
         Application = 2,
+        /// <summary>跳转表</summary>
         SeekTable = 3,
+        /// <summary>Vorbis 风格注释（标题、艺术家等）</summary>
         VorbisComment = 4,
+        /// <summary>CUE 曲目表</summary>
         CueSheet = 5,
+        /// <summary>封面图片</summary>
         Picture = 6,
     }
 
