@@ -5,8 +5,8 @@ namespace NewLife.Audio.Codecs;
 
 /// <summary>ADPCM差分脉冲编码调制</summary>
 /// <remarks>
-/// 主要是针对连续的波形数据的, 保存的是相临波形的变化情况, 以达到描述整个波形的目的。
-/// 本文的以IMA的ADPCM编码标准为例进行描述，IMA-ADPCM 是Intel公司首先开发的是一种主要针对16bit采样波形数据的有损压缩算法，压缩比为 4:1。
+/// 主要针对连续的波形数据，保存相邻波形的变化情况，以达到描述整个波形的目的。
+/// 本文以 IMA 的 ADPCM 编码标准为例进行描述，IMA-ADPCM 是 Intel 公司首先开发的一种主要针对 16bit 采样波形数据的有损压缩算法，压缩比为 4:1。
 /// 它与通常的DVI-ADPCM是同一算法。
 /// </remarks>
 public class ADPCMCodec : IAudioCodec, ICodecInfo
@@ -149,14 +149,11 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
         //return outp.ToArray();
     }
 
-    /// <summary>
-    /// 将adpcm转为pcm
-    /// </summary>
+    /// <summary>将 ADPCM 数据解码为 PCM</summary>
     /// <remarks>参考实现：https://github.com/ctuning/ctuning-programs/blob/master/program/cbench-telecom-adpcm-d/adpcm.c</remarks>
-    /// <param name="audio"></param>
-    /// <param name="outdata"></param>
-    /// <param name="state"></param>
-    /// <returns></returns>
+    /// <param name="audio">ADPCM 压缩数据</param>
+    /// <param name="outdata">接收解码结果的 PCM 输出流</param>
+    /// <param name="state">编解码状态，保存预测值与步长索引</param>
     private void adpcm_decoder(ReadOnlySpan<Byte> audio, Stream outdata, AdpcmState state)
     {
         // signed char *inp;		/* Input buffer pointer */
@@ -234,10 +231,11 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
         //return outdata.ToArray();
     }
 
-    /// <summary>PCM转音频数据</summary>
-    /// <param name="pcm"></param>
-    /// <param name="option"></param>
-    /// <returns></returns>
+    /// <summary>PCM 转 ADPCM 音频数据</summary>
+    /// <remarks>输出前 4 字节为状态头（预测值 2 字节、步长索引 1 字节、保留 1 字节），便于后续帧继续解码。</remarks>
+    /// <param name="pcm">16-bit 小端 PCM 数据</param>
+    /// <param name="option">可选的 <see cref="AdpcmState"/>；为空时新建状态</param>
+    /// <returns>带 4 字节状态头的 ADPCM 数据包</returns>
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
         var state = option as AdpcmState;
@@ -259,10 +257,11 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
         return new ArrayPacket(ms);
     }
 
-    /// <summary>音频数据转PCM</summary>
-    /// <param name="audio"></param>
-    /// <param name="option"></param>
-    /// <returns></returns>
+    /// <summary>ADPCM 音频数据转 PCM</summary>
+    /// <remarks>未传入 <paramref name="option"/> 时，从数据首 4 字节读取状态头并跳过。</remarks>
+    /// <param name="audio">ADPCM 数据；未提供状态时首 4 字节为状态头</param>
+    /// <param name="option">可选的 <see cref="AdpcmState"/>；为空时从数据头读取</param>
+    /// <returns>16-bit 小端 PCM 数据包</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
         if (option is not AdpcmState state)
@@ -288,14 +287,12 @@ public class ADPCMCodec : IAudioCodec, ICodecInfo
 /// <summary>ADPCM解码扩展方法</summary>
 public static class AdpcmDecoderExtension
 {
-    /// <summary>
-    /// 添加wav头
-    /// 仅用于测试pcm是否转成成功，因此没考虑性能，因为播放器可播——#
-    /// </summary>
-    /// <param name="input">pcm数据</param>
-    /// <param name="frequency">采样率</param>
-    /// <param name="bitDepth">位深</param>
-    /// <returns></returns>
+    /// <summary>为 PCM 数据添加 WAV 头</summary>
+    /// <remarks>仅用于测试与快速试听，按单声道 PCM 写入 44 字节标准 WAV 头，未针对性能优化。</remarks>
+    /// <param name="input">PCM 数据</param>
+    /// <param name="frequency">采样率（Hz）</param>
+    /// <param name="bitDepth">位深，默认 16</param>
+    /// <returns>带 WAV 头的完整数据</returns>
     public static Byte[] ToWav(this Byte[] input, UInt32 frequency, Byte bitDepth = 16)
     {
         var output = new Byte[input.Length + 44];
