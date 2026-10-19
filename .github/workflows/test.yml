@@ -53,6 +53,9 @@ jobs:
     - name: Package consumer smoke
       shell: pwsh
       run: pwsh -File ./check-package-consumer.ps1
+    - name: API compatibility
+      shell: pwsh
+      run: pwsh -File ./check-api-compat.ps1
 
   # win-x64：原生 runner 直接运行单元测试
   test-win-x64:
