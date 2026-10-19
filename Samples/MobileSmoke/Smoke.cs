@@ -1,5 +1,9 @@
+using System.Globalization;
 using System.Reflection;
 using System.Text.Json;
+using NewLife;
+using NewLife.Audio.Codecs;
+using NewLife.Data;
 
 namespace MobileSmoke;
 
@@ -33,6 +37,45 @@ public static class Smoke
         Check("assembly:" + asm.GetName().Name, () =>
         {
             if (CountTypes(asm) == 0) throw new Exception("no exported types");
+        });
+
+        Check("G.711 A-law roundtrip", () =>
+        {
+            var pcm = new Byte[320];
+            var codec = new G711ACodec();
+            var encoded = codec.FromPcm(pcm, null);
+            var decoded = codec.ToPcm(encoded.GetSpan(), null);
+            if (encoded.Total != pcm.Length / 2 || decoded.Total != pcm.Length) throw new Exception($"length {encoded.Total}/{decoded.Total}");
+        });
+
+        Check("Localization 31 locales", () =>
+        {
+            var cultures = new[]
+            {
+                "ar", "bn", "cs", "da", "de", "el", "es", "fa", "fi", "fr", "he", "hi", "hu", "id", "it", "ja",
+                "ko", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh-Hans", "zh-Hant",
+            };
+
+            var saved = Localization.Culture;
+            try
+            {
+                foreach (var name in cultures)
+                {
+                    CultureInfo culture;
+                    try { culture = CultureInfo.GetCultureInfo(name); }
+                    catch (CultureNotFoundException) { continue; }
+
+                    Localization.Culture = culture;
+                    if (Localization.Translate("Default device") == "Default device") throw new Exception($"missing translation: {name}");
+                }
+
+                Localization.Culture = CultureInfo.InvariantCulture;
+                if (Localization.Translate("Default device") != "Default device") throw new Exception("english fallback failed");
+            }
+            finally
+            {
+                Localization.Culture = saved;
+            }
         });
 
         var dir = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
