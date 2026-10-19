@@ -62,6 +62,46 @@ public class LocalizationTests
         });
     }
 
+    [Fact(DisplayName = "多语言词表：31 种语言均已注册")]
+    public void AllSupportedCulturesAreRegistered()
+    {
+        var codes = new[]
+        {
+            "ar", "bn", "cs", "da", "de", "el", "es", "fa", "fi", "fr", "he", "hi", "hu", "id", "it", "ja",
+            "ko", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh-Hans", "zh-Hant",
+        };
+
+        var old = Localization.Culture;
+        try
+        {
+            foreach (var code in codes)
+            {
+                var culture = TryGetCulture(code);
+                if (culture == null) continue;
+
+                Localization.Culture = culture;
+                Assert.NotEqual("Default device", Localization.Translate("Default device"));
+            }
+        }
+        finally
+        {
+            Localization.Culture = old;
+        }
+    }
+
+    [Theory(DisplayName = "多语言词表：新增语言译文生效")]
+    [InlineData("it", "Dispositivo predefinito")]
+    [InlineData("vi", "Thiết bị mặc định")]
+    [InlineData("uk", "Пристрій за замовчуванням")]
+    [InlineData("he", "התקן ברירת מחדל")]
+    public void NewCultureTranslations(String code, String expected)
+    {
+        var culture = TryGetCulture(code);
+        if (culture == null) return;
+
+        WithCulture(culture, () => Assert.Equal(expected, Localization.Translate("Default device")));
+    }
+
     [Fact(DisplayName = "多语言词表：未知语言回退英文原文")]
     public void TranslateUnknownCultureFallsBack()
     {
