@@ -2,13 +2,13 @@
 # 以基准语言文件（默认 zh-Hans.yml）为准，所有语言必须提供完全相同的键集合
 #
 # 用法：
-#   pwsh -File check-locales.ps1                                      # Core 默认目录
+#   pwsh -File check-locales.ps1                                      # Audio 默认目录
 #   pwsh -File check-locales.ps1 -LocaleDir src\Lib\Locales -SourceDir src\Lib
 #   pwsh -File check-locales.ps1 -LocaleDir src\Lib\Locales -SkipOrphan   # 下游只想校验词表内部一致性
 param(
-    [String]$LocaleDir = "NewLife.Core\Locales",
+    [String]$LocaleDir = "NewLife.Audio\Locales",
     [String]$Baseline = "zh-Hans.yml",
-    [String[]]$SourceDir = @("NewLife.Core", "NewLife.Core.SourceGenerator"),
+    [String[]]$SourceDir = @("NewLife.Audio"),
     [Switch]$SkipOrphan
 )
 
