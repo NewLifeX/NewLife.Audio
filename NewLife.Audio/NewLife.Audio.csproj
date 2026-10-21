@@ -1,8 +1,8 @@
 <Project Sdk="Microsoft.NET.Sdk">
   <PropertyGroup>
     <TargetFrameworks>netstandard2.1;netstandard2.0;net461</TargetFrameworks>
-    <AssemblyTitle>音频编解码</AssemblyTitle>
-    <Description>支持各种音频到PCM的编解码</Description>
+    <AssemblyTitle>NewLife Audio Library</AssemblyTitle>
+    <Description>Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.</Description>
     <Company>新生命开发团队</Company>
     <Copyright>©2002-2026 新生命开发团队</Copyright>
     <VersionPrefix>1.2</VersionPrefix>
@@ -23,6 +23,7 @@
 
   <PropertyGroup>
     <PackageId>$(AssemblyName)</PackageId>
+    <PackageDescription>Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1. 跨平台纯托管 .NET 音频库：编解码（G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex）、音频设备 IO（WaveOut/WASAPI/ASIO）、DSP 音效、语音处理（VAD/AEC/AGC/NS）、容器格式（WAV/Ogg/MP4/FLAC）与流媒体传输（RTP/RTSP/HTTP/WebSocket）；原生 AOT 就绪，内置 31 种语言运行时多语言消息，覆盖 .NET Framework 4.6.1 至 .NET Standard 2.1 共 3 个目标框架。</PackageDescription>
     <Authors>$(Company)</Authors>
     <PackageProjectUrl>https://newlifex.com/iot</PackageProjectUrl>
     <PackageIcon>leaf.png</PackageIcon>
