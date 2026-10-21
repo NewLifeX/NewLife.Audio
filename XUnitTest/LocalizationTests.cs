@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Globalization;
 using NewLife;
+using NewLife.Audio;
 using NewLife.Audio.DSP;
 using NewLife.Audio.Devices;
 using NewLife.Log;
@@ -100,6 +101,90 @@ public class LocalizationTests
         if (culture == null) return;
 
         WithCulture(culture, () => Assert.Equal(expected, Localization.Translate("Default device")));
+    }
+
+    [Fact(DisplayName = "多语言词表：31 种语言覆盖全部词条")]
+    public void AllCulturesCoverAllKeys()
+    {
+        // 词表键必须与代码中的英文源文逐字一致
+        var keys = new[]
+        {
+            "The data is shorter than 2 bytes.",
+            "The data is too short to contain a FLAC marker.",
+            "Not valid FLAC data.",
+            "No STREAMINFO metadata block was found in the FLAC data.",
+            "The bit count must be between 2 and 5.",
+            "Vorbis data is too short.",
+            "Not a Vorbis identification header.",
+            "Not valid Vorbis data.",
+            "Not a Vorbis comment header.",
+            "Not a Vorbis setup header.",
+            "Vorbis version {0} is not supported.",
+            "No codec is registered for [{0}].",
+            "Unsupported container format: {0}.",
+            "Not a valid FLAC file.",
+            "The MP4 file has been finalized and cannot accept more frames.",
+            "Unable to read an OGG page.",
+            "Not a valid WAV file.",
+            "An RTP packet requires at least a 12-byte header.",
+            "The pipe has been closed.",
+            "No audio backend is available.",
+            "No ASIO driver is installed; the device list is a placeholder.",
+            "Failed to start the capture thread: {0}",
+            "waveOutOpen returned {0}; falling back to the null player.",
+            "ASIO default device (no driver detected)",
+            "ASIO default device (no driver installed)",
+            "WASAPI default output",
+            "WASAPI default input",
+            "Default audio device",
+            "Default recording device",
+            "Default device",
+            "DESCRIBE returned {0} {1}",
+            "Failed to set the FAAC configuration.",
+            "Error in BytesToStruct: {0}",
+            "Error in StructToBytes: {0}",
+        };
+
+        var codes = new[]
+        {
+            "ar", "bn", "cs", "da", "de", "el", "es", "fa", "fi", "fr", "he", "hi", "hu", "id", "it", "ja",
+            "ko", "ms", "nb", "nl", "pl", "pt", "ro", "ru", "sv", "th", "tr", "uk", "vi", "zh-Hans", "zh-Hant",
+        };
+
+        var old = Localization.Culture;
+        try
+        {
+            foreach (var code in codes)
+            {
+                var culture = TryGetCulture(code);
+                if (culture == null) continue;
+
+                Localization.Culture = culture;
+                foreach (var key in keys)
+                {
+                    var text = Localization.Translate(key);
+                    Assert.False(String.IsNullOrEmpty(text), $"{code} 缺少词条：{key}");
+                    Assert.NotEqual(key, text);
+                }
+            }
+        }
+        finally
+        {
+            Localization.Culture = old;
+        }
+    }
+
+    [Fact(DisplayName = "异常消息：按当前语言翻译")]
+    public void ExceptionMessagesAreLocalized()
+    {
+        var zh = TryGetCulture("zh-Hans");
+        if (zh == null) return;
+
+        WithCulture(zh, () =>
+        {
+            var ex = Assert.Throws<NotSupportedException>(() => new CodecRegistry().GetCodec((AVTypes)250));
+            Assert.Equal("[250] 没有注册对应的编解码器", ex.Message);
+        });
     }
 
     [Fact(DisplayName = "多语言词表：未知语言回退英文原文")]
