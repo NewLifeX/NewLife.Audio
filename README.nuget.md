@@ -183,3 +183,9 @@ Website: https://newlifex.com · Open source organization: https://github.com/Ne
 ![智能大石头](https://newlifex.com/stone.jpg)
 
 </details>
+
+## License
+
+MIT License © 2002-2026 NewLife Team
+
+[GitHub](https://github.com/NewLifeX/NewLife.Audio) | [Website](https://newlifex.com)

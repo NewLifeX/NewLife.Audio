@@ -183,3 +183,9 @@ NewLife 生态按依赖分层，各项目独立版本、独立发版。下面的
 ![智能大石头](https://newlifex.com/stone.jpg)
 
 </details>
+
+## 授权
+
+MIT License © 2002-2026 新生命开发团队
+
+[GitHub](https://github.com/NewLifeX/NewLife.Audio) | [网站](https://newlifex.com)

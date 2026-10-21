@@ -1,5 +1,8 @@
 # NewLife.Audio - Audio-Codec-Bibliothek
 
+![GitHub top language](https://img.shields.io/github/languages/top/newlifex/NewLife.Audio?logo=github)
+
+
 ![GitHub License](https://img.shields.io/github/license/NewLifeX/NewLife.Audio?logo=github)
 ![NuGet Downloads](https://img.shields.io/nuget/dt/NewLife.Audio?logo=nuget)
 ![NuGet](https://img.shields.io/nuget/v/NewLife.Audio?logo=nuget)
@@ -19,9 +22,77 @@
 🌐 [English](README.md) | [简体中文](README.zh-CN.md) | [繁體中文](README.zh-TW.md) | [Español](README.es.md) | [日本語](README.ja.md) | [Français](README.fr.md) | [Português](README.pt.md) | [Русский](README.ru.md) | [한국어](README.ko.md) | [العربية](README.ar.md)
 <!-- lang:end -->
 
-> Diese Übersetzung kann hinter dem [English README](README.md) zurückliegen.
+[简体中文](README.zh-CN.md) | [English](README.md)
 
-NewLife.Audio bietet Codecs und Streaming für PCM, ADPCM, G.711, G.722, WAV und AAC – geeignet für Sprachkommunikation und Medienanwendungen.
+Eine plattformübergreifende .NET-Bibliothek für Audioverarbeitung, vollständig in verwaltetem Code: Codec, Geräte-I/O, DSP-Effekte, Sprachverarbeitung, Containerformat-Ein-/Ausgabe und Streaming – alles in einem einzigen NuGet-Paket.
+
+🎧 Enthält den plattformübergreifenden Desktop-Demo-Client [AudioStudio](AudioStudio/) (Avalonia) mit sechs Werkzeugmodulen: Wiedergabe, Konvertierung, Geräte, Aufnahme, DSP und Diagnose.
+
+Quellcode: https://github.com/NewLifeX/NewLife.Audio  
+NuGet: `NewLife.Audio`
+
+> 📖 Ausführliche Dokumentation (Chinesisch): [Anforderungen](Doc/需求文档.md) | [Funktionsmodulliste](Doc/功能模块清单.md) | [Client-Anforderungen](Doc/需求文档-客户端.md) | [Client-Funktionsliste](Doc/功能模块清单-客户端.md) | [Wettbewerbsanalyse](Doc/竞品分析报告.md) | [AOT-Kompatibilität](Doc/AOT兼容性分析.md) | [Lokalisierung](Doc/多语言本地化.md) | [Architekturdesigns der Module](Doc/)
+
+## Funktionen
+
+### 🎵 Codec-Engine (CODEC)
+Bidirektionale PCM-Konvertierung für über 10 Audio-Codecs, vollständig in rein verwaltetem C#:
+- **G.711** μ-law / A-law
+- **G.722** / **G.726** Subband-ADPCM
+- **IMA ADPCM** (DVI4)
+- **Opus** (reine verwaltete CELT-Implementierung)
+- **MP3** (Huffman-Dekodierung + inverse Quantisierung + IMDCT + Subband-Synthese)
+- **AAC-LC** (ICS-Parsing + Huffman-Dekodierung + IMDCT + Fenster-Overlap-Add)
+- **FLAC** (Fixed LPC + Rice-Restkodierung + MD5)
+- **Ogg Vorbis** (Kodierung/Dekodierung von 3 Header-Paketen)
+- **Speex** (reines verwaltetes Schmalband-CELP)
+- Erweiterbare Factory über `CodecRegistry` + `ICodecInfo`-Metadaten
+- Anpassung an IoT-Chip-Header (Hisilicon / Dahua / Uniview)
+
+### 🔊 Audio-Geräte-I/O (DEVIO)
+Plattformübergreifende Abstraktion für Audiogeräte:
+- Geräteauflistung & -erkennung
+- **WaveOut** / **WASAPI** / **ASIO**-Backends unter Windows
+- Audioaufnahme & Loopback-Aufzeichnung
+- Gleichzeitige Verwaltung mehrerer Geräte über `AudioDeviceManager`
+
+### 🎛️ DSP-Pipeline (DSP)
+Zusammensetzbare Kette zur Audiosignalverarbeitung:
+- Resampling (lineare Interpolation)
+- Kanalkonvertierung (Mono ↔ Stereo)
+- Bit-Tiefen- / Sample-Format-Konvertierung (8/16/32 Bit ↔ Float)
+- Lautstärkeregelung & Verstärkung (linear / logarithmisch)
+- Mischen mehrerer Quellen mit Normalisierung
+- **FFT**-Spektrumanalyse (Cooley-Tukey, Hann-/Hamming-/Blackman-Fenster)
+- **Equalizer** (grafischer 10-Band-Equalizer + 3-Band-Klangregelung, BiQuad-Kaskade)
+- **BiQuad-Filter** (RBJ-Standard: LP/HP/BP/Notch/Peaking/LowShelf/HighShelf)
+- Dynamikkompressor (Soft-Knee, RMS-Hüllkurve)
+- Ein-/Ausblenden & Crossfade (linear/log/kosinus)
+- Geschwindigkeitsänderung (OLA) & Tonhöhenverschiebung
+- Verkettbare `IAudioProcessor` + `AudioPipeline`
+
+### 🗣️ Sprachverarbeitung (VOP)
+Echtzeit-Frontend für Sprachkommunikation:
+- **VAD** — Voice Activity Detection (GMM-Modell, 6 Subbänder + Hangover)
+- **AEC** — Akustische Echounterdrückung (NLMS-Adaptivfilter + Double-Talk-Erkennung + Komfortrauschen)
+- **AGC** — Automatische Verstärkungsregelung (langsames Ansprechen, schnelles Abfallen, RMS-Hüllkurve)
+- **NS** — Rauschunterdrückung (spektrale Subtraktion + FFT/IFFT + OLA-Synthese)
+- Pipeline zur Sprachvorverarbeitung: HPF → VAD → AGC
+
+### 📦 Containerformate (CONT)
+Lesen und Schreiben von Audiodateiformaten:
+- **WAV** — vollständiges RIFF-Parsing & Schreiben
+- **Ogg** — Lesen/Schreiben auf Seitenebene (Opus/Vorbis)
+- **MP4/M4A** — ISO BMFF: Parsing & Erzeugung der ftyp/moov/mdat-Boxen
+- **FLAC** — natives Parsing der fLaC-Metadatenblöcke
+- **Roh-PCM** — automatische Erkennung oder manuelle Formatangabe
+
+### 📡 Streaming & Transport (STRM)
+Netzwerk-Audiostreaming:
+- **RTP**-Paketierung & Depaketierung (RFC 3550) + Sitzungsverwaltung
+- **RTSP**-Client (TCP: OPTIONS→DESCRIBE→SETUP→PLAY→TEARDOWN, SDP-Parsing)
+- **HTTP**-Audiostreaming (Icecast/SHOUTcast)
+- **WebSocket**-basierte bidirektionale Audio-Pipe (5-Byte-Frame-Header)
 
 ## Installation
 
@@ -32,19 +103,17 @@ dotnet add package NewLife.Audio
 ## Schnellstart
 
 ```csharp
-var codec = new G711Codec();
-var pcm = codec.Decode(encoded);
+using NewLife.Audio;
+using NewLife.Audio.Codecs;
+
+// G.711 μ-law nach PCM dekodieren
+var codec = new G711UCodec();
+var pcm = codec.ToPcm(encodedData);
+
+// PCM nach G.711 A-law kodieren
+var g711a = new G711ACodec();
+var encoded = g711a.FromPcm(pcmData);
 ```
-
-## Funktionen
-
-- Streaming- und Echtzeitkommunikationsfähigkeiten
-- Plattformübergreifend: Windows, Linux, macOS und ARM64/LoongArch64
-- Rein verwaltete Implementierung ohne native Abhängigkeiten
-
-## Dokumentation
-
-> 📖 Vollständige Dokumentation (Chinesisch): [Repository-Dokumente](Doc)
 
 ## Ökosystem-Karte
 
@@ -61,7 +130,7 @@ NewLife ist ein geschichtetes Ökosystem unabhängig versionierter Open-Source-P
 | [NewLife.Templates](https://github.com/NewLifeX/NewLife.Zero) | `dotnet new`-Projektvorlagen für Konsole, Web, API, Dienst, Daten und IoT. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.Templates?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.Templates) |
 | **Daten & Messaging** | | |
 | [NewLife.Redis](https://github.com/NewLifeX/NewLife.Redis) | Redis-Client mit Mikrosekunden-Latenz, Millionen Operationen pro Sekunde und integrierten Nachrichtenwarteschlangen. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.Redis?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.Redis) |
-| [NewLife.RocketMQ](https://github.com/NewLifeX/NewLife.RocketMQ) | Vollständig verwalteter RocketMQ-Client für Apache RocketMQ und Alibaba Cloud Message Queue. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.RocketMQ?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.RocketMQ) |
+| [NewLife.RocketMQ](https://github.com/NewLifeX/NewLife.RocketMQ) | Rein verwalteter RocketMQ-Client für Apache RocketMQ und Alibaba Cloud Message Queue. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.RocketMQ?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.RocketMQ) |
 | [NewLife.MQTT](https://github.com/NewLifeX/NewLife.MQTT) | MQTT-Client und -Server, einschließlich Alibaba Cloud IoT-Anbindung. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.MQTT?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.MQTT) |
 | [NewLife.NovaDb](https://github.com/NewLifeX/NewLife.NovaDb) | Hybriddatenbank in C#: eingebettet oder im Netzwerk, relational, Zeitreihen, Nachrichtenwarteschlange und KV in einem. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.NovaDb?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.NovaDb) |
 | [NewLife.MySql](https://github.com/NewLifeX/NewLife.MySql) | MySql-Treiber und Hilfsschicht auf Basis des NewLife-Datenstacks. | [![NuGet](https://img.shields.io/nuget/dt/NewLife.MySql?style=flat-square&logo=nuget&label=downloads)](https://www.nuget.org/packages/NewLife.MySql) |
@@ -94,13 +163,13 @@ NewLife ist ein geschichtetes Ökosystem unabhängig versionierter Open-Source-P
 | [GitCandy](https://github.com/NewLifeX/GitCandy) | Selbst gehostetes Git-Quellcode-Verwaltungssystem. | — |
 | [LuckyClover](https://github.com/NewLifeX/LuckyClover) | Installiert automatisch die passende .NET-Laufzeit, wenn es von einem älteren Host gestartet wird. | — |
 
-> Die Badges zeigen das primäre Paket jedes Projekts; Theme-, Erweiterungs- und Satellitenpakete sind auf den jeweiligen NuGet-Seiten aufgeführt.Die hier nicht aufgeführten über 30 Pakete (FTP, LoRa, Office-Erweiterungen, Protokolltreiber und mehr) sind in der [NewLifeX-Organisation](https://github.com/NewLifeX) und auf [newlifex.com](https://newlifex.com) verfügbar.
+> Badges zeigen das primäre Paket jedes Projekts; Theme-, Erweiterungs- und Satellitenpakete sind auf den jeweiligen NuGet-Seiten aufgeführt. Die hier nicht aufgeführten über 30 Pakete (FTP, LoRa, Office-Erweiterungen, Protokolltreiber und mehr) sind in der [NewLifeX-Organisation](https://github.com/NewLifeX) und auf [newlifex.com](https://newlifex.com) verfügbar.
 
 ## Team
 
 <img src="https://newlifex.com/logo.png" width="48" align="right" alt="NewLife" />
 
-NewLife wurde 2002 gegründet und widmet sich seit mehr als zwei Jahrzehnten dem .NET- und IoT-Ökosystem, betreut fast 100 Open-Source-Projekte (34 davon Hauptprojekte) und liefert integrierte Hard- und Softwarelösungen für die Bereiche Energie, Logistik, Gesundheitswesen, Industrieautomation und Internet. Unser Leitspruch lautet „Lernen kennt kein Dienstalter – wer es beherrscht, wird zum Lehrmeister“.
+Das 2002 gegründete NewLife-Team ist seit mehr als zwei Jahrzehnten im .NET- und IoT-Ökosystem tätig, betreut nahezu 100 Open-Source-Projekte (34 davon sind Kern dieser Karte) und liefert integrierte Hard- und Softwarelösungen für die Bereiche Energie, Logistik, Gesundheitswesen, Industrieautomation und Internet. Unser Leitspruch lautet „Lernen kennt kein Dienstalter – Beherrschung verdient Respekt“.
 
 Die Open-Source-Komponenten wurden <!--nuget-total:start-->6.48M<!--nuget-total:end--> Mal von NuGet heruntergeladen (ökosystemweit, Stand 2026-10).
 
@@ -117,4 +186,4 @@ Website: https://newlifex.com · Open-Source-Organisation: https://github.com/Ne
 
 MIT License © 2002-2026 NewLife-Team
 
-[GitHub](https://github.com/NewLifeX/NewLife.Audio) | [Website](https://newlifex.com)
+[GitHub](https://github.com/NewLifeX/NewLife.Audio) | [Webseite](https://newlifex.com)
