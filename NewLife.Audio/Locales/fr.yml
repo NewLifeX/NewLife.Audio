@@ -33,3 +33,5 @@
 "Failed to set the FAAC configuration.": "Échec de la définition de la configuration FAAC."
 "Error in BytesToStruct: {0}": "Erreur dans BytesToStruct : {0}"
 "Error in StructToBytes: {0}": "Erreur dans StructToBytes : {0}"
+"NewLife Audio Library": "Bibliothèque audio NewLife"
+"Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.": "Bibliothèque audio .NET multiplateforme et entièrement managée : codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), E/S de périphériques (WaveOut/WASAPI/ASIO), effets DSP, traitement de la parole (VAD/AEC/AGC/NS), formats de conteneur (WAV/Ogg/MP4/FLAC) et streaming (RTP/RTSP/HTTP/WebSocket). Compatible NativeAOT, avec localisation d'exécution intégrée pour 31 langues ; cible 3 frameworks de .NET Framework 4.6.1 à .NET Standard 2.1."

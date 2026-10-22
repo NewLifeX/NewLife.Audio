@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Globalization;
+using System.Reflection;
 using NewLife;
 using NewLife.Audio;
 using NewLife.Audio.DSP;
@@ -143,6 +144,8 @@ public class LocalizationTests
             "Failed to set the FAAC configuration.",
             "Error in BytesToStruct: {0}",
             "Error in StructToBytes: {0}",
+            "NewLife Audio Library",
+            "Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.",
         };
 
         var codes = new[]
@@ -184,6 +187,26 @@ public class LocalizationTests
         {
             var ex = Assert.Throws<NotSupportedException>(() => new CodecRegistry().GetCodec((AVTypes)250));
             Assert.Equal("[250] 没有注册对应的编解码器", ex.Message);
+        });
+    }
+
+    [Fact(DisplayName = "程序集标题与描述：词表可翻译")]
+    public void AssemblyMetadataIsLocalized()
+    {
+        var assembly = typeof(AudioCodecFactory).Assembly;
+        var title = assembly.GetCustomAttribute<AssemblyTitleAttribute>()?.Title;
+        var description = assembly.GetCustomAttribute<AssemblyDescriptionAttribute>()?.Description;
+
+        Assert.False(String.IsNullOrEmpty(title));
+        Assert.False(String.IsNullOrEmpty(description));
+
+        var zh = TryGetCulture("zh-Hans");
+        if (zh == null) return;
+
+        WithCulture(zh, () =>
+        {
+            Assert.NotEqual(title, Localization.Translate(title));
+            Assert.NotEqual(description, Localization.Translate(description));
         });
     }
 

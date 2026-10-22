@@ -33,3 +33,5 @@
 "Failed to set the FAAC configuration.": "FAAC 구성을 설정하지 못했습니다."
 "Error in BytesToStruct: {0}": "BytesToStruct 오류: {0}"
 "Error in StructToBytes: {0}": "StructToBytes 오류: {0}"
+"NewLife Audio Library": "NewLife 오디오 라이브러리"
+"Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.": "크로스 플랫폼 순수 관리형 .NET 오디오 라이브러리: 코덱(G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), 장치 I/O(WaveOut/WASAPI/ASIO), DSP 효과, 음성 처리(VAD/AEC/AGC/NS), 컨테이너 형식(WAV/Ogg/MP4/FLAC), 스트리밍(RTP/RTSP/HTTP/WebSocket). NativeAOT를 지원하며 31개 언어의 런타임 지역화를 내장하고, .NET Framework 4.6.1부터 .NET Standard 2.1까지 3개 대상 프레임워크를 지원합니다."

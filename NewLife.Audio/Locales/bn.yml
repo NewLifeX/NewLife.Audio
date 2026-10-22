@@ -33,3 +33,5 @@
 "Failed to set the FAAC configuration.": "FAAC কনফিগারেশন সেট করা যায়নি।"
 "Error in BytesToStruct: {0}": "BytesToStruct-এ ত্রুটি: {0}"
 "Error in StructToBytes: {0}": "StructToBytes-এ ত্রুটি: {0}"
+"NewLife Audio Library": "NewLife অডিও লাইব্রেরি"
+"Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.": "ক্রস-প্ল্যাটফর্ম, সম্পূর্ণ ম্যানেজড .NET অডিও লাইব্রেরি: কোডেক (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), ডিভাইস I/O (WaveOut/WASAPI/ASIO), DSP ইফেক্ট, স্পিচ প্রসেসিং (VAD/AEC/AGC/NS), কন্টেইনার ফরম্যাট (WAV/Ogg/MP4/FLAC) এবং স্ট্রিমিং (RTP/RTSP/HTTP/WebSocket)। NativeAOT-প্রস্তুত, 31টি ভাষার জন্য অন্তর্নির্মিত রানটাইম স্থানীয়করণ; .NET Framework 4.6.1 থেকে .NET Standard 2.1 পর্যন্ত 3টি ফ্রেমওয়ার্ক সমর্থন করে।"

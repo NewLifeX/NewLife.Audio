@@ -33,3 +33,5 @@
 "Failed to set the FAAC configuration.": "設定 FAAC 組態失敗"
 "Error in BytesToStruct: {0}": "BytesToStruct 發生錯誤：{0}"
 "Error in StructToBytes: {0}": "StructToBytes 發生錯誤：{0}"
+"NewLife Audio Library": "NewLife 音訊庫"
+"Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.": "跨平台純受控 .NET 音訊庫：編解碼（G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex）、音訊裝置 I/O（WaveOut/WASAPI/ASIO）、DSP 音效、語音處理（VAD/AEC/AGC/NS）、容器格式（WAV/Ogg/MP4/FLAC）與串流（RTP/RTSP/HTTP/WebSocket）。支援 NativeAOT，內建 31 種語言執行階段多語系訊息，涵蓋 .NET Framework 4.6.1 至 .NET Standard 2.1 共 3 個目標 Framework。"
