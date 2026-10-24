@@ -5,7 +5,7 @@
     <Description>Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.</Description>
     <Company>新生命开发团队</Company>
     <Copyright>©2002-2026 新生命开发团队</Copyright>
-    <VersionPrefix>1.2</VersionPrefix>
+    <VersionPrefix>1.3</VersionPrefix>
     <VersionSuffix>$([System.DateTime]::Now.ToString(`yyyy.MMdd`))</VersionSuffix>
     <Version>$(VersionPrefix).$(VersionSuffix)</Version>
     <FileVersion>$(Version)</FileVersion>
@@ -30,7 +30,7 @@
     <RepositoryUrl>https://github.com/NewLifeX/NewLife.Audio</RepositoryUrl>
     <RepositoryType>git</RepositoryType>
     <PackageTags>音频;Audio;PCM;G711;G722;G726;ADPCM;Opus;MP3;AAC;FLAC;Vorbis;Speex;DSP;VAD;AEC;AGC;NS;RTP;RTSP;新生命团队;NewLife;$(AssemblyName)</PackageTags>
-    <PackageReleaseNotes>新增 AudioStudio 跨平台桌面客户端（Avalonia，PLAY/CONV/DEVICE/REC/DSP/TOOL 六大模块 28 项功能 100%）；编解码器全面 Span 化与性能优化；重构 ADPCM 状态类并修复 WAV 头；新增 AAC AudioSpecificConfig 封装；编解码器与容器接口健壮性修复；核心库 47 项功能 100% 完成，269 单元测试全覆盖</PackageReleaseNotes>
+    <PackageReleaseNotes>运行时多语言词表扩展到 31 种语言并对齐 NewLife.Core 12，程序集标题与描述同步本地化；全面适配 NativeAOT，AOT 冒烟覆盖 19 项检查与多平台矩阵；新增 Android/iOS 移动端与 riscv64/s390x 指令集冒烟；统一多 TFM 程序集版本并接入二进制兼容门禁；修复 FLAC 36 位总采样数符号扩展与除零、RTP 序列号回绕死锁、容器探测后未复位流位置导致 PCM 丢首字节；测试迁移 xunit v3，315 个单元测试全部通过</PackageReleaseNotes>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PublishRepositoryUrl>true</PublishRepositoryUrl>
     <EmbedUntrackedSources>true</EmbedUntrackedSources>
@@ -44,7 +44,7 @@
       <PrivateAssets>all</PrivateAssets>
       <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
     </PackageReference>
-    <PackageReference Include="NewLife.Core" Version="12.0.2026.1021-beta0321" />
+    <PackageReference Include="NewLife.Core" Version="12.0.2026.1024" />
   </ItemGroup>
 
   <ItemGroup>

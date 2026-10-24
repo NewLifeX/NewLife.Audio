@@ -1,5 +1,39 @@
 # NewLife.Audio 版本更新记录
 
+## v1.3.2026.1024 (2026-10-24)
+
+### 🌐 运行时多语言（新增）
+- **31 种语言词表**：接入 NewLife.Core 12 编译期词表机制，运行时消息从 11 种语言扩展到 31 种语言，缺失译文自动回退英文
+- **程序集元数据本地化**：`AssemblyTitle` / `Description` 改为英文源文并纳入词表，反射读取后可经 `L.T()` 按当前语言展示
+- **带前缀日志**：新增 `InfoPrefixed` / `ErrorPrefixed` / `WritePrefixed`，日志前缀不参与查表，模板可正常翻译
+- **NuGet 元数据双语**：`PackageDescription` 采用英文在前、中文在后的形式，便于 nuget.org 同时展示
+
+### 🚀 NativeAOT 与跨平台（新增）
+- **NativeAOT 支持**：库全面适配 NativeAOT，AOT 冒烟工程覆盖 19 项检查（含 31 种语言）与多平台矩阵
+- **移动端冒烟**：新增 Android / iOS 冒烟工程，Android 支持 JIT / AOT / NativeAOT 三种打包模式并在模拟器自动化验证
+- **指令集矩阵**：新增 riscv64 / s390x 冒烟与 CI 校验，CI 扩展到多操作系统 × 多指令集
+- **多 RID 单元测试**：win-x64 / linux-x64 / linux-arm64 / loongarch64 等 RID 纳入测试矩阵
+
+### 🐛 Bug 修复
+- **[fix]** 修复 FLAC 36 位总采样数符号扩展错误与除零问题
+- **[fix]** 修复 RTP 解包器序列号回绕时重组循环死锁
+- **[fix]** 修复容器工厂探测魔术字节后未复位流位置，导致原始 PCM 丢首字节
+- **[fix]** 修复 Ogg 测试对主机字节序的依赖，使大端平台可正常通过
+
+### 测试与质量
+- **测试框架升级**：迁移到 xunit v3 / Microsoft.Testing.Platform，共 315 个单元测试全部通过
+- **本地化用例**：新增 31 种语言词条全量覆盖与异常消息本地化用例
+- **API 兼容门禁**：统一多 TFM 程序集版本，接入 Microsoft Package Validation 二进制兼容校验
+- **XML 注释清零 CS1591**：补全公共 API 文档注释
+
+### 工程与文档
+- **解决方案升级**：`.sln` 迁移为 `.slnx` 新格式
+- **脚本归位**：构建与校验脚本统一迁移到 `tools/` 目录
+- **README 全翻译**：11 种语言 README 与许可证章节同步完善
+- **依赖升级**：NewLife.Core 12.0.2026.1024 正式版
+
+---
+
 ## v1.2.2026.0802 (2026-08-02)
 
 ### 🆕 AudioStudio 客户端（新增）
