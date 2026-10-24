@@ -19,8 +19,10 @@
   <PropertyGroup Condition="$(TargetFramework.Contains('-android'))">
     <SupportedOSPlatformVersion>24</SupportedOSPlatformVersion>
     <AndroidPackageFormat>apk</AndroidPackageFormat>
-    <!-- 冒烟不评估裁剪体积，关闭链路裁剪以保证反射与 GetExportedTypes 可用 -->
-    <AndroidLinkMode>None</AndroidLinkMode>
+    <!-- 冒烟不评估裁剪体积：SdkOnly 只裁剪 SDK 程序集，应用程序集保持完整，
+         反射与 GetExportedTypes 可用；AndroidLinkMode=None + AOT 会在 API 36 x86_64 模拟器启动即触发
+         Mono 断言 klass->instance_size == instance_size，故不使用 None -->
+    <AndroidLinkMode>SdkOnly</AndroidLinkMode>
   </PropertyGroup>
 
   <PropertyGroup Condition="$(TargetFramework.Contains('-ios'))">
