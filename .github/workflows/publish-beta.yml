@@ -7,6 +7,11 @@ on:
         - 'NewLife.Audio/**'
   workflow_dispatch:
 
+# 必须声明 packages: write，否则推送 GitHub Packages 会 403
+permissions:
+  contents: read
+  packages: write
+
 jobs:
   build-publish:
 
@@ -18,17 +23,21 @@ jobs:
       uses: actions/setup-dotnet@v4
       with:
         dotnet-version: |
-          6.x
-          7.x
           8.x
-          9.x
           10.x
-    - name: Restore
-      run: |
-        dotnet restore NewLife.Audio/NewLife.Audio.csproj
     - name: Build
       run: |
-        dotnet pack --no-restore --version-suffix $(date "+%Y.%m%d-beta%H%M") -c Release -o out NewLife.Audio/NewLife.Audio.csproj
+        dotnet pack --version-suffix $(date "+%Y.%m%d-beta%H%M") -c Release -o out NewLife.Audio/NewLife.Audio.csproj
+    - name: Package consumer smoke
+      # 下游只加 PackageReference 的端到端验证；失败即不发包
+      shell: pwsh
+      run: pwsh -NoProfile -File ./tools/check-package-consumer.ps1
+    - name: API compatibility gate (observation mode)
+      # 观察期：只报告不阻断；稳定后删除 continue-on-error 转为发布阻断。
+      # 基线=最新已发布正式版，校验在 Publish 之前，不会被本次 beta 污染。
+      continue-on-error: true
+      shell: pwsh
+      run: pwsh -NoProfile -File ./tools/check-api-compat.ps1
     - name: Publish
       run: |
         dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://nuget.pkg.github.com/NewLifeX/index.json --api-key ${{ github.token }}

@@ -28,7 +28,11 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 
 Write-Host "1/4 打包 NewLife.Audio ..."
 # 每次用唯一版本号，避免 NuGet 全局缓存命中上一次同版本包
-if (!$Version) { $Version = "1.2." + (Get-Date -Format "yyyy.MMdd") + "-beta" + (Get-Date -Format "HHmmss") }
+if (!$Version) {
+    $prefix = ([xml](Get-Content -LiteralPath (Join-Path $root "NewLife.Audio\NewLife.Audio.csproj"))).Project.PropertyGroup.VersionPrefix |
+        Where-Object { $_ } | Select-Object -First 1
+    $Version = "$prefix." + (Get-Date -Format "yyyy.MMdd") + "-beta" + (Get-Date -Format "HHmmss")
+}
 & dotnet pack (Join-Path $root "NewLife.Audio\NewLife.Audio.csproj") -c $Configuration -o $out -p:Version=$Version --nologo
 if ($LASTEXITCODE -ne 0) { throw "打包失败，退出码 $LASTEXITCODE" }
 
