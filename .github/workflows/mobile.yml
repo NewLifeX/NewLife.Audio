@@ -62,7 +62,9 @@ jobs:
       uses: actions/upload-artifact@v4
       with:
         name: mobile-android
-        path: Bin/MobileSmoke/**/*.apk
+        path: |
+          Bin/MobileSmoke/**/*.apk
+          Bin/MobileSmoke/artifacts/**
         if-no-files-found: ignore
 
   # iOS 模拟器：构建 .app 并安装运行，读取应用容器内的 smoke.json。
@@ -79,7 +81,7 @@ jobs:
       with:
         # 命中时 setup-dotnet 会识别已安装版本并跳过下载，workload 也直接复用
         path: ~/.dotnet
-        key: dotnet-ios-${{ runner.os }}-${{ runner.arch }}-10.0.402-10.400.1
+        key: dotnet-ios-${{ runner.os }}-${{ runner.arch }}-10.0.402-10.0.400.1
     - name: Setup dotNET
       uses: actions/setup-dotnet@v4
       with:
@@ -89,8 +91,10 @@ jobs:
     - name: Select Xcode
       run: sudo xcode-select -s /Applications/Xcode_26.6.app
     - name: Install iOS workload
-      # iOS SDK 版本必须与 Xcode 主次版本严格一致：固定到 Xcode 26.6 对应的 workload set
-      run: dotnet workload install ios --version 10.400.1 || sudo dotnet workload install ios --version 10.400.1
+      # iOS SDK 版本必须与 Xcode 主次版本严格一致：默认 workload set 的 iOS 27 需要 Xcode 27，
+      # 这里固定到 Xcode 26.6 对应的 workload set（10.0.400.1 → iOS 26.5.10315）。
+      # workload set 版本必须是 4 段（SDK 版本 + workload 补丁），写成 10.400.1 会被解析成其他包而报找不到
+      run: dotnet workload install ios --version 10.0.400.1 || sudo dotnet workload install ios --version 10.0.400.1
     - name: Run iOS smoke
       run: bash ./Samples/MobileSmoke/run-ios.sh
     - name: Upload iOS artifacts
@@ -100,3 +104,34 @@ jobs:
         name: mobile-ios
         path: Bin/MobileSmoke/artifacts/**
         if-no-files-found: ignore
+
+  # 观察期汇总：两个冒烟任务都是 continue-on-error，run 结论恒为 success，
+  # 这里把真实结果写进摘要并打 warning 注解，避免失败被绿勾掩盖。
+  summary:
+    name: mobile summary
+    needs: [android, ios]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+    - name: Write summary
+      shell: pwsh
+      run: |
+        $rows = [ordered]@{
+          'Android emulator' = '${{ needs.android.result }}'
+          'iOS simulator'    = '${{ needs.ios.result }}'
+        }
+        $marks = @{ success = '✅'; failure = '⚠️'; skipped = '⏭'; cancelled = '⛔' }
+        $lines = @('### 移动端冒烟结果', '', '| 任务 | 结果 |', '| --- | --- |')
+        foreach ($k in $rows.Keys) {
+          $o = $rows[$k]
+          $lines += "| $k | $($marks[$o]) $o |"
+        }
+        $lines += ''
+        $lines += '> 观察期：任务失败不会阻断工作流，请按本表与 artifacts 排查。'
+        $lines | Out-File -FilePath $env:GITHUB_STEP_SUMMARY -Encoding utf8 -Append
+
+        if ($rows.Values -contains 'failure') {
+          Write-Host "::warning::移动端冒烟存在失败任务，详见摘要与 artifacts"
+        }
