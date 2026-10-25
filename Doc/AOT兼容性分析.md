@@ -24,7 +24,8 @@
 
 ## 3. 已知边界
 
-- **动态能力**：本库不使用反射发射、脚本或插件动态加载，AOT 裁剪下无相关回退路径。
+- **动态能力**：除 TTS 系统语音外，本库不使用反射发射、脚本或插件动态加载，AOT 裁剪下无相关回退路径。
+- **TTS 系统语音**：`SystemSpeechEngine` 通过反射加载 `System.Speech`（Windows SAPI），NativeAOT/裁剪下不保证可用；AOT 场景请注入 `ProcessTtsEngine`、`HttpTtsEngine` 或自定义 `ITtsEngine`。AOT 冒烟不调用系统语音，因此不会触发音频设备或反射路径。
 - **原生库**：`Audio/libfaac.dll` 仅 Windows 可用；其他平台走托管回退，不影响 AOT 编译与核心编解码。
 - **目标框架**：AOT 冒烟以 `net10.0` 运行；`net461` / `netstandard2.0` / `netstandard2.1` 目标不参与 AOT 编译，只验证常规构建。
 - **音频设备**：winmm/WASAPI/ASIO 的真实设备调用需要宿主音频栈，CI 不覆盖；相关 P/Invoke 为静态绑定，AOT 分析器无新增告警。

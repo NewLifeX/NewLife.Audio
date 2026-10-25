@@ -26,7 +26,7 @@
 
 [简体中文](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.zh-CN.md) | English
 
-A cross-platform, pure-managed .NET audio processing library supporting codec, device I/O, DSP effects, speech processing, container format I/O, and streaming — all in one NuGet package.
+A cross-platform, pure-managed .NET audio processing library supporting codecs, device I/O, DSP effects, speech processing, text-to-speech (system speech / HTTP / subprocess engines), container format I/O, and streaming — all in one NuGet package.
 
 🎧 Bundled [AudioStudio](https://github.com/NewLifeX/NewLife.Audio/blob/master/AudioStudio/) cross-platform desktop demo client (Avalonia) with six tool modules: playback, conversion, devices, recording, DSP, and diagnostics.
 
@@ -96,6 +96,14 @@ Network audio streaming:
 - **HTTP** audio streaming (Icecast/SHOUTcast)
 - **WebSocket** bidirectional audio pipe (5-byte frame header)
 
+### 🔈 Text-to-Speech (TTS)
+Turn text into sound with three lines of code:
+- **Speak directly** — `await new TtsClient().SayAsync("text")` via Windows SAPI / macOS `say` / Linux `espeak-ng` (on Windows .NET Core/.NET 5+, reference the `System.Speech` package)
+- **Save to file** — WAV / raw PCM, chosen by file extension
+- **Stream out** — PCM chunks for HTTP/WebSocket generate-as-you-send
+- **Pluggable engines** — system speech, `HttpTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
+- **Optional advanced** — voice/rate, disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
+
 ## Installation
 
 ```bash
@@ -107,6 +115,7 @@ dotnet add package NewLife.Audio
 ```csharp
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
+using NewLife.Audio.Tts;
 
 // Decode G.711 μ-law to PCM
 var codec = new G711UCodec();
@@ -115,6 +124,11 @@ var pcm = codec.ToPcm(encodedData);
 // Encode PCM to G.711 A-law
 var g711a = new G711ACodec();
 var encoded = g711a.FromPcm(pcmData);
+
+// Text-to-speech: speak and save to WAV
+var tts = new TtsClient();
+await tts.SayAsync("Hello, world");
+await tts.SaveAsync("Hello, world", "hello.wav");
 ```
 
 ## Ecosystem Map

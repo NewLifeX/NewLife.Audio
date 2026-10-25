@@ -16,4 +16,4 @@
 | [DSP 音频处理](DSP-音频处理DSP.md) | 重采样、滤波、混音、FFT 等信号链 |
 | [VOP 语音处理](VOP-语音处理.md) | VAD/AEC/AGC/NS 语音前处理 |
 | [STRM 流媒体传输](STRM-流媒体传输.md) | RTP/RTSP/HTTP/WebSocket 音频传输 |
-| [TTS 语音合成](TTS-语音合成.md) | 引擎抽象、文本规范化、缓存与预生成、完整/流式场景选路 |
+| [TTS 语音合成](TTS-语音合成.md) | 极简播报/文件/流式入口，系统语音 + HTTP/子进程引擎，可选缓存与预生成 |

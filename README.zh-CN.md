@@ -24,7 +24,7 @@
 
 [English](README.md) | 简体中文
 
-跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、容器格式读写（WAV/Ogg/MP4/FLAC）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
+跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成（系统语音/HTTP/子进程）、容器格式读写（WAV/Ogg/MP4/FLAC）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
 
 🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断六大工具模块。
 
@@ -96,6 +96,14 @@ Nuget：NewLife.Audio
 - **HTTP** 音频流（Icecast/SHOUTcast）
 - **WebSocket** 双向音频管道（5 字节帧头）
 
+### 🔈 语音合成（TTS）
+把文字变成声音，普通用户三行代码可用：
+- **直接播报** — `await new TtsClient().SayAsync("文字")`，Windows SAPI / macOS `say` / Linux `espeak-ng`（Windows .NET Core/.NET 5+ 应用需引用 `System.Speech` 包）
+- **文件输出** — WAV / 裸 PCM，扩展名决定格式
+- **流式输出** — 逐块 PCM，适合 HTTP/WebSocket 边合成边发送
+- **引擎可插拔** — 系统语音、`HttpTtsEngine`、`ProcessTtsEngine`、自定义 `ITtsEngine`
+- **可选高级** — 音色/语速、磁盘缓存、预生成语音库、文本规范化（`NewLife.Audio.Tts.Advanced`）
+
 ## 安装
 
 ```bash
@@ -107,6 +115,7 @@ dotnet add package NewLife.Audio
 ```csharp
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
+using NewLife.Audio.Tts;
 
 // 将 G.711 μ-law 解码为 PCM
 var codec = new G711UCodec();
@@ -115,6 +124,11 @@ var pcm = codec.ToPcm(encodedData);
 // 将 PCM 编码为 G.711 A-law
 var g711a = new G711ACodec();
 var encoded = g711a.FromPcm(pcmData);
+
+// 文字转语音：直接播报 + 保存 WAV
+var tts = new TtsClient();
+await tts.SayAsync("你好，世界");
+await tts.SaveAsync("你好，世界", "hello.wav");
 ```
 
 ## 生态版图
