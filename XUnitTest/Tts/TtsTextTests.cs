@@ -1,7 +1,7 @@
 using System;
 using System.IO;
 using System.Text;
-using NewLife.Audio.Tts;
+using NewLife.Audio.Tts.Advanced;
 using Xunit;
 
 namespace XUnitTest.Tts;
@@ -122,44 +122,6 @@ public class TtsTextTests
         Assert.Equal("你好。", list[0]);
         Assert.Equal("世界！", list[1]);
         Assert.Equal("再见", list[2]);
-    }
-}
-
-public class TtsWavTests
-{
-    [Fact(DisplayName = "解析标准 WAV 头取出采样率与 PCM 偏移")]
-    public void TryParse_StandardHeader()
-    {
-        var wav = TtsTestHelper.BuildWav(16000, 3200);
-
-        Assert.True(TtsWav.TryParse(wav, out var info));
-        Assert.Equal(16000, info.SampleRate);
-        Assert.Equal(1, info.Channels);
-        Assert.Equal(16, info.BitsPerSample);
-        Assert.Equal(44, info.DataOffset);
-        Assert.Equal(3200, info.DataSize);
-    }
-
-    [Fact(DisplayName = "非 WAV 数据解析失败")]
-    public void TryParse_RejectsGarbage()
-    {
-        Assert.False(TtsWav.TryParse(new Byte[100], out _));
-    }
-
-    [Fact(DisplayName = "流式跳过 WAV 头后剩余数据正好是 PCM")]
-    public async System.Threading.Tasks.Task SkipHeader_LeavesPcmOnly()
-    {
-        var wav = TtsTestHelper.BuildWav(22050, 2000);
-
-        using var stream = new MemoryStream(wav);
-        var info = await TtsWav.SkipHeaderAsync(stream, TestContext.Current.CancellationToken);
-
-        Assert.NotNull(info);
-        Assert.Equal(22050, info.SampleRate);
-
-        using var rest = new MemoryStream();
-        await stream.CopyToAsync(rest, TestContext.Current.CancellationToken);
-        Assert.Equal(2000, (Int32)rest.Length);
     }
 }
 

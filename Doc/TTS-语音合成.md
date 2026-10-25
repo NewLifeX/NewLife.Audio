@@ -1,263 +1,282 @@
 # TTS-语音合成
 
-> 版本：v1.1 | 日期：2026-10-25 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v3.0 | 日期：2026-10-25 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 8 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
-> 🟡 本模块 15 项功能中 12 项已实现（含 43 个单元测试），TTS-13/14/15 待有落地场景后接入，详见[功能模块清单](功能模块清单.md)。
+> 设计目标：普通用户三行代码出声；需要音色、在线服务或自定义模型时再往下看。主命名空间只放极简入口、模型与引擎实现，缓存/预生成/文本规范化全部下沉到 `NewLife.Audio.Tts.Advanced`。
 
 ---
 
-## 1. 模块职责
-
-| 职责 | 说明 |
-|---|---|
-| 引擎抽象 | 用统一接口覆盖离线神经模型、子进程工具、在线服务三类合成能力，上层不感知差异 |
-| 场景编排 | 按“完整 / 流式”两种使用方式组织预生成、缓存、合成与降级 |
-| 文本规范化 | 把阿拉伯数字、英文单词、全角字符、空白转成声学模型能读对的形式 |
-| 结果复用 | 内容哈希缓存 + 预生成库，把握手级延迟压到文件读取级 |
-| 环境适配 | 按 PC / 嵌入式 / 服务器的内存与网络约束挑选可用引擎 |
-| 音频交付 | 输出标准 16 位 PCM，可直接接 DEVIO 播放、CODEC 编码、CONT 容器封装 |
-
-**边界**：本模块只做“合成编排”，不做模型训练，也不内置模型权重与推理运行时。离线神经模型通过适配器接入（可选包或调用方自行集成），核心库仍是纯托管、零原生依赖、NativeAOT 就绪。
-
----
-
-## 2. 核心组件
-
-| 组件 | 说明 |
-|---|---|
-| `ITtsEngine` / `TtsEngineBase` | 合成引擎接口与基类：名称、能力位、质量分、内存估算、可用性、合成方法 |
-| `ITtsSink` / `TtsBufferSink` / `TtsDelegateSink` | 分块输出目标：攒成整段 或 直接回调给播放器 |
-| `TtsRequest` / `TtsResult` | 合成请求与结果，含场景、来源、首包耗时、实时率、降级链 |
-| `TtsCapability` / `TtsScenario` / `TtsTarget` / `TtsSource` / `TtsNumberMode` | 能力位与场景枚举 |
-| `TtsText` / `ChineseNumber` | 文本规范化与中文数字读法 |
-| `TtsCache` | 内容哈希磁盘缓存，原子写入 + 最近最少使用淘汰 |
-| `TtsPreGenerated` | 预生成语音库，与缓存共用键，运行时直接命中 |
-| `TtsRuntimeProfile` | 运行画像：内存上限、在线开关、网络状态，含三档预设 |
-| `TtsRouter` | 选路与降级：按场景过滤排序，逐个尝试，记录尝试链 |
-| `TtsService` | 编排入口：规范化 → 预生成 → 缓存 → 合成，两个方法对应两种场景 |
-| `NullTtsEngine` | 静音兜底引擎，保证永远有输出 |
-| `ProcessTtsEngine` | 子进程引擎，驱动 piper / espeak-ng 等命令行合成器 |
-| `HttpTtsEngine` | 在线引擎，可配置请求模板，解码 WAV / MP3 / 裸 PCM |
-| `TtsWav` / `TtsWavInfo` | WAV 头解析与流式剥离 |
-
----
-
-## 3. 关键流程
-
-### 3.1 完整合成（可以等，结果可复用）
-
-```mermaid
-flowchart TD
-    A[TtsService.SynthesizeAsync] --> B[文本规范化]
-    B --> C{预生成库命中?}
-    C -->|是| D[读文件直接返回]
-    C -->|否| E{磁盘缓存命中?}
-    E -->|是| F[读文件直接返回]
-    E -->|否| G[TtsRouter 选路]
-    G --> H[首选引擎合成]
-    H -->|失败且未输出| I[下一个引擎]
-    I --> H
-    H -->|成功| J[写入缓存]
-    J --> K[返回整段 PCM]
-```
-
-### 3.2 流式合成（不能等，边合成边播）
-
-```mermaid
-flowchart TD
-    A[TtsService.SynthesizeStreamAsync] --> B[文本规范化]
-    B --> C{预生成库命中?}
-    C -->|是| D[整段一次写出]
-    C -->|否| E[TtsRouter 选路]
-    E --> F[优先挑支持分块的引擎]
-    F --> G[引擎边产块边写 sink]
-    G --> H[声卡立即出声]
-    G -->|首包前失败| I[换下一个引擎]
-    G -->|已出声后失败| J[直接抛出，不拼接]
-```
-
-**关键约束**：已经写出去的音频无法撤回，因此“首包之后失败”必须报错而不是换引擎，否则用户会听到两段不同音色的拼接。
-
-### 3.3 选路与降级
-
-```mermaid
-flowchart LR
-    A[全部引擎] --> B{IsAvailable?}
-    B -->|否| X[剔除]
-    B -->|是| C{在线且画像禁止在线?}
-    C -->|是| X
-    C -->|否| D{内存估算超过上限?}
-    D -->|是| X
-    D -->|否| E{流式场景且支持分块?}
-    E -->|是| F[主选列表：按质量分降序]
-    E -->|否| G[兜底列表：整段合成后播放]
-    F --> H[合并：主选 + 兜底]
-    G --> H
-```
-
-硬约束只有“是否允许在线”（合规问题，不可放宽）。内存与流式能力是软约束：优先满足，实在没有就退化——没有流式引擎时退化为整段合成后播放，总比没声音好。
-
-### 3.4 运行时数据流
-
-```
-文本 → TtsText.Normalize → 键 = SHA1(引擎|音色|语速|文本)
-                              ├─ TtsPreGenerated 命中 → PCM
-                              ├─ TtsCache 命中 → PCM
-                              └─ ITtsEngine → PCM 块 → ITtsSink → 播放/编码/封装
-```
-
----
-
-## 4. 接口/数据结构
-
-### 4.1 引擎接口
+## 1. 30 秒上手
 
 ```csharp
-public interface ITtsEngine : IDisposable
-{
-    String Name { get; }
-    TtsCapability Capabilities { get; }
-    Int32 Quality { get; }
-    Int64 RequiredMemoryBytes { get; }
-    Boolean IsAvailable { get; }
+using NewLife.Audio.Tts;
 
-    Task<TtsResult> SynthesizeAsync(TtsRequest request, ITtsSink sink, CancellationToken cancellationToken);
+var tts = new TtsClient();          // 自动选择当前平台系统语音
+await tts.SayAsync("设备A2温度过高，请检查");
+```
+
+- Windows：系统 SAPI（`System.Speech`）
+- macOS：系统 `say`
+- Linux：`espeak-ng`（需系统安装）
+- 需要在线服务、piper 或自定义模型时，构造函数注入引擎（见第 5 节）
+
+全局默认实例适合零散调用：
+
+```csharp
+await TtsClient.Default.SayAsync("系统已启动");
+```
+
+> 默认实例由进程生命周期持有，不建议调用 `Dispose`；需要独立生命周期时用 `new TtsClient()`。
+
+---
+
+## 2. 三种主用法
+
+三个入口都是异步方法，统一签名 `(text, options = null, cancellationToken = default)`：
+
+```csharp
+// 1) 直接播报：播完/取消/Stop 时任务完成
+await tts.SayAsync("设备A2温度过高");
+
+// 2) 保存为文件：扩展名决定格式（.wav / .pcm）
+var result = await tts.SaveAsync("设备A2温度过高", "alert.wav");
+Console.WriteLine($"{result.Bytes} 字节，{result.AudioTime:F1} 秒");
+
+// 3) 流式输出：逐块产出裸 PCM，适合 HTTP/WebSocket
+await foreach (var chunk in tts.StreamAsync("设备A2温度过高"))
+{
+    await response.Body.WriteAsync(chunk.Data.AsMemory(), cancellationToken);
+    // chunk.Format 描述采样率/声道/位深
 }
 ```
 
-`sink` 为 `null` 表示“返回整段 PCM”，非 `null` 表示“边合成边写出” —— 一个方法覆盖两种场景。
-
-### 4.2 输出目标
+只传取消令牌时用命名参数或 `null` 占位：
 
 ```csharp
-public interface ITtsSink
-{
-    void Open(AudioFormat format);
-    void Write(Byte[] buffer, Int32 offset, Int32 count);
-    void Close();
-}
+await tts.SayAsync("文字", cancellationToken: ct);
+await tts.SayAsync("文字", null, ct);
+await tts.SaveAsync("文字", stream, TtsFormat.Wav, null, ct);
 ```
 
-`TtsDelegateSink` 可直接接到播放器：
+`SaveAsync` 有两个重载：
 
 ```csharp
-await service.SynthesizeStreamAsync(request,
-    new TtsDelegateSink(fmt => player.Open(fmt), (buf, off, len) => player.Write(buf, off, len), () => player.Drain()));
+// 按路径保存，扩展名推断格式
+Task<TtsResult> SaveAsync(String text, String path, TtsOptions options = null, CancellationToken ct = default)
+
+// 保存到流，显式指定格式
+Task<TtsResult> SaveAsync(String text, Stream output, TtsFormat format = TtsFormat.Wav, TtsOptions options = null, CancellationToken ct = default)
 ```
 
-### 4.3 请求与结果
-
-| 字段 | 说明 |
-|---|---|
-| `TtsRequest.Text` | 待合成文本，服务内部会规范化 |
-| `TtsRequest.Voice` | 音色标识，离线为模型/说话人，在线为服务端 voice 参数 |
-| `TtsRequest.Speed` | 语速倍率 |
-| `TtsRequest.Scenario` | 完整 / 流式，由调用的方法自动设置 |
-| `TtsRequest.Normalize` / `NumberMode` | 是否规范化、数字读法策略 |
-| `TtsResult.Source` | 预生成 / 缓存 / 实时合成 |
-| `TtsResult.PcmBytes` / `Pcm` | 流式只填字节数，完整两者都填 |
-| `TtsResult.FirstChunkTime` / `Rtf` | 首包耗时与实时率 |
-| `TtsResult.Attempts` | 降级链，排查“为什么用了这个引擎” |
-
-### 4.4 三种内置引擎
-
-| 引擎 | 关键配置 | 能力 | 典型用途 |
-|---|---|---|---|
-| `ProcessTtsEngine` | `FileName` / `Arguments` 模板 / `OutputKind` / `SampleRate` | 离线 + 流式 | 驱动 piper、espeak-ng |
-| `HttpTtsEngine` | `Url` / `Method` / `BodyTemplate` / `Headers` / `ResponseKind` | 在线（WAV/裸 PCM 时带流式） | 对接各家在线合成 |
-| `NullTtsEngine` | `SecondsPerChar` | 离线 + 流式 | 兜底、无声卡环境、单元测试 |
-
-### 4.5 运行画像
-
-| 预设 | 内存上限 | 在线 | 适用 |
-|---|---|---|---|
-| `TtsRuntimeProfile.Embedded` | 384MB | 禁止 | 嵌入式板卡，典型 1GB 内存设备 |
-| `TtsRuntimeProfile.Desktop` | 2GB | 允许 | 开发机与 PC |
-| `TtsRuntimeProfile.Server` | 不限 | 允许 | 服务器批量合成 |
-| `TtsRuntimeProfile.Detect()` | 按机器探测 | 内存 <1GB 时禁止 | 通用入口 |
-
-`ReadAvailableMemory()` 在 Linux 读 `/proc/meminfo` 的 `MemAvailable`，其它平台返回 0 表示未知。
-
----
-
-## 5. 集成示例
-
-### 5.1 嵌入式：子进程引擎 + 预生成
+### 2.1 网络流式示例
 
 ```csharp
-using var service = new TtsService();
-service.Router.Profile = TtsRuntimeProfile.Embedded;
-service.Router.Register(new ProcessTtsEngine
+// ASP.NET Core 最小 API：首包即出，不攒整段
+app.MapGet("/tts", async (String text, HttpContext ctx, CancellationToken ct) =>
 {
-    Name = "piper",
-    FileName = "/opt/tts/piper",
-    Arguments = "--model /opt/tts/zh_CN-huayan-medium.onnx --output-raw --sentence_silence 0.08",
-    SampleRate = 22050,
+    ctx.Response.ContentType = "audio/wav";
+    await TtsClient.Default.SaveAsync(text, ctx.Response.Body, TtsFormat.Wav, null, ct);
 });
-service.Router.Register(new NullTtsEngine());
-
-// 打包进镜像前跑一次，固定告警语从此不再实时合成
-await service.PreGenerated.BuildAsync(service.Router.Find("piper"), ["设备离线", "温度过高", "请检查网络"]);
 ```
 
-### 5.2 桌面/服务器：在线引擎优先
+- `SaveAsync(stream, TtsFormat.Wav)`：写出完整 WAV（头 + PCM），适合 HTTP/文件。
+- `StreamAsync`：只产出裸 PCM，适合 WebSocket、Web Audio 或自定义协议；容器头由调用方决定。
+- 引擎支持分块时是真流式；不支持时退化为“整段合成后分块写出”，调用方行为一致。
+
+---
+
+## 3. 音色与语速
 
 ```csharp
-using var service = new TtsService();
-service.Router.Profile = TtsRuntimeProfile.Server;
-service.Router.Register(new HttpTtsEngine
+foreach (var voice in tts.GetVoices())
+    Console.WriteLine($"{voice.Name} | {voice.Culture} | {voice.Gender}");
+
+// 全局默认
+tts.Options.Voice = "Microsoft Huihui Desktop";
+tts.Options.Rate = 1.2f;     // 1.0 = 正常，>1 更快
+tts.Options.Volume = 0.8f;   // 0~1
+
+// 单次覆盖，不影响默认
+await tts.SaveAsync("请注意", "alert.wav",
+    new TtsOptions { Voice = "Microsoft Kangkang", Rate = 0.9f },
+    cancellationToken);
+```
+
+语速倍率映射到各引擎原生单位：
+
+| 引擎 | 映射 |
+|---|---|
+| Windows SAPI | `Rate = clamp(10 * log2(倍率), -10, 10)` |
+| macOS `say` | 词/分钟 = 175 × 倍率，限制 80~500 |
+| espeak-ng | 词/分钟 = 175 × 倍率，限制 80~500 |
+
+---
+
+## 4. 文件格式能力
+
+**本轮只承诺 WAV 与裸 PCM**。这不是能力上限，而是现有压缩编码器还不具备交付质量：
+
+| 格式 | 现状 | 结论 |
+|---|---|---|
+| WAV (PCM) | `WavStreamWriter` / `WaveFileWriter` 完整，可回填长度 | ✅ 支持 |
+| 裸 PCM | 16 位小端 | ✅ 支持（流式/自定义协议） |
+| MP3 编码 | 现有 `Mp3Codec.FromPcm` 是简化实现，帧长与 Huffman 不符合标准，标准解码器无法互通 | ❌ 不暴露 |
+| AAC 编码 | 依赖可选原生 `libfaac`；托管回退是 PCM 透传 | ❌ 不暴露 |
+| Opus 编码 | 现有 `OpusCodec.FromPcm` 为简化 CELT，未验证标准互操作 | ❌ 不暴露 |
+| FLAC 编码 | 现有实现帧头/子帧不完整，解码器仅支持 Verbatim 子帧 | ❌ 不暴露 |
+| Ogg Opus 封装 | `OggOpusStreamWriter` 可封装**已编码**的 Opus 包 | 🟡 仅供在线服务透传 |
+
+后续路线（需单独立项）：
+
+1. **网络流式首选 Opus**：引入纯托管 `Concentus`，PCM 重采样到 48kHz 后编码，接现有 `OggOpusStreamWriter`，输出 `audio/ogg; codecs=opus`。
+2. **文件分发需要 MP3**：Windows Media Foundation（内置）或可选原生 LAME。
+3. **无损 FLAC**：重写为可互操作的纯托管编码器（固定预测 + Rice + 正确帧头/CRC）。
+
+`TtsFormat` 与 `SaveAsync(stream, format)` 已为后续格式留好位置，加格式不改变极简 API。
+
+---
+
+## 5. 引擎
+
+系统语音、HTTP、子进程都只是 `ITtsEngine` 的实现：
+
+```csharp
+// 在线 HTTP 引擎
+var tts = new TtsClient(new HttpTtsEngine
 {
-    Name = "online",
-    Url = "https://example.com/tts?text={text}&voice={voice}",
-    Method = "GET",
+    Url = "https://example.com/tts",
+    Method = "POST",
+    BodyTemplate = "{\"text\":\"{text}\",\"voice\":\"{voice}\"}",
     ResponseKind = TtsResponseKind.Wav,
-    Headers = { ["Authorization"] = "Bearer xxx" },
-    Quality = 90,
+});
+
+// 子进程引擎（piper / espeak-ng）
+var tts = new TtsClient(new ProcessTtsEngine("piper", "piper", "--model zh_CN-huayan-medium.onnx --output-raw", 22050)
+{
+    Normalize = true,
 });
 ```
 
-### 5.3 接入神经模型（可选包）
+| 引擎 | 用途 | 直接播报 |
+|---|---|---|
+| `SystemSpeechEngine` | Windows SAPI | ✅ |
+| `MacSayTtsEngine` | macOS `say` | ✅ |
+| `EspeakTtsEngine` | Linux/macOS `espeak-ng` | ✅ |
+| `HttpTtsEngine` | 在线 HTTP/HTTPS 服务 | ❌ |
+| `ProcessTtsEngine` | piper 等命令行合成器 | ❌ |
+| `NullTtsEngine` | 测试/无声卡兜底 | ❌ |
 
-神经模型适配只需实现 `ITtsEngine`，把库内 PCM 交给 `sink`：
+### 5.1 为什么用构造注入而不是继承 `TtsClient`
+
+- `TtsClient` 是编排器，扩展点是 `ITtsEngine` / `ITtsSpeaker` / `CreatePlayer`，不是继承。
+- 构造注入意图明确、易组合、易测试；继承会耦合基类实现。
+- 横切逻辑（重试、缓存）用 `ITtsEngine` 装饰器，例如：
 
 ```csharp
-public class NeuralTtsEngine : TtsEngineBase
+var tts = new TtsClient(new CachedTtsEngine(new HttpTtsEngine { Url = "..." }, new TtsCache("/data/tts")));
+```
+
+- 单元测试注入假引擎即可，不需要为了让测试可替换而给 `TtsClient` 加虚方法。
+
+### 5.2 自定义引擎
+
+实现一个返回 `IAsyncEnumerable<TtsChunk>` 的方法即可，不需要回调、sink 或队列：
+
+```csharp
+using System.Runtime.CompilerServices;
+
+public sealed class NeuralTtsEngine : TtsEngineBase
 {
-    public override async Task<TtsResult> SynthesizeAsync(TtsRequest request, ITtsSink sink, CancellationToken cancellationToken)
+    public NeuralTtsEngine() : base("neural") { }
+
+    public override async IAsyncEnumerable<TtsChunk> SynthesizeAsync(
+        String text, TtsOptions options, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        // 1) 常驻引擎一次性加载模型；2) 生成时按回调产出 PCM 块
-        // 3) 每块调用 sink.Write(buffer, 0, count)
+        // 1) 常驻模型一次性加载；2) 生成时逐块 yield 16 位小端 PCM
+        await foreach (var pcm in Model.GenerateAsync(text, cancellationToken))
+        {
+            yield return new TtsChunk
+            {
+                Format = new AudioFormat { SampleRate = 24000, Channels = 1, BitsPerSample = 16 },
+                Data = pcm,
+            };
+        }
     }
 }
 ```
 
-适配器单独发包，核心库不引 ONNX Runtime，保持 `netstandard2.0` + 纯托管承诺。
+核心库不引 ONNX Runtime，保持纯托管与 `netstandard2.0` 兼容；模型适配器单独发包。
 
 ---
 
-## 6. 设计决策
+## 6. 高级能力（`NewLife.Audio.Tts.Advanced`）
+
+主命名空间不暴露缓存、预生成与文本规范化，避免普通用户被“架构”吓到。需要时显式 `using NewLife.Audio.Tts.Advanced;`。
+
+### 6.1 磁盘缓存
+
+```csharp
+using NewLife.Audio.Tts.Advanced;
+
+var cache = new TtsCache("/data/tts-cache");
+var engine = new CachedTtsEngine(new SystemSpeechEngine(), cache);
+var tts = new TtsClient(engine);
+```
+
+只对相同引擎/文本/音色/语速生效：整段合成直接读写缓存；`SaveAsync` / `StreamAsync` 会边转发边缓冲，结束后写入缓存。启用缓存意味着接受整段音频缓冲在内存中，需要极致低内存的流式场景不要套本装饰器。缓存键由引擎名、音色、语速与文本决定。
+
+### 6.2 预生成语音库
+
+固定告警语提前合成落盘，运行时就是一次文件读取：
+
+```csharp
+var pregen = new TtsPreGenerated(new SystemSpeechEngine(), new TtsCache("/data/tts-cache"));
+var count = await pregen.GenerateAsync(["设备离线", "温度过高", "请检查网络"]);
+
+// 运行时让 TtsClient 指向同一缓存目录
+var tts = new TtsClient(new CachedTtsEngine(pregen.Engine, pregen.Cache));
+await tts.SayAsync("设备离线");
+```
+
+预生成与缓存共用键与存储格式；`TryGet` 可直接查询某句是否已生成。
+
+### 6.3 文本规范化
+
+`TtsText` / `ChineseNumber` 供需要中文数字、英文读名、去空白的离线模型使用：
+
+```csharp
+using NewLife.Audio.Tts.Advanced;
+
+var text = TtsText.Default.Normalize("设备型号 A2 温度 35 度");
+// 设备型号诶二温度三十五度
+```
+
+`ProcessTtsEngine` 提供 `Normalize` 开关；系统语音与在线服务默认不做规范化，避免破坏英文空格与数字读法。
+
+---
+
+## 7. 设计决策
 
 | 决策 | 理由 |
 |---|---|
-| 只做编排层，不做推理引擎 | 保持纯托管与零原生依赖承诺；模型生态变化快，不适合固化进核心库。直接内置 ONNX Runtime 会破坏 netstandard2.0 与安装门槛 |
-| 两种场景用两个方法，而非标志位 | 代码自解释，避免“忘了设置场景”导致的延迟翻倍 |
-| 选路按质量分降序、同分按内存升序 | 音质是用户感知最强的维度；同分时优先小内存引擎，便于小设备早命中。注册顺序取决于用户习惯，不可控 |
-| 只在“是否允许在线”上硬拦截 | 合规不可妥协；内存与流式能力用的是估算值，硬拦容易误杀，导致彻底没声音 |
-| 缓存键 = 引擎 + 音色 + 语速 + 文本 | 这四项确定则音频确定；采样率是模型固有属性，不必入键，预生成与运行时键才不会错位 |
-| 缓存存裸 PCM + 元信息文本 | 读写都不依赖容器解析，键即文件名，便于清理与核对；存 WAV 需容器往返且头部长度语义坑多 |
-| 预生成与缓存共用键与存储格式 | 预生成条目天然被运行时当缓存命中，一套逻辑两处收益，也不会出现索引与目录不同步 |
-| 中文数字在库内转换 | 实测多数离线前端对纯数字串会读错或跳过（espeak 的 cmn 读 110 会混英文），不能交给引擎 |
-| 去掉全部空白字符 | 实测带空格会让词典模型把空格当发音位，多出杂音与停顿 |
-| 断句作为引擎开关而非改文本 | 只有部分引擎（piper）需要把中文逗号改句号，改原文会破坏语义 |
-| 首包后失败直接抛出 | 已写出的音频无法撤回，换引擎会产生拼接怪声 |
-| 运行时消息全英文，暂不进词表 | 异常属开发者可见消息，本轮先写英文源文，运行时回退英文；5 条消息的 31 语言译文待补（`L.T` 键已在代码中就位） |
+| 三个主入口全部异步，`options` 可选、`ct` 最后 | 统一调用形态；`SayAsync`/`SaveAsync`/`StreamAsync` 语义一致 |
+| 每类只保留一个方法（不做成对重载） | API 面最小；只传取消令牌时用命名参数或 `null` 占位 |
+| 引擎 SPI 用 `IAsyncEnumerable<TtsChunk>` | 直接 `yield return`，消费端天然背压；删除 `ITtsSink`、`TtsRequest`、桥接队列与委托引擎 |
+| 引擎只产 PCM，不返回结果对象 | 文件封装、统计、播放统一由 `TtsClient` 完成，引擎实现更薄 |
+| 引擎构造注入，`TtsClient` 不开放继承 | 组合优于继承；单元测试与多引擎组合更简单 |
+| 默认按平台选择系统语音 | 普通用户零配置；Windows SAPI / macOS say / Linux espeak-ng |
+| 本轮只做 WAV/PCM | 现有 MP3/AAC/Opus/FLAC 编码器不具备互操作质量，不拿用户当测试 |
+| 系统语音走反射而非编译期引用 | 保持核心库零原生依赖与三 TFM；.NET Core 应用按需引用 `System.Speech` |
+| 缓存/预生成/文本规范化下沉到 `Tts.Advanced` | 主路径不落盘、不创建临时目录；高频告警场景按需启用 |
+| 不内置引擎降级链 | 链式降级会掩盖首包后失败、拼接不同音色；需要时由调用方用自定义引擎组合 |
+| 首包后失败直接抛出 | 已写出的音频无法撤回，换引擎会产生不同音色拼接 |
 
 ---
 
-## 7. 实测参考数据
+## 8. 实测参考数据
 
-以下数据来自 RK3568（4×Cortex-A55，949MB 内存，无 swap）与开发机的同批模型对比，用于校核 `RequiredMemoryBytes` 与质量分取值：
+以下数据来自 RK3568（4×Cortex-A55，949MB 内存，无 swap）与开发机的同批模型对比，用于容量规划：
 
 | 引擎形态 | 采样率 | 模型体积 | 实时率 | 首包 | 加载后内存增量 |
 |---|---|---|---|---|---|
@@ -266,11 +285,24 @@ public class NeuralTtsEngine : TtsEngineBase
 | 大模型（int8，80MB） | 24kHz | 105MB | 8.14 | 14.3s | 567MB |
 | 子进程（每句起进程） | 22.05kHz | 60MB | — | 3.11s | — |
 
-三条可用于容量规划的结论：
+三条结论：
 
-1. **int8 在 ARM 上不一定更快**：实测比 fp32 慢 1.7~2.3 倍，只有体积优势，小内存设备才值得选。
-2. **进程式引擎的固定开销巨大**：每句都要重新加载模型，20 字播报有近一半时间花在加载上——这就是必须做预生成与缓存的原因。
-3. **大模型会吃掉半台设备**：567MB 增量在 949MB 设备上属于危险区，`TtsRuntimeProfile.Embedded` 的 384MB 上限正是为此设置。
+1. **int8 在 ARM 上不一定更快**：实测比 fp32 慢 1.7~2.3 倍，只有体积优势。
+2. **进程式引擎固定开销大**：每句重新加载模型，高频播报应使用缓存或预生成。
+3. **大模型会吃掉半台设备**：567MB 增量在 949MB 设备上属于危险区，嵌入式场景优先小模型或子进程方案。
+
+---
+
+## 9. 平台与 AOT
+
+| 平台 | 默认引擎 | 说明 |
+|---|---|---|
+| Windows | `SystemSpeechEngine` | .NET Framework 开箱可用；.NET Core/.NET 5+ 应用需引用 `System.Speech` NuGet 包 |
+| macOS | `MacSayTtsEngine` | 系统自带 `/usr/bin/say`；流式为“整段生成后分块” |
+| Linux | `EspeakTtsEngine` | 需安装 `espeak-ng`；`--stdout` 输出 WAV，真流式 |
+| 非直出引擎 | `HttpTtsEngine` / `ProcessTtsEngine` | `SayAsync` 走 PCM 播放回退；非 Windows 无可用 PCM 播放驱动时请用 `SaveAsync`/`StreamAsync` |
+
+AOT/裁剪：`SystemSpeechEngine` 依赖反射，不保证 NativeAOT 可用；AOT 场景请注入自定义引擎或使用 `ProcessTtsEngine` / `HttpTtsEngine`。
 
 ---
 

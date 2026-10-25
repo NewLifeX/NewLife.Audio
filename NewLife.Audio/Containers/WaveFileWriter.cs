@@ -22,7 +22,12 @@ public class WaveFileWriter : IAudioContainerWriter
     {
         _stream = stream ?? throw new ArgumentNullException(nameof(stream));
         _format = format ?? throw new ArgumentNullException(nameof(format));
-        _writer = new WavStreamWriter(format.SampleRate);
+        _writer = new WavStreamWriter(format.SampleRate)
+        {
+            Channels = format.Channels,
+            BitsPerSample = format.BitsPerSample,
+            PatchSize = stream.CanSeek,
+        };
 
         _writer.WriteHeaderAsync(stream).AsTask().GetAwaiter().GetResult();
     }
@@ -38,7 +43,11 @@ public class WaveFileWriter : IAudioContainerWriter
     }
 
     /// <summary>完成写入</summary>
-    public void Flush() => _stream.Flush();
+    public void Flush()
+    {
+        _writer.WriteTrailerAsync(_stream).AsTask().GetAwaiter().GetResult();
+        _stream.Flush();
+    }
 
     /// <summary>释放</summary>
     public void Dispose() => _stream?.Dispose();

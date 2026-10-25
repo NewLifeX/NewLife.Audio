@@ -1,7 +1,7 @@
 namespace NewLife.Audio.Tts;
 
 /// <summary>WAV 头信息</summary>
-public class TtsWavInfo
+internal class TtsWavInfo
 {
     /// <summary>采样率</summary>
     public Int32 SampleRate { get; set; }
@@ -24,7 +24,7 @@ public class TtsWavInfo
 /// 在线服务与子进程引擎经常直接返回 WAV，送声卡前必须把文件头剥掉。
 /// 这里只做最小解析：定位格式参数与 data 块，不处理多声道交织等细节。
 /// </remarks>
-public static class TtsWav
+internal static class TtsWav
 {
     /// <summary>解析内存中的 WAV 数据</summary>
     /// <param name="data">完整 WAV 数据</param>

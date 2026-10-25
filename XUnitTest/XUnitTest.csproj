@@ -21,6 +21,11 @@
     <PackageReference Include="xunit.v3" Version="4.0.2" />
   </ItemGroup>
 
+  <!-- Windows 下验证系统语音引擎；其他平台不引入 Windows 专用包 -->
+  <ItemGroup Condition="$([MSBuild]::IsOSPlatform('Windows'))">
+    <PackageReference Include="System.Speech" Version="10.0.12" />
+  </ItemGroup>
+
   <ItemGroup>
     <ProjectReference Include="..\NewLife.Audio\NewLife.Audio.csproj" />
   </ItemGroup>

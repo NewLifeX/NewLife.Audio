@@ -1,6 +1,6 @@
 using System.Text;
 
-namespace NewLife.Audio.Tts;
+namespace NewLife.Audio.Tts.Advanced;
 
 /// <summary>阿拉伯数字转中文读法</summary>
 /// <remarks>

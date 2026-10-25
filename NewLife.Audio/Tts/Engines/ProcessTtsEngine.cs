@@ -1,10 +1,11 @@
 using System.Diagnostics;
-using System.Text;
+using System.Runtime.CompilerServices;
 using NewLife.Audio.DSP;
+using NewLife.Audio.Tts.Advanced;
 
 namespace NewLife.Audio.Tts;
 
-/// <summary>输出类型</summary>
+/// <summary>子进程输出类型</summary>
 public enum TtsOutputKind
 {
     /// <summary>裸 PCM，16 位有符号整数</summary>
@@ -17,33 +18,21 @@ public enum TtsOutputKind
 /// <summary>子进程语音合成引擎</summary>
 /// <remarks>
 /// 把 piper、espeak-ng 这类命令行合成器当作可替换的外部引擎。
-/// 好处是零原生依赖、不引模型推理库，坏处是每次合成都要起进程——所以只适合中低频播报，
-/// 高频场景应在外面套 <see cref="TtsPreGenerated"/> 或 <see cref="TtsCache"/>。
-/// <para>
-/// 进程的标准输出会被边读边送进 <see cref="ITtsSink"/>，因此支持真正的流式播放；
-/// 单句文本建议控制在 40 字以内，否则首包延迟会变大。
-/// </para>
+/// 好处是零原生依赖、不引模型推理库，坏处是每次合成都要起进程——适合中低频播报，
+/// 高频场景应在外层套 <see cref="Advanced.CachedTtsEngine"/>。
+/// <para>标准输出会被边读边产出，因此支持真正的流式输出。</para>
 /// </remarks>
 /// <example>
 /// <code>
-/// // piper：从标准输入读文本，输出 22.05kHz 裸 PCM
 /// var piper = new ProcessTtsEngine
 /// {
 ///     Name = "piper",
 ///     FileName = "piper",
 ///     Arguments = "--model zh_CN-huayan-medium.onnx --output-raw --sentence_silence 0.08",
 ///     SampleRate = 22050,
+///     Normalize = true,
 /// };
-///
-/// // espeak-ng：输出 WAV
-/// var espeak = new ProcessTtsEngine
-/// {
-///     Name = "espeak",
-///     FileName = "espeak-ng",
-///     Arguments = "-v cmn --stdout {text}",
-///     WriteTextToStdin = false,
-///     OutputKind = TtsOutputKind.Wav,
-/// };
+/// var tts = new TtsClient(piper);
 /// </code>
 /// </example>
 public class ProcessTtsEngine : TtsEngineBase
@@ -66,6 +55,10 @@ public class ProcessTtsEngine : TtsEngineBase
     /// <summary>输出声道数</summary>
     public Int32 Channels { get; set; } = 1;
 
+    /// <summary>是否在合成前做文本规范化</summary>
+    /// <remarks>中文离线模型通常需要开启；英文模型建议关闭，避免空格被去掉。</remarks>
+    public Boolean Normalize { get; set; }
+
     /// <summary>是否把逗号类标点统一成句号</summary>
     /// <remarks>只认句末标点的引擎（典型如 piper）需要开启，否则中文逗号处不会有停顿。</remarks>
     public Boolean UnifyPunctuation { get; set; } = true;
@@ -77,197 +70,110 @@ public class ProcessTtsEngine : TtsEngineBase
     public String WorkingDirectory { get; set; }
 
     /// <summary>初始化子进程合成引擎</summary>
-    public ProcessTtsEngine()
-    {
-        Name = "process";
-        Capabilities = TtsCapability.Offline | TtsCapability.Streaming;
-        Quality = 40;
-        RequiredMemoryBytes = 32L * 1024 * 1024;
-    }
+    public ProcessTtsEngine() : base("process") { }
 
     /// <summary>初始化子进程合成引擎</summary>
     /// <param name="name">引擎名</param>
     /// <param name="fileName">可执行文件</param>
     /// <param name="arguments">参数模板</param>
     /// <param name="sampleRate">输出采样率</param>
-    public ProcessTtsEngine(String name, String fileName, String arguments, Int32 sampleRate = 22050) : this()
+    public ProcessTtsEngine(String name, String fileName, String arguments, Int32 sampleRate = 22050) : base(name)
     {
-        Name = name;
         FileName = fileName;
         Arguments = arguments;
         SampleRate = sampleRate;
     }
 
     /// <summary>是否可用。可执行文件必须能找到</summary>
-    public override Boolean IsAvailable => !FileName.IsNullOrEmpty() && ResolveExecutable(FileName) != null;
+    public override Boolean IsAvailable => !FileName.IsNullOrEmpty() && TtsProcess.FindExecutable(FileName) != null;
 
-    /// <summary>合成语音</summary>
-    /// <param name="request">合成请求</param>
-    /// <param name="sink">分块输出目标，可为 null</param>
+    /// <summary>合成语音，逐块读出子进程标准输出</summary>
+    /// <param name="text">待合成文本</param>
+    /// <param name="options">合成选项</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>合成结果</returns>
-    public override async Task<TtsResult> SynthesizeAsync(TtsRequest request, ITtsSink sink, CancellationToken cancellationToken)
+    /// <returns>PCM 分块异步序列</returns>
+    public override async IAsyncEnumerable<TtsChunk> SynthesizeAsync(String text, TtsOptions options, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (request == null) throw new ArgumentNullException(nameof(request));
-
-        var exe = IsAvailable ? ResolveExecutable(FileName) : null;
+        var exe = IsAvailable ? TtsProcess.FindExecutable(FileName) : null;
         if (exe == null) throw new InvalidOperationException(L.T("Executable not found: {0}.", FileName));
 
-        var format = new AudioFormat
-        {
-            SampleRate = request.Format?.SampleRate > 0 ? request.Format.SampleRate : SampleRate,
-            Channels = Channels,
-            BitsPerSample = 16,
-        };
+        var content = text ?? "";
+        if (Normalize) content = TtsText.Default.Normalize(content);
+        if (UnifyPunctuation) content = TtsText.UnifyPunctuation(content);
 
-        var text = request.Text ?? "";
-        if (UnifyPunctuation) text = TtsText.UnifyPunctuation(text);
+        var psi = TtsProcess.CreateStartInfo(exe, BuildArguments(options, content), WriteTextToStdin, WorkingDirectory);
 
-        var psi = new ProcessStartInfo
-        {
-            FileName = exe,
-            Arguments = BuildArguments(request, text),
-            UseShellExecute = false,
-            CreateNoWindow = true,
-            RedirectStandardOutput = true,
-            RedirectStandardError = true,
-            RedirectStandardInput = WriteTextToStdin,
-            StandardOutputEncoding = Encoding.UTF8,
-            StandardErrorEncoding = Encoding.UTF8,
-        };
-        if (!WorkingDirectory.IsNullOrEmpty()) psi.WorkingDirectory = WorkingDirectory;
-
-        var watch = Stopwatch.StartNew();
-        var result = new TtsResult
-        {
-            Source = TtsSource.Engine,
-            Engine = Name,
-            Text = text,
-            Format = format,
-        };
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+        if (TimeoutSeconds > 0) timeout.CancelAfter(TimeoutSeconds * 1000);
+        var token = timeout.Token;
 
         using var process = new Process { StartInfo = psi };
         process.Start();
-
-        var buffer = sink == null ? null : new Byte[4096];
-        var collected = sink == null ? new MemoryStream() : null;
-
         try
         {
-            if (WriteTextToStdin)
-            {
-                var input = Encoding.UTF8.GetBytes(text + "\n");
-                await process.StandardInput.BaseStream.WriteAsync(input, 0, input.Length, cancellationToken).ConfigureAwait(false);
-                await process.StandardInput.BaseStream.FlushAsync(cancellationToken).ConfigureAwait(false);
-                process.StandardInput.Close();
-            }
+            if (WriteTextToStdin) await TtsProcess.WriteInputAsync(process, content, token).ConfigureAwait(false);
 
             // 错误输出必须并行读走，否则管道写满会让子进程卡死
             var errorTask = process.StandardError.ReadToEndAsync();
+            var output = process.StandardOutput.BaseStream;
 
-            if (sink != null)
+            var format = new AudioFormat
             {
-                sink.Open(format);
-                if (OutputKind == TtsOutputKind.Wav)
-                    await TtsWav.SkipHeaderAsync(process.StandardOutput.BaseStream, cancellationToken).ConfigureAwait(false);
+                SampleRate = SampleRate > 0 ? SampleRate : 22050,
+                Channels = Channels > 0 ? Channels : 1,
+                BitsPerSample = 16,
+            };
 
-                var stream = process.StandardOutput.BaseStream;
-                while (true)
+            if (OutputKind == TtsOutputKind.Wav)
+            {
+                var info = await TtsWav.SkipHeaderAsync(output, token).ConfigureAwait(false);
+                if (info != null)
                 {
-                    var read = await stream.ReadAsync(buffer, 0, buffer.Length, cancellationToken).ConfigureAwait(false);
-                    if (read <= 0) break;
-
-                    sink.Write(buffer, 0, read);
-                    result.PcmBytes += read;
+                    if (info.SampleRate > 0) format.SampleRate = info.SampleRate;
+                    if (info.Channels > 0) format.Channels = info.Channels;
+                    if (info.BitsPerSample > 0) format.BitsPerSample = info.BitsPerSample;
                 }
-                sink.Close();
             }
-            else
+
+            var buffer = new Byte[8192];
+            var total = 0L;
+            while (true)
             {
-                var stream = process.StandardOutput.BaseStream;
-                if (OutputKind == TtsOutputKind.Wav)
-                    await TtsWav.SkipHeaderAsync(stream, cancellationToken).ConfigureAwait(false);
+                var read = await output.ReadAsync(buffer, 0, buffer.Length, token).ConfigureAwait(false);
+                if (read <= 0) break;
 
-                await stream.CopyToAsync(collected, 81920, cancellationToken).ConfigureAwait(false);
-                result.Pcm = collected.ToArray();
-                result.PcmBytes = result.Pcm.Length;
+                var data = new Byte[read];
+                Buffer.BlockCopy(buffer, 0, data, 0, read);
+                total += read;
+
+                yield return new TtsChunk { Format = format, Data = data };
             }
 
-            watch.Stop();
-            result.ElapsedTime = watch.Elapsed.TotalSeconds;
-            result.FirstChunkTime = result.ElapsedTime;
-
+            await TtsProcess.WaitForExitAsync(process, token).ConfigureAwait(false);
             var error = await errorTask.ConfigureAwait(false);
-            if (result.PcmBytes == 0)
+            if (total <= 0)
                 throw new InvalidOperationException(L.T("TTS engine {0} produced no audio: {1}", Name, error));
-
-            return result;
-        }
-        catch (OperationCanceledException)
-        {
-            Kill(process);
-            throw;
-        }
-        catch
-        {
-            Kill(process);
-            throw;
+            if (process.ExitCode != 0)
+                throw new InvalidOperationException(L.T("TTS engine {0} failed: {1}", Name, error));
         }
         finally
         {
-            collected?.Dispose();
+            TtsProcess.Kill(process);
         }
     }
 
-    private String BuildArguments(TtsRequest request, String text)
+    private String BuildArguments(TtsOptions options, String text)
     {
         var args = Arguments ?? "";
-        var lengthScale = request.Speed > 0 ? (1.0 / request.Speed) : 1.0;
+        var rate = options?.Rate > 0 ? options.Rate : 1;
+        var lengthScale = 1.0 / rate;
 
-        args = args.Replace("{text}", Quote(text));
-        args = args.Replace("{voice}", request.Voice ?? "");
-        args = args.Replace("{speed}", request.Speed.ToString("0.###"));
+        args = args.Replace("{text}", TtsProcess.Quote(text));
+        args = args.Replace("{voice}", options?.Voice ?? "");
+        args = args.Replace("{speed}", rate.ToString("0.###"));
         args = args.Replace("{rate}", SampleRate.ToString());
         args = args.Replace("{length_scale}", lengthScale.ToString("0.###"));
 
         return args;
-    }
-
-    private static String Quote(String text)
-    {
-        // 参数模板里的文本一律加引号，避免空格与标点被 shell 拆开
-        var escaped = (text ?? "").Replace("\"", "\\\"");
-        return "\"" + escaped + "\"";
-    }
-
-    private static void Kill(Process process)
-    {
-        try
-        {
-            if (!process.HasExited) process.Kill();
-        }
-        catch
-        {
-            // 进程可能已退出，忽略
-        }
-    }
-
-    /// <summary>在 PATH 与常见目录里查找可执行文件</summary>
-    private static String ResolveExecutable(String fileName)
-    {
-        if (fileName.IsNullOrEmpty()) return null;
-        if (File.Exists(fileName)) return fileName;
-
-        var path = Environment.GetEnvironmentVariable("PATH") ?? "";
-        var sep = Path.PathSeparator;
-        foreach (var dir in path.Split(sep))
-        {
-            if (dir.IsNullOrEmpty()) continue;
-
-            var full = Path.Combine(dir, fileName);
-            if (File.Exists(full)) return full;
-        }
-
-        return null;
     }
 }

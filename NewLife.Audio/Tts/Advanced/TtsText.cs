@@ -1,7 +1,7 @@
 using System.Text;
 using System.Text.RegularExpressions;
 
-namespace NewLife.Audio.Tts;
+namespace NewLife.Audio.Tts.Advanced;
 
 /// <summary>合成前的文本规范化</summary>
 /// <remarks>
@@ -11,7 +11,7 @@ namespace NewLife.Audio.Tts;
 /// <item>空格被当成发音位：会在词与词之间插入莫名其妙的音，必须去掉空白。</item>
 /// <item>阿拉伯数字读错或跳过：需转中文读法，见 <see cref="ChineseNumber"/>。</item>
 /// </list>
-/// 自带英文词典的模型（能力位含 <see cref="TtsCapability.MultiLanguage"/>）应关闭英文与数字替换，交给模型自己处理。
+/// 自带英文词典的模型应关闭英文与数字替换，交给模型自己处理。
 /// </remarks>
 /// <example>
 /// <code>

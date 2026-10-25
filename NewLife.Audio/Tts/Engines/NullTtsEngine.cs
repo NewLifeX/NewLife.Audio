@@ -1,22 +1,16 @@
+using System.Runtime.CompilerServices;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Tts;
 
 /// <summary>静音占位引擎</summary>
 /// <remarks>
-/// 用途有三：作为降级链的最后一环保证“永远有输出”，在无声卡环境跑通流程，以及供单元测试构造可控的合成结果。
-/// 输出按字长估算时长的静音，行为与真实引擎完全一致（同样支持流式分块）。
+/// 用于单元测试、无声卡环境与降级链末端，保证“永远有输出”。
+/// 按文本长度估算时长，输出 16 位静音 PCM。
 /// </remarks>
-/// <example>
-/// <code>
-/// var router = new TtsRouter();
-/// router.Register(new NullTtsEngine());
-/// var result = await router.SynthesizeAsync(new TtsRequest { Text = "测试" }, null, default);
-/// </code>
-/// </example>
 public class NullTtsEngine : TtsEngineBase
 {
-    /// <summary>每个字对应的静音时长（秒）</summary>
+    /// <summary>每个字对应的秒数</summary>
     public Double SecondsPerChar { get; set; } = 0.18;
 
     /// <summary>分块大小（毫秒），用于模拟流式输出</summary>
@@ -26,65 +20,37 @@ public class NullTtsEngine : TtsEngineBase
     public Int32 SampleRate { get; set; } = 16000;
 
     /// <summary>初始化静音占位引擎</summary>
-    public NullTtsEngine()
-    {
-        Name = "silence";
-        Capabilities = TtsCapability.Offline | TtsCapability.Streaming;
-        Quality = 0;
-        RequiredMemoryBytes = 0;
-    }
+    public NullTtsEngine() : base("silence") { }
 
     /// <summary>合成静音</summary>
-    /// <param name="request">合成请求</param>
-    /// <param name="sink">分块输出目标，可为 null</param>
+    /// <param name="text">待合成文本</param>
+    /// <param name="options">合成选项</param>
     /// <param name="cancellationToken">取消令牌</param>
-    /// <returns>合成结果</returns>
-    public override Task<TtsResult> SynthesizeAsync(TtsRequest request, ITtsSink sink, CancellationToken cancellationToken)
+    /// <returns>PCM 分块异步序列</returns>
+    public override async IAsyncEnumerable<TtsChunk> SynthesizeAsync(String text, TtsOptions options, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
-        if (request == null) throw new ArgumentNullException(nameof(request));
-
         var format = new AudioFormat
         {
-            SampleRate = request.Format?.SampleRate > 0 ? request.Format.SampleRate : SampleRate,
+            SampleRate = SampleRate > 0 ? SampleRate : 16000,
             Channels = 1,
             BitsPerSample = 16,
         };
 
-        var chars = request.Text?.Length ?? 0;
+        var chars = text?.Length ?? 0;
         var seconds = chars * SecondsPerChar;
         var total = (Int32)(seconds * format.ByteRate);
-        // 对齐到完整采样，避免最后一个样本被截断
         total -= total % format.BytesPerSample;
+        if (total < 0) total = 0;
 
-        var pcm = new Byte[total < 0 ? 0 : total];
         var chunk = Math.Max(format.ByteRate / 1000 * Math.Max(ChunkMilliseconds, 1), 2);
-
-        var result = new TtsResult
-        {
-            Source = TtsSource.Engine,
-            Engine = Name,
-            Text = request.Text,
-            Format = format,
-        };
-
-        if (sink == null)
-        {
-            result.Pcm = pcm;
-            result.PcmBytes = pcm.Length;
-            return Task.FromResult(result);
-        }
-
-        sink.Open(format);
-        for (var offset = 0; offset < pcm.Length; offset += chunk)
+        for (var offset = 0; offset < total; offset += chunk)
         {
             cancellationToken.ThrowIfCancellationRequested();
 
-            var count = Math.Min(chunk, pcm.Length - offset);
-            sink.Write(pcm, offset, count);
-            result.PcmBytes += count;
-        }
-        sink.Close();
+            var count = Math.Min(chunk, total - offset);
+            yield return new TtsChunk { Format = format, Data = new Byte[count] };
 
-        return Task.FromResult(result);
+            await Task.Yield();
+        }
     }
 }
