@@ -18,7 +18,7 @@ public class LocalizationTests
     static LocalizationTests()
     {
         // 触发 NewLife.Audio 程序集加载，确保源生成器生成的模块初始化器已注册词表
-        _ = typeof(AsioBackend);
+        _ = typeof(AsioDriver);
     }
 
     [Fact(DisplayName = "简体中文：运行时消息命中词表")]
@@ -239,7 +239,7 @@ public class LocalizationTests
             XTrace.Log = log;
             WithCulture(zh, () =>
             {
-                using var player = new WaveOutNativeBackend().CreatePlayer();
+                using var player = new WaveOutNativeDriver().CreatePlayer();
                 player.Init(AudioFormat.Default, "9999");
             });
         }

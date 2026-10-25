@@ -1,6 +1,6 @@
 # DEVIO-音频设备IO
 
-> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.2 | 日期：2026-10-25 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 3 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -12,7 +12,7 @@
 | 设备发现 | 枚举系统音频输入/输出设备，获取名称、通道数、格式支持等元数据 |
 | 音频播放 | 将 PCM/编码数据推送到音频输出设备 |
 | 音频录制 | 从音频输入设备采集原始 PCM 数据 |
-| 后端适配 | 封装 Windows(WaveOut/WASAPI/ASIO)、Linux(ALSA/PulseAudio)、macOS(CoreAudio) 原生API |
+| 驱动适配 | 封装 Windows(WaveOut/WASAPI/ASIO)、Linux(ALSA/PulseAudio)、macOS(CoreAudio) 原生API |
 | 生命周期管理 | 播放/录制会话的启停、暂停、恢复、缓冲区管理 |
 
 ---
@@ -21,15 +21,15 @@
 
 | 组件 | 说明 |
 |---|---|
-| `AudioDeviceManager` | 设备管理器：后端注册、设备枚举、默认设备选择、播放器/录制器创建 |
-| `AudioBackendFactory` | 后端工厂：根据运行时平台自动选择最优后端（Windows→WaveOut，其他→FallbackBackend） |
-| `IAudioPlayer` | 播放器接口：`Play()`/`Pause()`/`Stop()`/`Init(WaveFormat)` |
+| `AudioDeviceManager` | 设备管理器：驱动注册、设备枚举、默认设备选择、播放器/录制器创建 |
+| `AudioDriverFactory` | 驱动工厂：根据运行时平台自动选择最优驱动（Windows→WaveOut，其他→FallbackDriver） |
+| `IAudioPlayer` | 播放器接口：`Play()`/`Pause()`/`Stop()`/`Init(AudioFormat)` |
 | `IAudioRecorder` | 录音器接口：`StartRecording()`/`StopRecording()`/`DataAvailable` 事件 |
-| `IAudioBackend` | 后端适配器统一接口：枚举设备、创建播放器/录制器 |
-| `WaveFormat` | 音频格式描述：采样率、位深、声道数、编码类型 |
-| `WaveOutNativeBackend` | Windows WaveOut API 后端实现 |
-| `WasapiBackend` | Windows WASAPI 后端实现 |
-| `AsioBackend` | Windows ASIO 后端实现 |
+| `IAudioDriver` | 音频驱动统一接口：枚举设备、创建播放器/录制器 |
+| `AudioFormat` | 音频格式描述：采样率、位深、声道数、编码类型 |
+| `WaveOutNativeDriver` | Windows WaveOut API 驱动实现 |
+| `WasapiDriver` | Windows WASAPI 驱动实现 |
+| `AsioDriver` | Windows ASIO 驱动实现 |
 | `LoopbackRecorder` | 系统音频回路录制（WASAPI Loopback） |
 | `AudioDeviceInfo` | 音频设备元数据：名称、ID、输入/输出、支持格式 |
 
@@ -43,19 +43,19 @@
 sequenceDiagram
     participant App as 调用方
     participant Player as IAudioPlayer
-    participant Backend as IAudioBackend
+    participant Driver as IAudioDriver
     participant Device as 音频设备
-    App->>Player: Init(WaveFormat)
-    Player->>Backend: Open(format)
-    Backend->>Device: 打开设备
+    App->>Player: Init(AudioFormat)
+    Player->>Driver: Open(format)
+    Driver->>Device: 打开设备
     loop 播放循环
         App->>Player: Write(pcmData)
-        Player->>Backend: 写入缓冲区
-        Backend->>Device: 播放
+        Player->>Driver: 写入缓冲区
+        Driver->>Device: 播放
     end
     App->>Player: Stop()
-    Player->>Backend: Close()
-    Backend->>Device: 关闭设备
+    Player->>Driver: Close()
+    Driver->>Device: 关闭设备
 ```
 
 ### 3.2 录制流程
@@ -64,19 +64,19 @@ sequenceDiagram
 sequenceDiagram
     participant App as 调用方
     participant Recorder as IAudioRecorder
-    participant Backend as IAudioBackend
+    participant Driver as IAudioDriver
     participant Device as 音频设备
     App->>Recorder: StartRecording(format)
-    Recorder->>Backend: StartCapture(format)
-    Backend->>Device: 开始采集
+    Recorder->>Driver: StartCapture(format)
+    Driver->>Device: 开始采集
     loop 录制循环
-        Device-->>Backend: 音频数据
-        Backend-->>Recorder: DataAvailable(Packet)
-        Recorder-->>App: DataAvailable(Packet)
+        Device-->>Driver: 音频数据
+        Driver-->>Recorder: DataAvailable(Byte[])
+        Recorder-->>App: DataAvailable(Byte[])
     end
     App->>Recorder: StopRecording()
-    Recorder->>Backend: StopCapture()
-    Backend->>Device: 停止采集
+    Recorder->>Driver: StopCapture()
+    Driver->>Device: 停止采集
 ```
 
 ### 3.3 播放器 + 信号链整合（与 DSP 协同）
@@ -85,8 +85,8 @@ sequenceDiagram
 flowchart LR
     Source[数据源] --> Pipeline[音频处理管线]
     Pipeline --> Player[IAudioPlayer]
-    Player --> Backend[平台后端]
-    Backend --> Device[音频设备]
+    Player --> Driver[平台驱动]
+    Driver --> Device[音频设备]
 ```
 
 ---
@@ -97,25 +97,16 @@ flowchart LR
 
 ```csharp
 /// <summary>音频格式描述</summary>
-public class WaveFormat
+public class AudioFormat
 {
-    /// <summary>采样率（Hz）</summary>
-    public Int32 SampleRate { get; set; }
-
-    /// <summary>位深（8/16/24/32）</summary>
-    public Int32 BitsPerSample { get; set; }
-
-    /// <summary>声道数</summary>
-    public Int32 Channels { get; set; }
-
-    /// <summary>编码类型</summary>
-    public AVTypes Encoding { get; set; }
-
-    /// <summary>每秒字节数</summary>
-    public Int32 BytesPerSecond => SampleRate * BitsPerSample * Channels / 8;
-
-    /// <summary>每帧字节数</summary>
-    public Int32 BlockAlign => BitsPerSample * Channels / 8;
+    public Int32 SampleRate { get; set; } = 8000;
+    public Int32 Channels { get; set; } = 1;
+    public Int32 BitsPerSample { get; set; } = 16;
+    public AVTypes Encoding { get; set; } = AVTypes.LPCM;
+    public Int32 SamplesPerFrame { get; set; } = 160;
+    public Int32 ByteRate => SampleRate * Channels * BitsPerSample / 8;
+    public Int32 BytesPerSample => BitsPerSample / 8;
+    public Int32 BytesPerFrame => SamplesPerFrame * Channels * BytesPerSample;
 }
 
 /// <summary>音频设备信息</summary>
@@ -125,17 +116,17 @@ public class AudioDeviceInfo
     public String Name { get; set; }
     public Boolean IsInput { get; set; }
     public Boolean IsDefault { get; set; }
-    public WaveFormat[] SupportedFormats { get; set; }
+    public List<AudioFormat> SupportedFormats { get; set; } = [];
 }
 
 /// <summary>音频播放器接口</summary>
 public interface IAudioPlayer : IDisposable
 {
-    Boolean Init(WaveFormat format);
+    void Init(AudioFormat format, String deviceId = null);
     void Play();
     void Pause();
     void Stop();
-    void Write(Packet data);
+    void Write(Byte[] data);
     Int32 BufferedBytes { get; }
     event EventHandler PlaybackStopped;
 }
@@ -143,26 +134,25 @@ public interface IAudioPlayer : IDisposable
 /// <summary>音频录制器接口</summary>
 public interface IAudioRecorder : IDisposable
 {
-    Boolean Init(WaveFormat format);
+    void Init(AudioFormat format, String deviceId = null);
     void StartRecording();
     void StopRecording();
-    event EventHandler<Packet> DataAvailable;
-    event EventHandler RecordingStopped;
+    event EventHandler<Byte[]> DataAvailable;
 }
 ```
 
-### 4.2 后端适配器
+### 4.2 音频驱动
 
 ```csharp
-/// <summary>音频后端接口（内部使用）</summary>
-public interface IAudioBackend
+/// <summary>音频驱动接口。一个驱动对应一套平台 API</summary>
+public interface IAudioDriver
 {
     String Name { get; }
-    PlatformID[] SupportedPlatforms { get; }
-    AudioDeviceInfo[] EnumerateDevices();
-    AudioDeviceInfo GetDefaultDevice(Boolean input);
-    IAudioPlayer CreatePlayer(AudioDeviceInfo device);
-    IAudioRecorder CreateRecorder(AudioDeviceInfo device);
+    IReadOnlyList<AudioDeviceInfo> EnumerateDevices();
+    AudioDeviceInfo GetDefaultOutputDevice();
+    AudioDeviceInfo GetDefaultInputDevice();
+    IAudioPlayer CreatePlayer();
+    IAudioRecorder CreateRecorder();
 }
 ```
 
@@ -172,12 +162,13 @@ public interface IAudioBackend
 
 | 决策 | 理由 |
 |---|---|
-| 后端适配器模式 | 不同平台/API 差异巨大，适配器模式隔离变化，核心接口保持稳定 |
+| 驱动适配器模式 | 不同平台/API 差异巨大，适配器模式隔离变化，核心接口保持稳定 |
 | 同步 `Write()` + 异步事件 `DataAvailable` | 播放是调用方主动推送（同步写），录制是被动接收（事件回调），符合各自语义 |
-| `WaveFormat` 包含 `AVTypes` | 支持编码音频直接播放（如 G.711 设备输出），不只是原始 PCM |
-| 后端按平台条件编译 + 运行时选择 | `net461`/Windows 加载 WaveOut/WASAPI/ASIO；其他平台使用 `FallbackBackend` 回退 |
+| `AudioFormat` 包含 `AVTypes` | 支持编码音频直接播放（如 G.711 设备输出），不只是原始 PCM |
+| 驱动按平台条件编译 + 运行时选择 | `net461`/Windows 加载 WaveOut/WASAPI/ASIO；其他平台使用 `FallbackDriver` 回退 |
 | 优先平台原生 API | 不用第三方跨平台抽象库（增加原生依赖），直接调用 OS API，零依赖 |
-| Linux/macOS 原生后端暂缓 | ALSA/PulseAudio/CoreAudio 需求低频，当前以回退后端覆盖，待需求明确后补充 |
+| Linux/macOS 原生驱动暂缓 | ALSA/PulseAudio/CoreAudio 需求低频，当前以回退驱动覆盖，待需求明确后补充 |
+| 驱动命名（v1.2 破坏性） | `IAudioBackend`/`AudioBackendFactory` 与三个 Backend 实现直接改名为 Driver，不保留 Obsolete 别名；旧调用方需替换类型名，API 兼容门禁会报告这些删除 |
 
 ---
 

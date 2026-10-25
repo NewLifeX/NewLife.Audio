@@ -5,14 +5,14 @@ using NewLife.Log;
 
 namespace NewLife.Audio.Devices;
 
-/// <summary>Windows WaveOut 原生后端（P/Invoke winmm.dll）</summary>
+/// <summary>Windows WaveOut 原生驱动（P/Invoke winmm.dll）</summary>
 /// <remarks>
 /// 使用 Windows 原生 WaveOut API（winmm.dll）实现音频播放。
 /// 支持 PCM 8/16 bit，单声道/立体声。
 /// </remarks>
-public class WaveOutNativeBackend : IAudioBackend
+public class WaveOutNativeDriver : IAudioDriver
 {
-    /// <summary>后端名称</summary>
+    /// <summary>驱动名称</summary>
     public String Name => "Windows WaveOut (winmm.dll)";
 
     /// <summary>枚举输出设备</summary>

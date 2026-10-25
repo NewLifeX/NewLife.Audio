@@ -4,14 +4,14 @@ using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Devices;
 
-/// <summary>Windows WASAPI 后端（Windows Audio Session API, COM）</summary>
+/// <summary>Windows WASAPI 驱动（Windows Audio Session API, COM）</summary>
 /// <remarks>
 /// 通过 COM 互操作调用 Windows Core Audio API 实现低延迟播放和录制。
 /// 使用共享模式（AUDCLNT_SHAREMODE_SHARED）。
 /// </remarks>
-public class WasapiBackend : IAudioBackend
+public class WasapiDriver : IAudioDriver
 {
-    /// <summary>后端名称</summary>
+    /// <summary>驱动名称</summary>
     public String Name => "Windows WASAPI";
 
     /// <summary>枚举输出设备</summary>

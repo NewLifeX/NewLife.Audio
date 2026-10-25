@@ -4,18 +4,18 @@ using NewLife.Log;
 
 namespace NewLife.Audio.Devices;
 
-/// <summary>ASIO 低延迟后端（Steinberg ASIO 协议）</summary>
+/// <summary>ASIO 低延迟驱动（Steinberg ASIO 协议）</summary>
 /// <remarks>
 /// ASIO (Audio Stream Input/Output) 是 Steinberg 公司开发的专业音频驱动协议。
 /// 提供极低延迟（通常 1~10ms）的多通道音频 I/O，广泛用于专业音频软件。
 ///
-/// 本后端通过尝试枚举已注册的 ASIO COM 组件来检测可用驱动。
+/// 本驱动通过尝试枚举已注册的 ASIO COM 组件来检测可用驱动。
 /// 实际播放/录制需要调用 ASIO SDK 函数（ASIOCreateBuffers/ASIOStart/ASIOOutputReady 等）。
 /// 在无 ASIO 驱动环境下，CreatePlayer/CreateRecorder 回退到 Null 模式。
 /// </remarks>
-public class AsioBackend : IAudioBackend
+public class AsioDriver : IAudioDriver
 {
-    /// <summary>后端名称</summary>
+    /// <summary>驱动名称</summary>
     public String Name => "ASIO (Steinberg)";
 
     /// <summary>枚举 ASIO 设备（通过注册表查询已安装的 ASIO 驱动）</summary>
@@ -62,7 +62,7 @@ public class AsioBackend : IAudioBackend
         {
             // 没有任何 ASIO 驱动 → 提供占位设备
             devices.Add(new() { Id = "asio_default", Name = L.T("ASIO default device (no driver detected)"), IsDefault = true });
-            XTrace.Log.InfoPrefixed("AsioBackend: ", "No ASIO driver is installed; the device list is a placeholder.");
+            XTrace.Log.InfoPrefixed("AsioDriver: ", "No ASIO driver is installed; the device list is a placeholder.");
         }
 
         return devices;

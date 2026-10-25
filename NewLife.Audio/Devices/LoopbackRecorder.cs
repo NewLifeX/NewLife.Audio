@@ -8,7 +8,7 @@ namespace NewLife.Audio.Devices;
 /// <summary>环路录制器（系统音频输出捕获，WASAPI Loopback）</summary>
 /// <remarks>
 /// 使用 Windows WASAPI Loopback 模式捕获系统音频输出（扬声器混音）。
-/// 在非 Windows 平台上通过 AudioBackendFactory 回退到 NullRecorder。
+/// 在非 Windows 平台上通过 AudioDriverFactory 回退到 NullRecorder。
 /// 
 /// 实现原理：
 /// 1. 通过 IMMDeviceEnumerator.GetDefaultAudioEndpoint(eRender, eConsole) 获取渲染设备

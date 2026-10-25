@@ -26,7 +26,7 @@ public partial class DeviceViewModel : ViewModelBase
     private DeviceItem? _selectedInputDevice;
 
     [ObservableProperty]
-    private String _backendName = "";
+    private String _driverName = "";
 
     [ObservableProperty]
     private String _statusText = "就绪";
@@ -44,10 +44,10 @@ public partial class DeviceViewModel : ViewModelBase
     private Boolean _isRecording;
 
     [ObservableProperty]
-    private String _selectedBackend = "自动";
+    private String _selectedDriver = "自动";
 
-    /// <summary>可用后端列表</summary>
-    public String[] BackendOptions => ["自动", "waveout", "wasapi", "asio"];
+    /// <summary>可用驱动列表</summary>
+    public String[] DriverOptions => ["自动", "waveout", "wasapi", "asio"];
 
     public DeviceViewModel()
     {
@@ -59,10 +59,10 @@ public partial class DeviceViewModel : ViewModelBase
     {
         try
         {
-            _service.Initialize(SelectedBackend == "自动" ? null : SelectedBackend);
-            BackendName = _service.BackendName;
+            _service.Initialize(SelectedDriver == "自动" ? null : SelectedDriver);
+            DriverName = _service.DriverName;
             RefreshDevices();
-            StatusText = $"已初始化: {BackendName}";
+            StatusText = $"已初始化: {DriverName}";
         }
         catch (Exception ex)
         {
@@ -122,7 +122,7 @@ public partial class DeviceViewModel : ViewModelBase
         StatusText = "录制已停止";
     }
 
-    partial void OnSelectedBackendChanged(String value)
+    partial void OnSelectedDriverChanged(String value)
     {
         _service.StopTestTone();
         _service.StopRecording();

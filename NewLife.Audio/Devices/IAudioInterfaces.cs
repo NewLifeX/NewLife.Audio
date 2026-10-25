@@ -48,10 +48,10 @@ public interface IAudioRecorder : IDisposable
     event EventHandler<Byte[]> DataAvailable;
 }
 
-/// <summary>音频后端适配器接口</summary>
-public interface IAudioBackend
+/// <summary>音频驱动适配器接口</summary>
+public interface IAudioDriver
 {
-    /// <summary>后端名称</summary>
+    /// <summary>驱动名称</summary>
     String Name { get; }
 
     /// <summary>枚举设备</summary>

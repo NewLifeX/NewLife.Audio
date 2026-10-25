@@ -3,34 +3,34 @@ using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Devices;
 
-/// <summary>音频后端工厂。根据运行时平台自动选择最优后端</summary>
-public static class AudioBackendFactory
+/// <summary>音频驱动工厂。根据运行时平台自动选择最优驱动</summary>
+public static class AudioDriverFactory
 {
-    /// <summary>创建当前平台最优后端</summary>
-    public static IAudioBackend Create()
+    /// <summary>创建当前平台最优驱动</summary>
+    public static IAudioDriver Create()
     {
 #if NETFRAMEWORK || WINDOWS
-        return new WaveOutNativeBackend();
+        return new WaveOutNativeDriver();
 #else
-        return new FallbackBackend();
+        return new FallbackDriver();
 #endif
     }
 
-    /// <summary>创建指定名称的后端</summary>
-    public static IAudioBackend Create(String name)
+    /// <summary>创建指定名称的驱动</summary>
+    public static IAudioDriver Create(String name)
     {
         return (name?.ToLower()) switch
         {
-            "waveout" => new WaveOutNativeBackend(),
-            "wasapi" => new WasapiBackend(),
-            "asio" => new AsioBackend(),
+            "waveout" => new WaveOutNativeDriver(),
+            "wasapi" => new WasapiDriver(),
+            "asio" => new AsioDriver(),
             _ => Create(),
         };
     }
 }
 
-/// <summary>跨平台回退后端（无硬件加速）</summary>
-internal class FallbackBackend : IAudioBackend
+/// <summary>跨平台回退驱动（无硬件加速）</summary>
+internal class FallbackDriver : IAudioDriver
 {
     public String Name => "Fallback";
 

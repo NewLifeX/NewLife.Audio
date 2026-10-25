@@ -12,7 +12,7 @@ namespace AudioStudio.Services;
 public class DeviceService : IDisposable
 {
     private readonly AudioDeviceManager _manager;
-    private IAudioBackend? _backend;
+    private IAudioDriver? _driver;
     private IAudioPlayer? _player;
     private IAudioRecorder? _recorder;
     private Boolean _disposed;
@@ -27,8 +27,8 @@ public class DeviceService : IDisposable
     /// <summary>输入设备列表</summary>
     public IReadOnlyList<AudioDeviceInfo> InputDevices { get; private set; } = [];
 
-    /// <summary>当前后端名称</summary>
-    public String BackendName => _backend?.Name ?? "未初始化";
+    /// <summary>当前驱动名称</summary>
+    public String DriverName => _driver?.Name ?? "未初始化";
 
     /// <summary>是否在播放测试音</summary>
     public Boolean IsPlaying { get; private set; }
@@ -45,15 +45,15 @@ public class DeviceService : IDisposable
     }
 
     /// <summary>初始化并枚举设备</summary>
-    public void Initialize(String? backendName = null)
+    public void Initialize(String? driverName = null)
     {
         try
         {
-            _backend = backendName != null
-                ? AudioBackendFactory.Create(backendName)
-                : AudioBackendFactory.Create();
+            _driver = driverName != null
+                ? AudioDriverFactory.Create(driverName)
+                : AudioDriverFactory.Create();
 
-            _manager.RegisterBackend(_backend);
+            _manager.RegisterDriver(_driver);
             RefreshDevices();
         }
         catch (Exception ex)
@@ -82,11 +82,11 @@ public class DeviceService : IDisposable
 
     /// <summary>获取默认输出设备</summary>
     public AudioDeviceInfo? GetDefaultOutput() =>
-        _backend?.GetDefaultOutputDevice();
+        _driver?.GetDefaultOutputDevice();
 
     /// <summary>获取默认输入设备</summary>
     public AudioDeviceInfo? GetDefaultInput() =>
-        _backend?.GetDefaultInputDevice();
+        _driver?.GetDefaultInputDevice();
 
     /// <summary>播放测试音（正弦波）</summary>
     /// <param name="deviceId">设备 ID，null 用默认</param>

@@ -154,8 +154,8 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         if (State == PlaybackState.Playing) return;
 
         // 创建播放器
-        var backend = AudioBackendFactory.Create();
-        _player = backend.CreatePlayer();
+        var driver = AudioDriverFactory.Create();
+        _player = driver.CreatePlayer();
         _player.Init(_audioFormat!);
         _player.PlaybackStopped += OnPlaybackStopped;
 
