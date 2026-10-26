@@ -10,8 +10,7 @@ namespace XUnitTest.Codecs;
 /// <remarks>
 /// 码流与参考 PCM 均取自公共测试包，参考 PCM 为官方参考解码器输出（截取前 2 秒）。
 /// 断言口径：先按互相关对齐（编码器/解码器存在固定延迟），再比较归一化相关度与对齐后 SNR。
-/// <para>HE-AAC v2（PS）当前存在已知缺陷：低频（≤1 kHz）与 13~17 kHz 明显缺失、输出电平偏低约 4 dB，
-/// 因此门禁只能守在较低水平；修复后需要同步抬高阈值。</para>
+/// <para>HE-AAC v2（PS）残余缺陷：12~17 kHz 仍有频带缺失（13~15 kHz 为静默），属 SBR 高频再生范畴，门禁暂守 7 dB。</para>
 /// </remarks>
 public class AacExternalVectorTests
 {
@@ -39,17 +38,18 @@ public class AacExternalVectorTests
         Assert.True(corr >= 0.95, $"相关度 {corr:F4} 低于门禁 0.95");
     }
 
-    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 4 dB")]
+    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 7 dB")]
     public void HeAacV2_ExternalVector()
     {
-        // 参考向量取自 3~7 秒：当前 PS 实现在开头数秒电平偏低（-0~-3 dB SNR），属已知缺陷，
-        // 稳定段（3 秒后）才具备可比性；缺陷修复后应改为整段对齐并抬高阈值。
+        // 参考向量取自 3~7 秒：PS 状态在开头数秒需收敛（已知），稳定段才具备可比性。
+        // 混合滤波器组补齐虚部输入（Ps/Filterbank.cs HybridAnalysis）后，稳定段 SNR 由 4.96/5.83 dB 提升到 8.88/10.92 dB，
+        // 相关度由 0.87/0.90 提升到 0.9376/0.9602；残余缺口在 12~17 kHz（SBR 高频再生）。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.ref.wav", skipSeconds: 3);
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(2, format.Channels);
-        Assert.True(snr >= 4, $"SNR {snr:F2} dB 低于门禁 4 dB");
-        Assert.True(corr >= 0.85, $"相关度 {corr:F4} 低于门禁 0.85");
+        Assert.True(snr >= 7, $"SNR {snr:F2} dB 低于门禁 7 dB");
+        Assert.True(corr >= 0.92, $"相关度 {corr:F4} 低于门禁 0.92");
     }
 
     private static (Double snr, Double corr, AudioFormat format) Compare(String streamName, String referenceName, Double skipSeconds = 0)
