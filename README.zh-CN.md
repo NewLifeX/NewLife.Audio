@@ -24,7 +24,7 @@
 
 [English](README.md) | 简体中文
 
-跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成（系统语音/HTTP/子进程）、容器格式读写（WAV/Ogg/MP4/FLAC/MP3）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
+跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成、ASR 语音识别、音频文件门面（打开→解码→编辑→保存）、容器格式读写（WAV/Ogg/MP4/FLAC/MP3/AIFF/CAF）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
 
 🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断、语音合成七大工具模块。
 
@@ -54,7 +54,7 @@ Nuget：NewLife.Audio
 ### 🔊 音频设备 I/O（DEVIO）
 跨平台音频设备抽象：
 - 设备枚举与发现
-- Windows 下的 **WaveOut** / **WASAPI** / **ASIO** 后端
+- Windows 下的 **WaveOut** / **WASAPI** 后端（ASIO 规划中）
 - 音频采集与环回录制
 - 通过 `AudioDeviceManager` 进行多设备并发管理
 
@@ -62,9 +62,9 @@ Nuget：NewLife.Audio
 
 ### 🎛️ DSP 处理链（DSP）
 可组合的音频信号处理链：
-- 重采样（线性插值）
-- 声道转换（单声道 ↔ 立体声）
-- 位深 / 采样格式转换（8/16 位 ↔ 浮点）
+- 重采样（线性 + 加窗 Sinc）
+- 声道转换（单声道 ↔ 立体声 ↔ 多声道）
+- 位深 / 采样格式转换（8/16/24/32 位 ↔ 浮点/双精度）
 - 音量控制与增益（线性 / 对数）
 - 多源混音与归一化
 - **FFT** 频谱分析（Cooley-Tukey，Hann/Hamming/Blackman 窗）
@@ -82,14 +82,27 @@ Nuget：NewLife.Audio
 - **AGC** — 自动增益控制（慢启动快释放，RMS 包络）
 - **NS** — 噪声抑制（谱减法 + FFT/IFFT + OLA 合成）
 - 语音预处理链：HPF → VAD → AGC
+- `SpeechProcessingPipeline`：10 ms 帧对齐、参考延迟补偿、AEC → NS → AGC，输出 ERLE/双讲/收敛指标
 
 ### 📦 容器格式（CONT）
 音频文件格式读写：
-- **WAV** — 完整的 RIFF 解析与写入
+- **WAV** — 完整 RIFF 解析与写入（EXTENSIBLE/浮点/24 位/RF64/LIST-INFO）
 - **Ogg** — 页级读写（Opus/Vorbis）
-- **MP4/M4A** — ISO BMFF：ftyp/moov/mdat box 解析与生成
-- **FLAC** — 原生 fLaC 元数据块解析
-- **Raw PCM** — 自动探测或手动指定格式
+- **MP3** — 帧索引、ID3v2/v1、Xing/Info/VBRI、gapless
+- **MP4/M4A** — ISO BMFF：ftyp/moov/mdat box 解析与生成，iTunes 标签
+- **FLAC** — 原生 fLaC 元数据读写（STREAMINFO/SEEKTABLE/VORBIS_COMMENT）
+- **AIFF/CAF** — AIFF 读写；CAF 读取
+- **探测** — 魔术字节识别容器/编码/时长/码率/标签
+- **Raw PCM** — 必须显式指定格式，不做启发式推断
+
+### 🗂️ 音频文件门面（FILE）
+一条调用链完成打开 → 解码 → 编辑 → 保存：
+- `AudioFile.Open` 自动识别容器/编码，暴露格式、时长、标签与可定位性
+- 无损 PCM 编辑：裁剪、拼接、增益、归一化、重采样
+- 标签保留、仅改标签原子重写、临时文件 + 原子替换保存
+- MP3/AAC/WAV 参数一致时帧级复制/重封装，否则明确回退重编码
+- 批量转换，支持进度回调与取消
+- 当前 `ReadPcm` 将解码 PCM 整段载入内存，流式读取接口规划中
 
 ### 📡 流媒体与传输（STRM）
 网络音频流传输：
@@ -104,7 +117,15 @@ Nuget：NewLife.Audio
 - **文件输出** — WAV / 裸 PCM / MP3 / FLAC，扩展名决定格式（压缩格式走重采样 → 编码 → 容器管线）
 - **流式输出** — 逐块 PCM，适合 HTTP/WebSocket 边合成边发送
 - **引擎可插拔** — 系统语音、`HttpTtsEngine`、`ProcessTtsEngine`、自定义 `ITtsEngine`
+- **云端与离线** — 阿里云/腾讯云/百度/Azure 引擎，免密钥百度翻译发音；可选 `NewLife.Audio.Sherpa` 离线神经音色（VITS/Matcha/Kokoro）
 - **可选高级** — 音色/语速与音色目录（`TtsVoiceCatalog` 跨引擎按语言与场景挑选）、磁盘缓存、预生成语音库、文本规范化（`NewLife.Audio.Tts.Advanced`）
+
+### 🎙️ 语音识别（ASR）
+低优先级适配层，不内置模型与推理运行时：
+- `ISpeechRecognizer` 流式 PCM 输入，输出部分/最终结果、时间戳与端点检测
+- Windows 系统识别（`System.Speech.Recognition`）
+- 可选 `NewLife.Audio.Sherpa` 离线 sherpa-onnx 识别包
+- Android/iOS 系统适配随平台 TFM 补齐
 
 ## 安装
 

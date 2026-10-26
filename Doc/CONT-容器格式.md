@@ -1,6 +1,6 @@
 # CONT-容器格式
 
-> 版本：v1.2 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.3 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 6 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -9,13 +9,13 @@
 
 | 职责 | 说明 |
 |---|---|
-| 音频文件读取 | 解析容器格式（WAV / Ogg / MP4-M4A / FLAC / MP3 / 裸 PCM），提取编码音频数据和格式元数据 |
-| 音频文件写入 | 将编码音频数据封装为容器格式并写入头/数据块；当前覆盖 WAV / Ogg / MP4-M4A / MP3（FLAC 无容器写入器，用 `FlacCodec` 整段编码） |
+| 音频文件读取 | 解析容器格式（WAV / Ogg / MP4-M4A / FLAC / MP3 / AIFF / CAF / 裸 PCM），提取编码音频数据和格式元数据 |
+| 音频文件写入 | 将编码音频数据封装为容器格式并写入头/数据块；当前覆盖 WAV / Ogg / MP4-M4A / MP3 / FLAC / AIFF |
 | 流式输出 | `Writers` 命名空间的 `WavStreamWriter` / `OggOpusStreamWriter` / `Mp3StreamWriter` 面向不可 seek 的流（HTTP/WebSocket 边合成边写） |
-| 格式自动识别 | 按扩展名或魔术字节自动选择读写器 |
-| 元数据管理 | MP3（ID3v2.4/v1.1）与 Ogg Opus（OpusTags）可读写；WAV 与 MP4 的 `WriteMetadata` 目前为占位 |
+| 格式探测 | `AudioProbe` 按魔术字节识别 WAV/RF64/Ogg/FLAC/MP3/ADTS/MP4；扩展名只作提示，未知时明确返回 Unknown |
+| 元数据管理 | WAV（LIST/INFO）、MP3（ID3v2.4/v1.1）、FLAC（VORBIS_COMMENT）、Ogg（OpusTags/Vorbis comment）、M4A（udta/meta/ilst）均可读写 |
 
-> 已知限制：WAV 解析只覆盖标准 44 字节头，不支持 `WAVE_FORMAT_EXTENSIBLE`、IEEE float、RF64 与 `LIST/INFO` 标签（见[架构设计](架构设计.md) FIX-007）；FLAC 只有读取器。
+> 已知限制：WAV 已支持 RIFF 块遍历、`fmt` 16/18/40、`WAVE_FORMAT_EXTENSIBLE`、IEEE float、24/32 bit、RF64 与 `LIST/INFO`；FLAC 读取器与 `FlacFileWriter` 均已提供；CAF 只有读取器，AMR/WMA 明确不做。`AudioContainerFactory.CreateReader(stream)` 未识别格式时仍回退 `RawPcmReader` 默认参数（待修复项 FIX-009）；严格探测请直接用 `AudioProbe`，未知时返回 Unknown。
 
 ---
 
@@ -25,14 +25,17 @@
 |---|---|
 | `IAudioContainerReader` | 容器读取器接口：`Format` / `CodecType` / `TotalFrames` / `Duration` / `Metadata` 属性 + `ReadFrame()` / `SeekFrame()`，实现 `IDisposable` |
 | `IAudioContainerWriter` | 容器写入器接口：`Format` 属性 + `WriteMetadata()` / `WriteFrame()` / `Flush()`，实现 `IDisposable` |
-| `AudioContainerFactory` | 容器工厂：`CreateReader(path)` / `CreateReader(stream, hint)` / `CreateWriter(path, format)` / `CreateWriter(stream, hint, format)`；写出支持 `.wav` / `.ogg` / `.opus` / `.mp3` / `.mp4` / `.m4a` |
-| `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器（只覆盖标准 44 字节头；写入为流式头 + 结束回填） |
+| `AudioContainerFactory` | 容器工厂：`CreateReader(path)` / `CreateReader(stream, hint)` / `CreateWriter(path, format)` / `CreateWriter(stream, hint, format)`；写出支持 `.wav` / `.ogg` / `.opus` / `.mp3` / `.mp4` / `.m4a` / `.flac`；读取按扩展名或魔术字节识别 WAV/Ogg/FLAC/MP3/MP4，未识别时回退 `RawPcmReader`（严格探测请用 `AudioProbe`） |
+| `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器：RIFF 块遍历、`fmt` 16/18/40、EXTENSIBLE、浮点、24/32 bit、RF64、`LIST/INFO`；写入为流式头 + 结束回填 |
 | `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（Vorbis + Opus；OpusHead/OpusTags、lacing、granule/pre-skip 按 RFC 7845；Vorbis identification/comment/setup 独立头页由 `WriteVorbisHeaders` 写入） |
-| `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器（ISO BMFF 基础盒子 + `esds`；无编辑列表/章节，元数据写入为占位） |
+| `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器（ISO BMFF 基础盒子 + `esds` + `udta/meta/ilst` 标签；无编辑列表/章节） |
 | `Mp3FileReader` / `Mp3FileWriter` | MP3 文件读写器：ID3v2 标签 + 帧索引 + Xing/Info/VBRI 信息帧解析（帧数/字节数）；写入支持帧透传与 PCM 压缩 |
 | `Mp3Id3Tag` | ID3v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成；ID3v1/v1.1 尾标签读写（含 80 项流派表），读取时 ID3v2 优先于 ID3v1 |
-| `FlacContainerReader` | FLAC 原生容器**读取器**（fLaC 元数据块、STREAMINFO）；无对应写入器 |
-| `RawPcmReader` | 原始 PCM 解析器：按调用方给定的采样率/位深/声道/帧长切帧（自动推断尚未实现） |
+| `FlacContainerReader` / `FlacFileWriter` | FLAC 原生容器读写：读取 fLaC 元数据块（STREAMINFO/VORBIS_COMMENT）并按帧头 CRC-8 定位；写入 STREAMINFO/SEEKTABLE/VORBIS_COMMENT 与规范帧 |
+| `AiffFileReader` / `AiffFileWriter` / `CafFileReader` | AIFF/AIFF-C 双向读写（FORM/COMM、80 位扩展浮点采样率、16 位大端 PCM、sowt 小端可读）；CAF 读取（desc+data、未压缩 lpcm） |
+| `RawPcmReader` | 原始 PCM 解析器：按调用方给定的采样率/位深/声道/帧长切帧；不做启发式推断 |
+| `AudioProbe` | 容器探测：按魔术字节返回容器、编码、格式、时长、码率、标签、CanSeek 与置信度 |
+| `AudioStreamFactory` / `CallbackStream` | 统一路径、`Stream`、字节数组与回调式数据源/目标；按回调声明读写与定位能力 |
 | `AudioMetadata` | 音频元数据模型（标题、艺术家、专辑、时长、码率等） |
 | `WavStreamWriter` / `OggOpusStreamWriter` / `Mp3StreamWriter` | 面向不可 seek 流的流式写入器（`Writers` 命名空间），由 TTS 与实时推流使用 |
 
@@ -80,22 +83,18 @@ sequenceDiagram
     App->>Writer: Flush() / Dispose()
 ```
 
-### 3.3 格式自动识别流程
+### 3.3 格式探测流程（AudioProbe）
 
 ```mermaid
 flowchart TD
-    A[文件扩展名] --> B{已知扩展名?}
-    B -->|.wav| C[WaveFileReader]
-    B -->|.ogg/.opus| D[OggFileReader]
-    B -->|.mp3| M[Mp3FileReader]
-    B -->|.mp4/.m4a/.mov| E[Mp4FileReader]
-    B -->|未知| G[读取前 8 字节魔术字节]
-    G --> H["RIFF" → WAV]
-    G --> I["OggS" → Ogg]
-    G --> J["ftyp" → MP4]
-    G --> K["fLaC" → FlacContainerReader]
-    G --> N["ID3 或 0xFFEx → MP3"]
-    G --> L[回退 RawPcmReader]
+    A[读取文件头魔术字节] --> B{识别结果}
+    B -->|"RIFF/RF64"| C[WAV]
+    B -->|"OggS"| D[Ogg]
+    B -->|"fLaC"| E[FLAC]
+    B -->|"ID3 或 0xFFEx"| F[MP3]
+    B -->|"ADTS 同步字"| G[AAC/ADTS]
+    B -->|"ftyp"| H[MP4/M4A]
+    B -->|"其他"| I[Unknown<br/>调用方明确报错，不回退裸 PCM]
 ```
 
 ---
@@ -196,7 +195,7 @@ data Chunk
 |---|---|
 | 容器与编解码分离 | 容器只负责解析/封装，编码数据交给 CODEC 处理，职责清晰 |
 | 读取器不自动解码 | 调用方按需选择解码或不解码（如仅需转发编码数据），灵活性最高 |
-| `RawPcmReader` 需要显式参数 | 无头 PCM 没有任何可靠的自描述信息，盲猜采样率/位深/声道极易出错；当前要求调用方给出参数（自动推断待后续按场景补齐） |
+| `RawPcmReader` 需要显式参数 | 无头 PCM 没有任何可靠的自描述信息，盲猜采样率/位深/声道极易出错；明确要求调用方给出参数，不做启发式推断（IMP-006） |
 | 元数据与音频数据分离 | 写入时元数据可提前设置，不与帧数据混在一起 |
 | Ogg 容器同时支持 Vorbis 和 Opus | Ogg 是 Opus 的标准容器（RFC 7845），一石二鸟 |
 | Ogg Opus granule = pre-skip + 累计 48 kHz 样本 | 与 RFC 7845 的 PCM sample position 定义一致，浏览器 MSE 可正确 seek；包时长由 TOC 解析而非固定 20 ms |

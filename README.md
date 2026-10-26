@@ -24,7 +24,7 @@
 
 [简体中文](README.zh-CN.md) | English
 
-A cross-platform, pure-managed .NET audio processing library supporting codecs, device I/O, DSP effects, speech processing, text-to-speech (system speech / HTTP / subprocess engines), container format I/O, and streaming — all in one NuGet package.
+A cross-platform, pure-managed .NET audio processing library supporting codecs, device I/O, DSP effects, speech processing, text-to-speech, speech recognition, audio file read/edit/write, container format I/O, and streaming — all in one NuGet package.
 
 🎧 Bundled [AudioStudio](AudioStudio/) cross-platform desktop demo client (Avalonia) with seven tool modules: playback, conversion, devices, recording, DSP, diagnostics, and speech synthesis.
 
@@ -52,7 +52,7 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 ### 🔊 Audio Device I/O (DEVIO)
 Cross-platform audio device abstraction:
 - Device enumeration & discovery
-- **WaveOut** / **WASAPI** / **ASIO** backends on Windows
+- **WaveOut** / **WASAPI** backends on Windows (ASIO planned)
 - Audio capture & loopback recording
 - Multi-device concurrent management via `AudioDeviceManager`
 
@@ -60,9 +60,9 @@ Cross-platform audio device abstraction:
 
 ### 🎛️ DSP Pipeline (DSP)
 Composable audio signal processing chain:
-- Resampling (linear interpolation)
-- Channel conversion (mono ↔ stereo)
-- Bit depth / sample format conversion (8/16-bit ↔ float)
+- Resampling (linear + windowed-sinc)
+- Channel conversion (mono ↔ stereo ↔ multichannel)
+- Bit depth / sample format conversion (8/16/24/32-bit ↔ float/double)
 - Volume control & gain (linear / logarithmic)
 - Multi-source mixing with normalization
 - **FFT** spectrum analysis (Cooley-Tukey, Hann/Hamming/Blackman windows)
@@ -80,14 +80,27 @@ Real-time voice communication front-end:
 - **AGC** — Automatic Gain Control (slow-attack fast-release, RMS envelope)
 - **NS** — Noise Suppression (spectral subtraction + FFT/IFFT + OLA synthesis)
 - Voice preprocessor pipeline: HPF → VAD → AGC
+- `SpeechProcessingPipeline`: 10 ms frame alignment, reference delay compensation, AEC → NS → AGC with ERLE/double-talk/convergence metrics
 
 ### 📦 Container Formats (CONT)
 Audio file format read/write:
-- **WAV** — Full RIFF parsing & writing
+- **WAV** — Full RIFF parsing & writing (EXTENSIBLE/float/24-bit/RF64/LIST-INFO)
 - **Ogg** — Page-level read/write (Opus/Vorbis)
-- **MP4/M4A** — ISO BMFF: ftyp/moov/mdat box parsing & generation
-- **FLAC** — Native fLaC metadata block parsing
-- **Raw PCM** — Auto-detect or manual format specification
+- **MP3** — Frame index, ID3v2/v1, Xing/Info/VBRI, gapless
+- **MP4/M4A** — ISO BMFF: ftyp/moov/mdat box parsing & generation, iTunes tags
+- **FLAC** — Native fLaC metadata read/write (STREAMINFO/SEEKTABLE/VORBIS_COMMENT)
+- **AIFF/CAF** — AIFF read/write; CAF read
+- **Probe** — Magic-byte detection with container/codec/duration/bitrate/tags
+- **Raw PCM** — Explicit format required; no heuristic auto-detection
+
+### 🗂️ Audio File Facade (FILE)
+One call chain for open → decode → edit → save:
+- `AudioFile.Open` auto-detects container/codec and exposes format, duration, tags and seekability
+- Lossless PCM editing: trim, concat, gain, normalize, resample
+- Metadata preservation, tag-only atomic rewrite, atomic save via temp file
+- Frame-level copy/remux for MP3/AAC/WAV when parameters match; explicit re-encode fallback
+- Batch conversion with progress callbacks and cancellation
+- Current `ReadPcm` loads decoded PCM into memory; a streaming read API is planned
 
 ### 📡 Streaming & Transport (STRM)
 Network audio streaming:
@@ -105,6 +118,13 @@ Turn text into sound with three lines of code:
 - **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
 - **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate plus a voice catalog (`TtsVoiceCatalog`: pick voices across engines by language and scenario), disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
+
+### 🎙️ Speech Recognition (ASR)
+Low-priority adapter layer — no bundled model or inference runtime:
+- `ISpeechRecognizer` streaming PCM input with partial/final results, timestamps and endpoint detection
+- Windows system recognition via `System.Speech.Recognition`
+- Optional `NewLife.Audio.Sherpa` package for offline sherpa-onnx recognition
+- Android/iOS system adapters planned with platform TFMs
 
 ## Installation
 

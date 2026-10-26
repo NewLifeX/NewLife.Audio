@@ -1,9 +1,9 @@
 # VOP-语音处理
 
-> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.2 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 5 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
-> ✅ 本模块全部 6 项功能已实现，详见[功能模块清单](功能模块清单.md)。
+> ✅ 本模块全部 7 项功能已实现，详见[功能模块清单](功能模块清单.md)。
 
 ---
 
@@ -16,6 +16,7 @@
 | 声学回声消除 | NLMS 自适应滤波器消除扬声器→麦克风的回声，实现全双工通话 |
 | 噪声抑制 | 频谱减法抑制稳态背景噪声，提升语音信噪比 |
 | 语音前端管线 | 将 HPF、VAD、AGC 等组合为即开即用的语音预处理链 |
+| 前处理工程化 | 10 ms 帧对齐、远端参考延迟补偿、ERLE/双讲/收敛指标与失锁恢复 |
 
 ---
 
@@ -29,6 +30,8 @@
 | `AcousticEchoCanceller` | AEC 实现：纯托管 NLMS 自适应滤波器 + 双讲检测 + 舒适噪声注入 |
 | `SpectralNoiseSuppressor` | NS 实现：频谱减法 + FFT/IFFT + OLA 合成 |
 | `VoicePreprocessor` | 语音前置管线：串联 HPF→VAD→AGC，实现 `IAudioProcessor` |
+| `SpeechProcessingPipeline` | 通话前处理：任意长度 PCM 按 10 ms 帧对齐、远端参考延迟补偿，串联 AEC→降噪→AGC；远端有声但 ERLE 长期偏低时自动重置滤波器 |
+| `SpeechPreprocessMetrics` | 前处理指标：ERLE、双讲占比、收敛状态、远近端/输出电平与失锁恢复次数 |
 
 ---
 

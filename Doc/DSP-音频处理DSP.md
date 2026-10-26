@@ -1,6 +1,6 @@
 # DSP-音频处理DSP
 
-> 版本：v1.2 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.3 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 4 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -9,7 +9,7 @@
 
 | 职责 | 说明 |
 |---|---|
-| 信号链管线 | 提供 `IAudioPipeline` 将多个 DSP 处理器串联，数据依次流过每个节点 |
+| 信号链管线 | 提供 `AudioPipeline` 将多个 DSP 处理器串联，数据依次流过每个节点 |
 | 基础变换 | 重采样、声道转换、位深度/采样格式转换——任何音频流都可能用到的通用处理 |
 | 效果处理 | 音量、均衡器、滤波器、压缩器、变速变调等艺术/工程向处理 |
 | 频谱分析 | FFT 频谱输出，用于可视化、音频特征提取和计量 |
@@ -23,9 +23,11 @@
 |---|---|
 | `IAudioProcessor` | DSP 处理器统一接口：输入 32-bit 浮点样本 → 处理 → 输出 32-bit 浮点样本 |
 | `AudioPipeline` | 信号链管线：有序持有多个 `IAudioProcessor`，数据流式传递 |
-| `Resampler` | 重采样器：线性插值（加窗 Sinc / 多相尚未实现，见 IMP-006）；`ResamplePcm` 静态助手用于整段 PCM |
-| `ChannelConverter` | 声道转换：`MonoToStereo` / `StereoToMono` 静态助手；作为 `IAudioProcessor` 时 `Read` 当前为直通（未做管线内转换） |
-| `BitDepthConverter` | 位深转换：8/16 位整数与 32 位浮点互转的静态助手；作为 `IAudioProcessor` 时 `Read` 当前为直通 |
+| `Resampler` | 重采样器：`ResamplerQuality.Linear` 与 `Sinc`（Blackman 窗，核半长 16，即 32 抽头）两档；Sinc 档支持抗混叠降采样、流式跨块连续与群延迟上报；`ResamplePcm` 静态助手用于整段 PCM |
+| `ChannelConverter` | 声道转换：`Read` 在管线内真正重排采样（单声道复制、多声道下混取平均、按索引映射并补零）；另提供 `Convert` 静态方法与 `MonoToStereo`/`StereoToMono` 助手 |
+| `BitDepthConverter` | 位深转换：管线内部统一 ±1.0 浮点，`Read` 按设计直通；真正的字节↔浮点转换由 `PcmToFloat`/`FloatToPcm` 在字节流交界处按 `SampleFormat` 完成 |
+| `LoudnessMeter` | EBU R128 / BS.1770 K 加权响度计：瞬时/短时/综合 LUFS 与真峰值近似 |
+| `LoudnessNormalizer` | 响度归一化：固定增益 + 峰值上限 |
 | `VolumeControl` | 音量控制：线性/对数增益，静音检测，峰值限幅 |
 | `AudioMixer` | 混音器：多通道加权混合，32-bit 累加后归一化 |
 | `FftAnalyzer` | FFT 分析：窗函数、幅度谱/功率谱、频率分辨率 |

@@ -83,6 +83,7 @@ app.MapGet("/tts", async (String text, HttpContext ctx, CancellationToken ct) =>
 ```
 
 - `SaveAsync(stream, TtsFormat.Wav)`：写出完整 WAV（头 + PCM），适合 HTTP/文件。
+- `SaveAsync(stream, TtsFormat.Mp3/Flac)`：走 `AudioEncodePipeline`（重采样 → 编码 → 容器），适合需要压缩输出的文件/网络场景。
 - `StreamAsync`：只产出裸 PCM，适合 WebSocket、Web Audio 或自定义协议；容器头由调用方决定。
 - 引擎支持分块时是真流式；不支持时退化为“整段合成后分块写出”，调用方行为一致。
 

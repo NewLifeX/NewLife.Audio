@@ -1,6 +1,6 @@
 # CODEC-编解码引擎
 
-> 版本：v1.3 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.4 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 2 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -36,8 +36,8 @@
 | `OpusRangeDecoder` / `OpusRangeEncoder` | RFC 6716 范围编解码器，供 CELT/SILK 使用的熵编码基础 |
 | `OpusManagedCodec` | 进程内托管编解码切换点（M1 不可用，M2 起逐步开启） |
 | `OpusProcessCodec` | 操作系统降级：探测 ffmpeg + libopus，通过 stdin/stdout 完成单包编解码 |
-| `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5，含 Xing/Info/VBRI 信息帧静音处理；编码 Layer III CBR） |
-| `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman → 帧组装，支持 9 档采样率与单/立体声 |
+| `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5、长短块、联合立体声、比特池与 Xing/Info/VBRI 信息帧；编码 Layer III，支持 CBR/VBR/ABR、M/S 联合立体声与简化心理声学模型） |
+| `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman（含 ESC 表）→ 帧组装，支持 9 档采样率、单/立体声、M/S、VBR/ABR 与 Xing 信息帧；短块待排期 |
 | `Mp3HuffmanEncoder` | 由解码表反推的 Huffman 编码表，保证收发使用同一份 ISO 码表 |
 | `FlacCodec` | FLAC 编解码器（纯托管，Fixed LPC + LPC 子帧 + Rice 残差编码） |
 | `VorbisCodec` | Ogg Vorbis 编解码门面：三头包、流式解码、长块基线编码、granule 裁剪 |
