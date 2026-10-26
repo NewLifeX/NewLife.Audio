@@ -45,6 +45,9 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         /// <summary>声道模式</summary>
         public Int32 ChannelMode { get; set; }
 
+        /// <summary>模式扩展（联合立体声：bit1 = M/S，bit0 = 强度立体声）</summary>
+        public Int32 ModeExtension { get; set; }
+
         /// <summary>每帧采样数</summary>
         public Int32 SamplesPerFrame { get; set; }
 
@@ -198,6 +201,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             SampleRate = sampleRate,
             Bitrate = bitrate,
             ChannelMode = (b3 >> 6) & 0x03,
+            ModeExtension = (b3 >> 4) & 0x03,
             SamplesPerFrame = layer == 1 ? 384 : mpeg1 ? 1152 : 576,
             FrameSize = frameSize,
         };

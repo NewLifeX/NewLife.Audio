@@ -163,6 +163,65 @@ public class Mp3EncoderTests
         Assert.Equal(encoded.Length, offset);
     }
 
+    [Fact(DisplayName = "MP3 联合立体声：相关声道启用M/S")]
+    public void Encode_Stereo_Correlated_UsesMs()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 2, sampleRate, 1000, 0.4);
+
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 2, Bitrate = 96 }).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+        Assert.Equal(2, header.ModeExtension);
+
+        var decoded = codec.ToPcm(encoded, null).GetSpan().ToArray();
+        var snr = BestStereoSnr(ToInt16(pcm), ToInt16(decoded));
+        Assert.True(snr > 25, $"M/S 往返信噪比过低：{snr:F1} dB");
+    }
+
+    [Fact(DisplayName = "MP3 联合立体声：不相关声道使用L/R")]
+    public void Encode_Stereo_Uncorrelated_UsesLr()
+    {
+        var sampleRate = 44100;
+        var samples = sampleRate;
+        var pcm = new Byte[samples * 2 * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            var l = (Int16)(Math.Sin(2 * Math.PI * 1000 * i / sampleRate) * 0.4 * 32000);
+            var r = (Int16)(Math.Sin(2 * Math.PI * 3200 * i / sampleRate) * 0.4 * 32000);
+            pcm[i * 4] = (Byte)(l & 0xFF);
+            pcm[i * 4 + 1] = (Byte)((l >> 8) & 0xFF);
+            pcm[i * 4 + 2] = (Byte)(r & 0xFF);
+            pcm[i * 4 + 3] = (Byte)((r >> 8) & 0xFF);
+        }
+
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 2, Bitrate = 96 }).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+        Assert.Equal(0, header.ModeExtension);
+
+        var decoded = codec.ToPcm(encoded, null).GetSpan().ToArray();
+        var snr = BestStereoSnr(ToInt16(pcm), ToInt16(decoded));
+        Assert.True(snr > 25, $"L/R 往返信噪比过低：{snr:F1} dB");
+    }
+
+    [Fact(DisplayName = "MP3 联合立体声：相关立体声质量达标")]
+    public void Encode_Stereo_QualityBaseline()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 2, sampleRate, 1000, 0.3);
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 2, Bitrate = 192 }).GetSpan().ToArray();
+        var decoded = new Mp3Codec().ToPcm(encoded, null).GetSpan().ToArray();
+
+        var snr = BestStereoSnr(ToInt16(pcm), ToInt16(decoded));
+        Assert.True(snr > 40, $"立体声质量基线未达标：{snr:F1} dB");
+    }
+
     private static Double MeasureSnr(Byte[] pcm, Int32 sampleRate, Int32 bitrate)
     {
         var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = bitrate });
@@ -247,4 +306,27 @@ public class Mp3EncoderTests
 
         return best;
     }
+
+    /// <summary>立体声信噪比：拆分左右声道分别对齐后取均值（交错数据不能用单一增益评估）</summary>
+    private static Double BestStereoSnr(Int16[] source, Int16[] actual)
+    {
+        var srcL = new Int16[source.Length / 2];
+        var srcR = new Int16[source.Length / 2];
+        for (var i = 0; i < srcL.Length; i++)
+        {
+            srcL[i] = source[i * 2];
+            srcR[i] = source[i * 2 + 1];
+        }
+
+        var actL = new Int16[actual.Length / 2];
+        var actR = new Int16[actual.Length / 2];
+        for (var i = 0; i < actL.Length; i++)
+        {
+            actL[i] = actual[i * 2];
+            actR[i] = actual[i * 2 + 1];
+        }
+
+        return Math.Min(BestSnr(srcL, actL), BestSnr(srcR, actR));
+    }
 }
+

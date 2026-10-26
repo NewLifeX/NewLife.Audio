@@ -61,8 +61,12 @@ internal sealed class Mp3Layer3Encoder
     private readonly Single[][] _pcmHistory;
     private readonly Single[][] _subband;
     private readonly Single[][] _subbandHistory;
+    private readonly Single[][] _subbandMs;
+    private readonly Single[][] _subbandHistoryMs;
     private readonly Single[][] _spectrum;
     private readonly Single[] _scale;
+    private readonly Int32[,] _estimate;
+    private Int32 _modeExtension;
 
     private readonly Single[] _block = new Single[Mp3EncoderTables.BlockLength];
     private readonly Single[] _y = new Single[64];
@@ -142,13 +146,18 @@ internal sealed class Mp3Layer3Encoder
         _pcmHistory = new Single[channels][];
         _subband = new Single[channels][];
         _subbandHistory = new Single[channels][];
+        _subbandMs = new Single[channels][];
+        _subbandHistoryMs = new Single[channels][];
         _spectrum = new Single[channels][];
         _scale = new Single[channels];
+        _estimate = new Int32[_granules, channels];
         for (var ch = 0; ch < channels; ch++)
         {
             _pcmHistory[ch] = new Single[Mp3EncoderTables.FilterLength];
             _subband[ch] = new Single[_slots * 32];
             _subbandHistory[ch] = new Single[18 * 32];
+            _subbandMs[ch] = new Single[_slots * 32];
+            _subbandHistoryMs[ch] = new Single[18 * 32];
             _spectrum[ch] = new Single[576];
             _scale[ch] = 1f / 64;
         }
@@ -191,24 +200,66 @@ internal sealed class Mp3Layer3Encoder
             Analyze(pcm, offset, ch);
         }
 
+        // 立体声联合编码：按帧选择 L/R 或 M/S（mode_extension = 2）
+        var useMs = false;
+        if (_channels == 2)
+        {
+            for (var ch = 0; ch < 2; ch++)
+            {
+                Array.Copy(_subband[ch], _subbandMs[ch], _subband[ch].Length);
+            }
+            TransformToMs(_subbandMs);
+
+            useMs = EstimateBits(true) < EstimateBits(false);
+
+            // 若选中 M/S，重新估算以取得该模式下各声道的比特需求（用于预算分配）
+            if (useMs) EstimateBits(true);
+        }
+        _modeExtension = useMs ? 2 : 0;
+
         // 逐颗粒/声道编码主数据
         _mainWriter.Reset();
         var budget = frameBytes * 8 - 32 - _sideInfoBits;
-        var total = _granules * _channels;
-        var index = 0;
+
+        // 按估算需求比例为各声道分配预算，避免零需求的 side 声道浪费一半码率
+        var channelBudget = new Int32[_channels];
+        if (_channels == 1)
+        {
+            channelBudget[0] = budget;
+        }
+        else
+        {
+            var weightSum = 0;
+            var weights = new Int32[_channels];
+            for (var ch = 0; ch < _channels; ch++)
+            {
+                var weight = 0;
+                for (var gr = 0; gr < _granules; gr++)
+                {
+                    weight += _estimate[gr, ch];
+                }
+                if (weight < 1) weight = 1;
+                weights[ch] = weight;
+                weightSum += weight;
+            }
+            for (var ch = 0; ch < _channels; ch++)
+            {
+                channelBudget[ch] = (Int32)((Int64)budget * weights[ch] / weightSum);
+            }
+        }
+
         for (var gr = 0; gr < _granules; gr++)
         {
             for (var ch = 0; ch < _channels; ch++)
             {
-                var share = budget / (total - index);
+                var share = channelBudget[ch] / (_granules - gr);
                 // part2_3_length 只有 12 位
                 if (share > 4095) share = 4095;
                 if (share < 0) share = 0;
 
-                Mdct(ch, gr);
+                Mdct(ch, gr, useMs);
                 var bits = EncodeGranuleChannel(ch, share, _info[gr][ch]);
-                budget -= bits;
-                index++;
+                channelBudget[ch] -= bits;
             }
         }
 
@@ -219,16 +270,52 @@ internal sealed class Mp3Layer3Encoder
         _frameWriter.AppendFrom(_mainWriter, 0, _mainWriter.Position);
         _frameWriter.CopyTo(output, 0, frameBytes);
 
-        // 更新子带历史
+        // 更新子带历史（L/R 与 M/S 各自维护，供下一帧选择任一模式时使用）
         for (var ch = 0; ch < _channels; ch++)
         {
-            var sub = _subband[ch];
-            var hist = _subbandHistory[ch];
             var start = (_slots - 18) * 32;
-            Array.Copy(sub, start, hist, 0, 18 * 32);
+            Array.Copy(_subband[ch], start, _subbandHistory[ch], 0, 18 * 32);
+            Array.Copy(_subbandMs[ch], start, _subbandHistoryMs[ch], 0, 18 * 32);
         }
 
         return frameBytes;
+    }
+
+    /// <summary>把 L/R 子带样本就地转换为 M/S（mid=(L+R)/2，side=(L−R)/√2）</summary>
+    private static void TransformToMs(Single[][] sub)
+    {
+        var left = sub[0];
+        var right = sub[1];
+        const Single invSqrt2 = 0.70710678f;
+
+        for (var i = 0; i < left.Length; i++)
+        {
+            var l = left[i];
+            var r = right[i];
+            left[i] = (l + r) * 0.5f;
+            right[i] = (l - r) * invSqrt2;
+        }
+    }
+
+    /// <summary>用当前量化状态快速估算整帧比特数，用于 L/R 与 M/S 模式选择</summary>
+    /// <param name="useMs">是否按 M/S 子带估算</param>
+    /// <returns>整帧主数据比特数估计</returns>
+    private Int32 EstimateBits(Boolean useMs)
+    {
+        var total = 0;
+        for (var gr = 0; gr < _granules; gr++)
+        {
+            for (var ch = 0; ch < _channels; ch++)
+            {
+                Mdct(ch, gr, useMs);
+                PrepareSpectrum(_spectrum[ch]);
+                var bits = Measure(_scale[ch], _spectrum[ch], _info[gr][ch]);
+                _estimate[gr, ch] = bits;
+                total += bits;
+            }
+        }
+
+        return total;
     }
     #endregion
 
@@ -287,10 +374,11 @@ internal sealed class Mp3Layer3Encoder
     /// <summary>36 点 MDCT 与反混叠折叠，得到颗粒/声道的 576 条谱线</summary>
     /// <param name="channel">声道序号</param>
     /// <param name="granule">颗粒序号</param>
-    private void Mdct(Int32 channel, Int32 granule)
+    /// <param name="useMs">是否使用 M/S 联合立体声子带</param>
+    private void Mdct(Int32 channel, Int32 granule, Boolean useMs)
     {
-        var sub = _subband[channel];
-        var hist = _subbandHistory[channel];
+        var sub = useMs ? _subbandMs[channel] : _subband[channel];
+        var hist = useMs ? _subbandHistoryMs[channel] : _subbandHistory[channel];
         var spec = _spectrum[channel];
         var window = Mp3EncoderTables.MdctWindow;
         var cos = Mp3EncoderTables.MdctCos;
@@ -376,28 +464,7 @@ internal sealed class Mp3Layer3Encoder
         var spec = _spectrum[channel];
         var bands = _bands;
 
-        for (var i = 0; i < 576; i++)
-        {
-            _pow75[i] = (Single)Math.Pow(Math.Abs(spec[i]), 0.75) * Pow75Scale;
-        }
-
-        var offset = 0;
-        for (var b = 0; b < bands.Length; b++)
-        {
-            var width = bands[b];
-            var max = 0f;
-            var energy = 0f;
-            for (var i = 0; i < width; i++)
-            {
-                var v = Math.Abs(spec[offset + i]);
-                if (v > max) max = v;
-                energy += v * v;
-            }
-            _bandMax[b] = (Single)(max * OutputScale);
-            _bandEnergy[b] = energy;
-            _bandRms[b] = width > 0 ? (Single)(Math.Sqrt(energy / width) * OutputScale) : 0f;
-            offset += width;
-        }
+        PrepareSpectrum(spec);
 
         // 以全局尺度为变量二分搜索，找到不超过预算的最小量化步长
         var scale = _scale[channel];
@@ -447,6 +514,35 @@ internal sealed class Mp3Layer3Encoder
 
 
         return total;
+    }
+
+    /// <summary>准备声道的量化输入：0.75 次幂表与逐带峰值/能量</summary>
+    /// <param name="spec">当前颗粒/声道的 576 条谱线</param>
+    private void PrepareSpectrum(Single[] spec)
+    {
+        for (var i = 0; i < 576; i++)
+        {
+            _pow75[i] = (Single)Math.Pow(Math.Abs(spec[i]), 0.75) * Pow75Scale;
+        }
+
+        var bands = _bands;
+        var offset = 0;
+        for (var b = 0; b < bands.Length; b++)
+        {
+            var width = bands[b];
+            var max = 0f;
+            var energy = 0f;
+            for (var i = 0; i < width; i++)
+            {
+                var v = Math.Abs(spec[offset + i]);
+                if (v > max) max = v;
+                energy += v * v;
+            }
+            _bandMax[b] = (Single)(max * OutputScale);
+            _bandEnergy[b] = energy;
+            _bandRms[b] = width > 0 ? (Single)(Math.Sqrt(energy / width) * OutputScale) : 0f;
+            offset += width;
+        }
     }
 
     /// <summary>按指定全局尺度量化并统计比特数</summary>
@@ -736,7 +832,7 @@ internal sealed class Mp3Layer3Encoder
         writer.Write(padding, 1);
         writer.Write(0, 1);          // private
         writer.Write(mode, 2);
-        writer.Write(0, 2);          // mode extension
+        writer.Write(_modeExtension, 2);  // 0 = L/R，2 = M/S
         writer.Write(0, 1);          // copyright
         writer.Write(1, 1);          // original
         writer.Write(0, 2);          // emphasis
