@@ -27,9 +27,31 @@ internal class FakeTtsEngine : TtsEngineBase
 
     public TtsOptions LastOptions;
 
+    /// <summary>多块输出。非空时按顺序产出，忽略 <see cref="Payload"/></summary>
+    public IList<Byte[]> Chunks;
+
+    /// <summary>可枚举音色。为空表示不支持枚举</summary>
+    public IList<TtsVoice> Voices;
+
+    /// <summary>枚举音色时抛出异常，用于验证调用方的兜底</summary>
+    public Boolean VoicesThrow;
+
+    /// <summary>是否已释放</summary>
+    public Boolean Disposed;
+
+    /// <summary>输出格式，默认 16kHz 单声道 16 位</summary>
+    public AudioFormat Format = new() { SampleRate = 16000, Channels = 1, BitsPerSample = 16 };
+
     public FakeTtsEngine(String name) : base(name) { }
 
     public override Boolean IsAvailable => Available;
+
+    public override IReadOnlyList<TtsVoice> GetVoices()
+    {
+        if (VoicesThrow) throw new InvalidOperationException("fake voices failure");
+
+        return Voices == null ? Array.Empty<TtsVoice>() : Voices.ToArray();
+    }
 
     public override async IAsyncEnumerable<TtsChunk> SynthesizeAsync(String text, TtsOptions options, [EnumeratorCancellation] CancellationToken cancellationToken)
     {
@@ -40,8 +62,79 @@ internal class FakeTtsEngine : TtsEngineBase
 
         await Task.Yield();
 
+        if (Chunks != null)
+        {
+            foreach (var data in Chunks)
+            {
+                yield return new TtsChunk { Format = Format, Data = data };
+            }
+            yield break;
+        }
+
+        yield return new TtsChunk { Format = Format, Data = Payload };
+    }
+
+    public override void Dispose() => Disposed = true;
+}
+
+/// <summary>逐块产出并带延时的引擎，用于取消与中断测试</summary>
+internal class SlowTtsEngine : TtsEngineBase
+{
+    public Int32 Chunks = 100;
+
+    public Int32 DelayMs = 20;
+
+    public Int32 Calls;
+
+    public Int32 Produced;
+
+    public SlowTtsEngine() : base("slow") { }
+
+    public override async IAsyncEnumerable<TtsChunk> SynthesizeAsync(String text, TtsOptions options, [EnumeratorCancellation] CancellationToken cancellationToken)
+    {
+        Calls++;
         var format = new AudioFormat { SampleRate = 16000, Channels = 1, BitsPerSample = 16 };
-        yield return new TtsChunk { Format = format, Data = Payload };
+        for (var i = 0; i < Chunks; i++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            Produced++;
+            yield return new TtsChunk { Format = format, Data = new Byte[320] };
+
+            await Task.Delay(DelayMs, cancellationToken);
+        }
+    }
+}
+
+/// <summary>首次播报阻塞、后续播报立即完成的引擎，用于验证“后来者优先”</summary>
+internal class InterruptibleSpeakerEngine : FakeTtsEngine, ITtsSpeaker
+{
+    public Int32 Speaks;
+
+    public InterruptibleSpeakerEngine(String name) : base(name) { }
+
+    public async Task SpeakAsync(String text, TtsOptions options, CancellationToken cancellationToken)
+    {
+        var n = Interlocked.Increment(ref Speaks);
+        if (n > 1) return;
+
+        await Task.Delay(Timeout.Infinite, cancellationToken);
+    }
+
+    public void Stop() { }
+}
+
+/// <summary>条件轮询等待。超时抛异常，避免固定等待掩盖竞态</summary>
+internal static class TestWait
+{
+    public static async Task UntilAsync(Func<Boolean> condition, String message, Int32 timeoutMs = 5000)
+    {
+        var start = Environment.TickCount64;
+        while (!condition())
+        {
+            if (Environment.TickCount64 - start > timeoutMs) throw new TimeoutException(message);
+
+            await Task.Delay(10, TestContext.Current.CancellationToken);
+        }
     }
 }
 

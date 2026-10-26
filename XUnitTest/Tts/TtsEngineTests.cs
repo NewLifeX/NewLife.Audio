@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Net;
 using System.Net.Http;
@@ -22,6 +23,18 @@ internal class StubHandler : HttpMessageHandler
 
     public Uri LastUri { get; private set; }
 
+    public String LastMethod { get; private set; }
+
+    public String LastContentType { get; private set; }
+
+    public IDictionary<String, String> LastHeaders { get; } = new Dictionary<String, String>(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>响应状态码，默认 200</summary>
+    public HttpStatusCode Status { get; set; } = HttpStatusCode.OK;
+
+    /// <summary>响应前的延时，用于超时与取消测试</summary>
+    public TimeSpan Delay { get; set; }
+
     public StubHandler(Byte[] data, String media)
     {
         _data = data;
@@ -31,9 +44,22 @@ internal class StubHandler : HttpMessageHandler
     protected override async Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
     {
         LastUri = request.RequestUri;
-        if (request.Content != null) LastBody = await request.Content.ReadAsStringAsync();
+        LastMethod = request.Method.Method;
+        if (request.Content != null)
+        {
+            LastBody = await request.Content.ReadAsStringAsync();
+            LastContentType = request.Content.Headers.ContentType?.MediaType;
+        }
 
-        var response = new HttpResponseMessage(HttpStatusCode.OK) { Content = new ByteArrayContent(_data) };
+        foreach (var item in request.Headers) LastHeaders[item.Key] = String.Join(",", item.Value);
+        if (request.Content != null)
+        {
+            foreach (var item in request.Content.Headers) LastHeaders[item.Key] = String.Join(",", item.Value);
+        }
+
+        if (Delay > TimeSpan.Zero) await Task.Delay(Delay, cancellationToken);
+
+        var response = new HttpResponseMessage(Status) { Content = new ByteArrayContent(_data) };
         response.Content.Headers.ContentType = new MediaTypeHeaderValue(_media);
         return response;
     }
@@ -41,11 +67,11 @@ internal class StubHandler : HttpMessageHandler
 
 internal static class TtsChunkHelper
 {
-    public static async Task<(Byte[] Data, AudioFormat Format)> CollectAsync(ITtsEngine engine, String text, TtsOptions options = null)
+    public static async Task<(Byte[] Data, AudioFormat Format)> CollectAsync(ITtsEngine engine, String text, TtsOptions options = null, CancellationToken cancellationToken = default)
     {
         using var stream = new MemoryStream();
         AudioFormat format = null;
-        await foreach (var chunk in engine.SynthesizeAsync(text, options, TestContext.Current.CancellationToken))
+        await foreach (var chunk in engine.SynthesizeAsync(text, options, cancellationToken))
         {
             format ??= chunk.Format;
             stream.Write(chunk.Data, 0, chunk.Data.Length);
@@ -62,7 +88,7 @@ public class NullTtsEngineTests
     {
         var engine = new NullTtsEngine();
 
-        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "测试");
+        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "测试", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(11520, pcm.Length);
         Assert.Equal(16000, format.SampleRate);
@@ -92,7 +118,7 @@ public class HttpTtsEngineTests
             Client = new HttpClient(stub),
         };
 
-        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好");
+        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(1600, pcm.Length);
         Assert.Equal(16000, format.SampleRate);
@@ -111,7 +137,7 @@ public class HttpTtsEngineTests
             Client = new HttpClient(stub),
         };
 
-        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好");
+        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(4096, pcm.Length);
         Assert.Equal(22050, format.SampleRate);
@@ -131,7 +157,7 @@ public class HttpTtsEngineTests
             Client = new HttpClient(stub),
         };
 
-        await TtsChunkHelper.CollectAsync(engine, "温度\"高\"", new TtsOptions { Voice = "v1", Rate = 1.5f });
+        await TtsChunkHelper.CollectAsync(engine, "温度\"高\"", new TtsOptions { Voice = "v1", Rate = 1.5f }, TestContext.Current.CancellationToken);
 
         Assert.Contains("%E6%B8%A9%E5%BA%A6", stub.LastUri.AbsoluteUri);
         Assert.Contains("voice=v1", stub.LastUri.AbsoluteUri);
@@ -151,7 +177,7 @@ public class HttpTtsEngineTests
             Client = new HttpClient(stub),
         };
 
-        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好");
+        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "你好", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.Equal(800, pcm.Length);
         Assert.Equal(24000, format.SampleRate);
@@ -212,7 +238,7 @@ public class SystemSpeechEngineTests
         if (!engine.IsAvailable) return;
         if (engine.GetVoices().Count == 0) return;
 
-        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "hello");
+        var (pcm, format) = await TtsChunkHelper.CollectAsync(engine, "hello", cancellationToken: TestContext.Current.CancellationToken);
 
         Assert.True(pcm.Length > 0);
         Assert.True(format.SampleRate > 0);
