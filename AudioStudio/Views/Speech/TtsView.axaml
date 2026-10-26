@@ -91,6 +91,8 @@
                             <Button Content="■ 停止" Command="{Binding StopSpeakCommand}" Margin="0,0,6,4" />
                             <Button Content="💾 保存 WAV" Command="{Binding SaveWavCommand}" Margin="0,0,6,4" />
                             <Button Content="💾 保存 PCM" Command="{Binding SavePcmCommand}" Margin="0,0,6,4" />
+                <Button Content="💾 保存 MP3" Command="{Binding SaveMp3Command}" Margin="0,0,6,4" />
+                <Button Content="💾 保存 FLAC" Command="{Binding SaveFlacCommand}" Margin="0,0,6,4" />
                             <Button Content="🌊 流式统计" Command="{Binding StreamProbeCommand}" Margin="0,0,6,4" />
                             <Button Content="🔊 回放文件" Command="{Binding PlayLastFileCommand}" Margin="0,0,6,4" />
                             <Button Content="✅ 全部用法自检" Command="{Binding RunAllCommand}" Margin="0,0,6,4" />

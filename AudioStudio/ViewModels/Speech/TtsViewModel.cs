@@ -561,13 +561,21 @@ public partial class TtsViewModel : ViewModelBase
 
     /// <summary>保存为 WAV</summary>
     [RelayCommand]
-    private Task SaveWavAsync() => SaveCoreAsync(false);
+    private Task SaveWavAsync() => SaveCoreAsync(".wav");
 
     /// <summary>保存为裸 PCM</summary>
     [RelayCommand]
-    private Task SavePcmAsync() => SaveCoreAsync(true);
+    private Task SavePcmAsync() => SaveCoreAsync(".pcm");
 
-    private async Task SaveCoreAsync(Boolean pcm)
+    /// <summary>保存为 MP3（走压缩编码管线）</summary>
+    [RelayCommand]
+    private Task SaveMp3Async() => SaveCoreAsync(".mp3");
+
+    /// <summary>保存为 FLAC（无损压缩）</summary>
+    [RelayCommand]
+    private Task SaveFlacAsync() => SaveCoreAsync(".flac");
+
+    private async Task SaveCoreAsync(String extension)
     {
         if (!BeginOperation("正在合成到文件...")) return;
 
@@ -575,16 +583,22 @@ public partial class TtsViewModel : ViewModelBase
         {
             var client = EnsureClient();
             Directory.CreateDirectory(OutputDirectory);
-            var ext = pcm ? ".pcm" : ".wav";
-            var path = Path.Combine(OutputDirectory, $"tts-{DateTime.Now:HHmmss-fff}{ext}");
+            var path = Path.Combine(OutputDirectory, $"tts-{DateTime.Now:HHmmss-fff}{extension}");
 
             var result = await client.SaveAsync(Text, path, CallOptions(client));
             _lastSavedPath = path;
             LastSavedPathDisplay = path;
 
+            var label = extension switch
+            {
+                ".pcm" => "裸 PCM",
+                ".mp3" => "MP3",
+                ".flac" => "FLAC",
+                _ => "WAV",
+            };
             Status = $"已保存 {Path.GetFileName(path)}";
-            ResultText = Describe(result.Engine, pcm ? "SaveAsync（裸 PCM）" : "SaveAsync（WAV）", result.ElapsedTime, result) + $"\n输出路径：{path}";
-            AddLog($"SaveAsync {(pcm ? "PCM" : "WAV")} ✅ {result}");
+            ResultText = Describe(result.Engine, $"SaveAsync（{label}）", result.ElapsedTime, result) + $"\n输出路径：{path}";
+            AddLog($"SaveAsync {label} ✅ {result}");
         }
         catch (Exception ex)
         {
