@@ -109,6 +109,112 @@ public class Mp3FileTests
         Assert.True(reader.TotalFrames > 20);
     }
 
+    [Fact(DisplayName = "MP3 写入器追加 ID3v1 尾标签并可回读")]
+    public void Writer_WritesId3v1Tag()
+    {
+        using var ms = new MemoryStream();
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+
+        var writer = new Mp3FileWriter(ms, format, 128);
+        writer.WriteMetadata(new AudioMetadata
+        {
+            Title = "Alarm",
+            Artist = "NewLife",
+            Album = "IoT",
+            Genre = "Speech",
+            Year = 2026,
+            TrackNumber = 7,
+            Comment = "v1 tag",
+        });
+        writer.WritePcm(BuildTone(44100, 1, 22050, 1000, 0.3));
+        writer.Flush();
+
+        var data = ms.ToArray();
+
+        // 末尾必须是 128 字节 ID3v1 标签（TAG 起始），且不影响帧索引
+        const Int32 v1Size = 128;
+        Assert.True(data.Length > v1Size);
+        var tailStart = data.Length - v1Size;
+        Assert.Equal((Byte)'T', data[tailStart]);
+        Assert.Equal((Byte)'A', data[tailStart + 1]);
+        Assert.Equal((Byte)'G', data[tailStart + 2]);
+
+        ms.Position = 0;
+        using var reader = new Mp3FileReader(ms);
+        Assert.True(reader.TotalFrames > 10);
+        Assert.Equal(44100, reader.Format.SampleRate);
+    }
+
+    [Fact(DisplayName = "MP3 读取器在无 ID3v2 时回退到 ID3v1 标签")]
+    public void Reader_FallsBackToId3v1()
+    {
+        using var ms = new MemoryStream();
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+
+        // 无元数据写入 → 无 ID3v2、无 ID3v1
+        var writer = new Mp3FileWriter(ms, format, 128);
+        writer.WritePcm(BuildTone(44100, 1, 22050, 1000, 0.3));
+        writer.Flush();
+
+        var data = ms.ToArray();
+        const Int32 v1Size = 128;
+        Assert.NotEqual((Byte)'T', data[data.Length - v1Size]);
+
+        // 手工追加一条 ID3v1（Latin-1 固定布局）
+        var tag = new Byte[v1Size];
+        tag[0] = (Byte)'T';
+        tag[1] = (Byte)'A';
+        tag[2] = (Byte)'G';
+        var title = "V1 Title";
+        for (var i = 0; i < title.Length; i++) tag[3 + i] = (Byte)title[i];
+        var artist = "V1 Artist";
+        for (var i = 0; i < artist.Length; i++) tag[33 + i] = (Byte)artist[i];
+        tag[93] = (Byte)'2';
+        tag[94] = (Byte)'0';
+        tag[95] = (Byte)'1';
+        tag[96] = (Byte)'9';
+        var comment = "note";
+        for (var i = 0; i < comment.Length; i++) tag[97 + i] = (Byte)comment[i];
+        tag[125] = 0;
+        tag[126] = 9;
+        tag[127] = 17; // Rock
+
+        var file = new MemoryStream();
+        file.Write(data, 0, data.Length);
+        file.Write(tag, 0, tag.Length);
+        file.Position = 0;
+
+        using var reader = new Mp3FileReader(file);
+        Assert.Equal("V1 Title", reader.Metadata.Title);
+        Assert.Equal("V1 Artist", reader.Metadata.Artist);
+        Assert.Equal(2019, reader.Metadata.Year);
+        Assert.Equal("note", reader.Metadata.Comment);
+        Assert.Equal(9, reader.Metadata.TrackNumber);
+        Assert.Equal("Rock", reader.Metadata.Genre);
+    }
+
+    [Fact(DisplayName = "ID3v2 字段优先于 ID3v1")]
+    public void Reader_PrefersId3v2Fields()
+    {
+        using var ms = new MemoryStream();
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+
+        var writer = new Mp3FileWriter(ms, format, 128);
+        writer.WriteMetadata(new AudioMetadata { Title = "V2 Title", Artist = "V2 Artist" });
+        writer.WritePcm(BuildTone(44100, 1, 22050, 1000, 0.3));
+        writer.Flush();
+
+        var data = ms.ToArray();
+        const Int32 v1Size = 128;
+        var start = data.Length - v1Size;
+        Assert.Equal((Byte)'T', data[start]);
+
+        ms.Position = 0;
+        using var reader = new Mp3FileReader(ms);
+        Assert.Equal("V2 Title", reader.Metadata.Title);
+        Assert.Equal("V2 Artist", reader.Metadata.Artist);
+    }
+
     [Fact(DisplayName = "MP3 写入 PCM 后解码可还原信号")]
     public void Writer_WritePcm_RoundTrip()
     {

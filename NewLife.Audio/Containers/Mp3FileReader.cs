@@ -183,6 +183,21 @@ public class Mp3FileReader : IAudioContainerReader
             AverageBitrate = (Int32)(bytes * 8 / Math.Max(Duration, 1e-6));
         }
 
+        // 尾部 ID3v1 标签（ID3v2 已填的字段不会被覆盖）
+        if (length >= Mp3Id3Tag.V1Size)
+        {
+            var tag = new Byte[Mp3Id3Tag.V1Size];
+            _stream.Seek(length - Mp3Id3Tag.V1Size, SeekOrigin.Begin);
+            var read = 0;
+            while (read < tag.Length)
+            {
+                var n = _stream.Read(tag, read, tag.Length - read);
+                if (n <= 0) break;
+                read += n;
+            }
+            if (read == tag.Length) Mp3Id3Tag.TryReadV1(tag, 0, Metadata);
+        }
+
         if (start == 0) _stream.Seek(0, SeekOrigin.Begin);
     }
 
@@ -205,6 +220,7 @@ public class Mp3FileReader : IAudioContainerReader
         }
 
         if (_buffer.Length >= Mp3Id3Tag.HeaderSize) Mp3Id3Tag.TryRead(_buffer, Metadata, out _);
+        if (_buffer.Length >= Mp3Id3Tag.V1Size) Mp3Id3Tag.TryReadV1(_buffer, _buffer.Length - Mp3Id3Tag.V1Size, Metadata);
 
         if (_offsets.Count > 0 && _format != null)
         {

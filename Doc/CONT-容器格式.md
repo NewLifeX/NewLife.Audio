@@ -27,7 +27,7 @@
 | `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（支持 Vorbis + Opus） |
 | `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器 |
 | `Mp3FileReader` / `Mp3FileWriter` | MP3 文件读写器：ID3v2 标签 + 帧索引；写入支持帧透传与 PCM 压缩 |
-| `Mp3Id3Tag` | ID3v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成 |
+| `Mp3Id3Tag` | ID3v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成；ID3v1/v1.1 尾标签读写（含 80 项流派表），读取时 ID3v2 优先于 ID3v1 |
 | `FlacFileReader` / `FlacFileWriter` | FLAC 原生容器读写器 |
 | `RawPcmReader` | 原始 PCM 解析器：手动指定或自动推断格式 |
 | `AudioMetadata` | 音频元数据模型（标题、艺术家、专辑、时长、码率等） |

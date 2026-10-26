@@ -128,6 +128,11 @@ public class Mp3FileWriter : IAudioContainerWriter
         }
 
         _writer.WriteTrailerAsync(_stream, default).AsTask().GetAwaiter().GetResult();
+
+        // 追加 ID3v1 尾标签，兼容只识别 v1 的老播放器/车机
+        var v1 = Mp3Id3Tag.WriteV1(_metadata);
+        if (v1.Length > 0) _stream.Write(v1, 0, v1.Length);
+
         _stream.Flush();
     }
 

@@ -19,7 +19,116 @@ internal static class Mp3Id3Tag
         "Jazz", "Metal", "New Age", "Oldies", "Other", "Pop", "R&B", "Rap", "Reggae", "Rock",
         "Techno", "Industrial", "Alternative", "Ska", "Death Metal", "Pranks", "Soundtrack",
         "Euro-Techno", "Ambient", "Trip-Hop", "Vocal", "Jazz+Funk", "Fusion", "Trance",
+        "Classical", "Instrumental", "Acid", "House", "Game", "Sound Clip", "Gospel", "Noise",
+        "AlternRock", "Bass", "Soul", "Punk", "Space", "Meditative", "Instrumental Pop",
+        "Instrumental Rock", "Ethnic", "Gothic", "Darkwave", "Techno-Industrial", "Electronic",
+        "Pop-Folk", "Eurodance", "Dream", "Southern Rock", "Comedy", "Cult", "Gangsta", "Top 40",
+        "Christian Rap", "Pop/Funk", "Jungle", "Native American", "Cabaret", "New Wave",
+        "Psychedelic", "Rave", "Showtunes", "Trailer", "Lo-Fi", "Tribal", "Acid Punk",
+        "Acid Jazz", "Polka", "Retro", "Musical", "Rock & Roll", "Hard Rock",
     ];
+    #endregion
+
+    #region ID3v1
+    /// <summary>ID3v1 标签长度</summary>
+    public const Int32 V1Size = 128;
+
+    /// <summary>尝试从数据尾部解析 ID3v1 标签</summary>
+    /// <param name="data">包含标签的缓冲区</param>
+    /// <param name="offset">标签起始偏移</param>
+    /// <param name="metadata">目标元数据，已存在的字段不会被覆盖</param>
+    /// <returns>是否为合法 ID3v1 标签</returns>
+    /// <remarks>
+    /// 只解析固定 128 字节布局；文本按 Latin-1 处理（ID3v1 无编码声明）。
+    /// 已存在的字段不覆盖，因此 ID3v2 标签优先于 ID3v1。
+    /// </remarks>
+    public static Boolean TryReadV1(Byte[] data, Int32 offset, AudioMetadata metadata)
+    {
+        if (data == null || metadata == null) return false;
+        if (offset < 0 || offset + V1Size > data.Length) return false;
+        if (data[offset] != (Byte)'T' || data[offset + 1] != (Byte)'A' || data[offset + 2] != (Byte)'G') return false;
+
+        if (metadata.Title.IsNullOrEmpty()) metadata.Title = ReadV1Text(data, offset + 3, 30);
+        if (metadata.Artist.IsNullOrEmpty()) metadata.Artist = ReadV1Text(data, offset + 33, 30);
+        if (metadata.Album.IsNullOrEmpty()) metadata.Album = ReadV1Text(data, offset + 63, 30);
+        if (metadata.Year == 0) metadata.Year = ReadV1Text(data, offset + 93, 4).ToInt();
+
+        // ID3v1.1：注释第 29 字节为 0 且第 30 字节非 0 时，末字节表示音轨号
+        var track = 0;
+        var commentSize = 30;
+        if (data[offset + 125] == 0 && data[offset + 126] != 0)
+        {
+            track = data[offset + 126];
+            commentSize = 28;
+        }
+        if (metadata.Comment.IsNullOrEmpty()) metadata.Comment = ReadV1Text(data, offset + 97, commentSize);
+        if (metadata.TrackNumber == 0) metadata.TrackNumber = track;
+
+        var genre = data[offset + 127];
+        if (metadata.Genre.IsNullOrEmpty() && genre < GenreNames.Length) metadata.Genre = GenreNames[genre];
+
+        return true;
+    }
+
+    /// <summary>构造 ID3v1 标签（128 字节，含音轨号的 v1.1 布局）</summary>
+    /// <param name="metadata">音频元数据</param>
+    /// <returns>128 字节标签；无任何可用字段时返回空数组</returns>
+    /// <remarks>ID3v1 固定 Latin-1 单字节编码，无法表示的字符写入 '?'；中文等非拉丁字符请同时依赖 ID3v2 标签。</remarks>
+    public static Byte[] WriteV1(AudioMetadata metadata)
+    {
+        if (metadata == null) return [];
+
+        var hasValue = !metadata.Title.IsNullOrEmpty() || !metadata.Artist.IsNullOrEmpty() || !metadata.Album.IsNullOrEmpty()
+            || metadata.Year > 0 || !metadata.Comment.IsNullOrEmpty() || metadata.TrackNumber > 0 || !metadata.Genre.IsNullOrEmpty();
+        if (!hasValue) return [];
+
+        var data = new Byte[V1Size];
+        data[0] = (Byte)'T';
+        data[1] = (Byte)'A';
+        data[2] = (Byte)'G';
+
+        WriteV1Text(data, 3, 30, metadata.Title);
+        WriteV1Text(data, 33, 30, metadata.Artist);
+        WriteV1Text(data, 63, 30, metadata.Album);
+        if (metadata.Year > 0) WriteV1Text(data, 93, 4, metadata.Year.ToString());
+
+        var track = metadata.TrackNumber is > 0 and < 256 ? metadata.TrackNumber : 0;
+        WriteV1Text(data, 97, track > 0 ? 28 : 30, metadata.Comment);
+        if (track > 0)
+        {
+            data[125] = 0;
+            data[126] = (Byte)track;
+        }
+
+        var index = Array.IndexOf(GenreNames, metadata.Genre);
+        data[127] = (Byte)(index >= 0 ? index : 255);
+
+        return data;
+    }
+
+    private static String ReadV1Text(Byte[] data, Int32 offset, Int32 size)
+    {
+        var end = offset;
+        while (end < offset + size && data[end] != 0) end++;
+
+        var chars = new Char[end - offset];
+        for (var i = 0; i < chars.Length; i++) chars[i] = (Char)data[offset + i];
+
+        return new String(chars).Trim();
+    }
+
+    private static void WriteV1Text(Byte[] data, Int32 offset, Int32 size, String value)
+    {
+        if (value == null) return;
+
+        // ID3v1 为 Latin-1 单字节，超出范围的字符降级为 '?'
+        var length = Math.Min(size, value.Length);
+        for (var i = 0; i < length; i++)
+        {
+            var ch = value[i];
+            data[offset + i] = ch <= 0xFF ? (Byte)ch : (Byte)'?';
+        }
+    }
     #endregion
 
     #region 读取
