@@ -94,12 +94,32 @@ public static class AudioProbe
         return Probe(stream, false);
     }
 
+    /// <summary>按扩展名推断目标容器（用于尚不存在的写入目标）</summary>
+    /// <param name="path">文件路径或文件名</param>
+    /// <returns>容器类型，未知返回 <see cref="AudioContainerKind.Unknown"/></returns>
+    public static AudioContainerKind ProbeKind(String path)
+    {
+        if (path.IsNullOrEmpty()) return AudioContainerKind.Unknown;
+
+        var extension = System.IO.Path.GetExtension(path)?.ToLowerInvariant();
+        return extension switch
+        {
+            ".wav" or ".wave" => AudioContainerKind.Wav,
+            ".rf64" => AudioContainerKind.Rf64,
+            ".ogg" or ".oga" or ".opus" => AudioContainerKind.Ogg,
+            ".flac" => AudioContainerKind.Flac,
+            ".mp3" => AudioContainerKind.Mp3,
+            ".aac" or ".adts" => AudioContainerKind.Adts,
+            ".m4a" or ".mp4" => AudioContainerKind.Mp4,
+            _ => AudioContainerKind.Unknown,
+        };
+    }
+
     /// <summary>探测数据流</summary>
     /// <param name="stream">数据流</param>
     /// <param name="leaveOpen">是否保留流不关闭，默认 true</param>
     /// <returns>探测结果</returns>
-    public static AudioStreamInfo Probe(Stream stream, Boolean leaveOpen = true)
-    {
+    public static AudioStreamInfo Probe(Stream stream, Boolean leaveOpen = true)    {
         if (stream == null) throw new ArgumentNullException(nameof(stream));
 
         var start = stream.CanSeek ? stream.Position : 0;

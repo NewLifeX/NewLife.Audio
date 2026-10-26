@@ -318,7 +318,7 @@ public class AudioFileTests
         }
     }
 
-    [Fact(DisplayName = "写入失败时目标文件保持原状")]
+    [Fact(DisplayName = "保存失败时目标文件保持原状")]
     public void WritePcm_Unsupported_KeepsExistingFile()
     {
         var pcm = BuildSine(Format, 0.1, 0.5);
@@ -344,9 +344,109 @@ public class AudioFileTests
         }
     }
 
+    [Fact(DisplayName = "同编码另存为走帧级复制")]
+    public void SaveAs_SameCodec_UsesFrameCopy()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+        var pcm = BuildSine(format, 0.3, 0.5);
+        var source = TempPath(".mp3");
+        var target = TempPath(".mp3");
+        try
+        {
+            AudioFile.WritePcm(source, format, pcm, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "源标题" } });
+            var before = AudioFile.ReadPcm(source).Data;
+
+            var result = AudioFile.Open(source).SaveAs(target, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "新标题" } });
+
+            Assert.True(result.FrameCopied);
+            Assert.False(result.Reencoded);
+            Assert.Equal(AudioContainerKind.Mp3, result.Container);
+
+            var metadata = AudioFile.Open(target).ReadMetadata();
+            Assert.Equal("新标题", metadata.Title);
+
+            // 音频数据逐位一致：真正没有重编码
+            Assert.Equal(before, AudioFile.ReadPcm(target).Data);
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
+    [Fact(DisplayName = "关闭帧级复制后强制重编码")]
+    public void SaveAs_PreferFrameCopyOff_Reencodes()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+        var pcm = BuildSine(format, 0.2, 0.5);
+        var source = TempPath(".mp3");
+        var target = TempPath(".mp3");
+        try
+        {
+            AudioFile.WritePcm(source, format, pcm, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "标题" } });
+
+            var result = AudioFile.Open(source).SaveAs(target, new AudioWriteOptions { PreferFrameCopy = false });
+
+            Assert.False(result.FrameCopied);
+            Assert.True(result.Reencoded);
+            Assert.Equal("标题", AudioFile.Open(target).ReadMetadata().Title);
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
+    [Fact(DisplayName = "跨编码另存为回退重编码")]
+    public void SaveAs_DifferentCodec_Reencodes()
+    {
+        var pcm = BuildSine(Format, 0.2, 0.5);
+        var source = TempPath(".wav");
+        var target = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(source, Format, pcm);
+
+            var result = AudioFile.Open(source).SaveAs(target);
+
+            Assert.False(result.FrameCopied);
+            Assert.True(result.Reencoded);
+            Assert.Equal(AudioContainerKind.Flac, result.Container);
+            Assert.Equal(pcm.Length, AudioFile.ReadPcm(target).Data.Length);
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
+    [Fact(DisplayName = "WAV 同容器另存为保持逐位一致")]
+    public void SaveAs_SameWav_FrameCopy()
+    {
+        var pcm = BuildSine(Format, 0.1, 0.5);
+        var source = TempPath(".wav");
+        var target = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(source, Format, pcm);
+
+            var result = AudioFile.Open(source).SaveAs(target);
+
+            Assert.True(result.FrameCopied);
+            Assert.Equal(File.ReadAllBytes(source), File.ReadAllBytes(target));
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
     #region 辅助
     private static String TempPath(String extension) => Path.Combine(Path.GetTempPath(), "nlaudio_" + Guid.NewGuid().ToString("N") + extension);
-
     private static void TryDelete(String path)
     {
         try

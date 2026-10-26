@@ -44,6 +44,27 @@ public class AudioWriteOptions
 
     /// <summary>未显式指定 <see cref="Metadata"/> 时，是否沿用源文件标签，默认 true</summary>
     public Boolean PreserveMetadata { get; set; } = true;
+
+    /// <summary>编码参数一致时优先帧级复制（免重编码），默认 true</summary>
+    /// <remarks>目标容器与源编码一致且不需要改变采样率/声道数时，直接搬运已编码帧；
+    /// 需要改变码率或做格式转换时应设为 false 强制重编码。</remarks>
+    public Boolean PreferFrameCopy { get; set; } = true;
+}
+
+/// <summary>音频保存结果</summary>
+public class AudioSaveResult
+{
+    /// <summary>是否为帧级复制（免重编码）</summary>
+    public Boolean FrameCopied { get; set; }
+
+    /// <summary>是否重新编码</summary>
+    public Boolean Reencoded { get; set; }
+
+    /// <summary>目标容器</summary>
+    public AudioContainerKind Container { get; set; }
+
+    /// <summary>说明文字（走了哪条链路）</summary>
+    public String Detail { get; set; }
 }
 
 /// <summary>音频文件门面。自动识别容器与编码，一条链完成"打开 → 解码 → 处理 → 保存"</summary>
@@ -133,13 +154,74 @@ public class AudioFile
     /// <summary>解码当前文件并另存为</summary>
     /// <param name="path">目标路径（按扩展名选择容器）</param>
     /// <param name="options">写入选项；未指定 <see cref="AudioWriteOptions.Metadata"/> 时默认沿用源文件标签</param>
-    /// <remarks>目标容器不支持标签（如 WAV）时标签被忽略；源文件无标签时按无标签写入。</remarks>
-    public void SaveAs(String path, AudioWriteOptions options = null)
+    /// <returns>保存结果，说明走的是帧级复制还是重编码</returns>
+    /// <remarks>目标容器与源编码一致且无需改变采样率/声道数时优先帧级复制（免重编码），
+    /// 否则解码后重新编码；<paramref name="options"/> 的 <see cref="AudioWriteOptions.PreferFrameCopy"/> 可关闭该优化。
+    /// 目标容器不支持标签（如 WAV）时标签被忽略。</remarks>
+    public AudioSaveResult SaveAs(String path, AudioWriteOptions options = null)
     {
+        if (path == null) throw new ArgumentNullException(nameof(path));
+
         options ??= new AudioWriteOptions();
         if (options.Metadata == null && options.PreserveMetadata) options.Metadata = ReadMetadata();
 
+        var target = AudioProbe.ProbeKind(path);
+        if (options.PreferFrameCopy && TryCopyFrames(path, target, options))
+            return new AudioSaveResult { FrameCopied = true, Container = target, Detail = "Frame copy" };
+
         WritePcm(path, ReadPcm(), options);
+
+        return new AudioSaveResult { Reencoded = true, Container = target, Detail = "Decode and re-encode" };
+    }
+
+    /// <summary>帧级复制：容器与编码一致时直接搬运已编码数据，只替换标签</summary>
+    /// <param name="path">目标路径</param>
+    /// <param name="target">目标容器</param>
+    /// <param name="options">写入选项</param>
+    /// <returns>完成复制返回 true；不满足条件返回 false，由调用方回退重编码</returns>
+    private Boolean TryCopyFrames(String path, AudioContainerKind target, AudioWriteOptions options)
+    {
+        if (target == AudioContainerKind.Unknown || Info.Container != target) return false;
+
+        switch (target)
+        {
+            case AudioContainerKind.Mp3:
+                {
+                    var source = File.ReadAllBytes(Path);
+                    var start = Mp3Id3Tag.Skip(source);
+                    var end = source.Length;
+                    if (end - start >= Mp3Id3Tag.V1Size
+                        && source[end - Mp3Id3Tag.V1Size] == 'T' && source[end - Mp3Id3Tag.V1Size + 1] == 'A' && source[end - Mp3Id3Tag.V1Size + 2] == 'G')
+                        end -= Mp3Id3Tag.V1Size;
+
+                    var tag = options.Metadata == null ? [] : Mp3Id3Tag.Write(options.Metadata, 2048);
+                    var output = new Byte[tag.Length + end - start];
+                    Array.Copy(tag, 0, output, 0, tag.Length);
+                    Array.Copy(source, start, output, tag.Length, end - start);
+
+                    WriteAllBytesAtomic(path, output);
+                    return true;
+                }
+
+            case AudioContainerKind.Wav:
+                {
+                    // 同为 16 位 PCM 且无需转换时直接整文件复制
+                    if (Info.Codec is not (AVTypes.LPCM or AVTypes.PCM_AUDIO)) return false;
+                    if (Info.Format?.BitsPerSample > 16) return false;
+                    if (!String.Equals(System.IO.Path.GetFullPath(Path), System.IO.Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                        WriteAllBytesAtomic(path, File.ReadAllBytes(Path));
+                    return true;
+                }
+
+            case AudioContainerKind.Adts:
+                {
+                    WriteAllBytesAtomic(path, File.ReadAllBytes(Path));
+                    return true;
+                }
+
+            default:
+                return false;
+        }
     }
 
     /// <summary>读取当前文件的标签（不解码音频）</summary>
