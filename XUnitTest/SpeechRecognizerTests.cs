@@ -115,6 +115,35 @@ public class SpeechRecognizerTests
         Assert.Equal(0, engine.Calls);
     }
 
+    [Fact(DisplayName = "系统识别引擎：缺依赖时可用性为假且不抛异常")]
+    public void SystemEngine_Unavailable_Graceful()
+    {
+        var engine = new SystemSpeechRecognitionEngine();
+
+        // 测试环境（跨平台 net10.0）通常不带 System.Speech，此时应优雅降级
+        if (!engine.IsAvailable)
+        {
+            var result = engine.Transcribe(new Byte[320], Format, new SpeechRecognitionOptions());
+            Assert.NotNull(result);
+            Assert.True(result.Text.IsNullOrEmpty());
+        }
+    }
+
+    [Fact(DisplayName = "系统识别引擎可接入流式识别管线")]
+    public void SystemEngine_WorksWithSegmentedRecognizer()
+    {
+        var engine = new SystemSpeechRecognitionEngine();
+        using var recognizer = new SegmentedSpeechRecognizer(engine, Format);
+        recognizer.Start(new SpeechRecognitionOptions { EndpointSilenceMs = 200, MinUtteranceMs = 50, PartialResults = false });
+
+        var results = new List<SpeechRecognitionResult>();
+        results.AddRange(recognizer.Accept(BuildPattern(0.2, 0.3)));
+        results.AddRange(recognizer.Finish());
+
+        Assert.NotEmpty(results);
+        Assert.All(results, r => Assert.True(r.IsFinal));
+    }
+
     #region 辅助
     /// <summary>按「语音/静音」交替时长拼出测试信号</summary>
     private static Byte[] BuildPattern(params Double[] seconds)
@@ -159,5 +188,6 @@ public class SpeechRecognizerTests
     }
     #endregion
 }
+
 
 
