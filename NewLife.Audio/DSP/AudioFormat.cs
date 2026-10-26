@@ -18,6 +18,9 @@ public class AudioFormat
     /// <summary>是否为 IEEE 浮点采样（32 位 float）</summary>
     public Boolean IsFloat { get; set; }
 
+    /// <summary>采样格式（由 <see cref="BitsPerSample"/> 与 <see cref="IsFloat"/> 推导）</summary>
+    public SampleFormat SampleFormat => PcmConverter.FromBits(BitsPerSample, IsFloat);
+
     /// <summary>每帧样本数</summary>
     public Int32 SamplesPerFrame { get; set; } = 160;
 
