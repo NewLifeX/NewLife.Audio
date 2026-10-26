@@ -112,6 +112,8 @@ public class WaveFileReader : IAudioContainerReader
         Int32 channels = 0;
         Int32 sampleRate = 0;
         Int32 bitsPerSample = 0;
+        Int32 validBits = 0;
+        Int32 channelMask = 0;
         var haveFmt = false;
 
         _dataOffset = -1;
@@ -143,8 +145,13 @@ public class WaveFileReader : IAudioContainerReader
                             bitsPerSample = BitConverter.ToUInt16(fmt, 14);
                             haveFmt = true;
 
-                            // WAVEFORMATEXTENSIBLE：真实格式在 SubFormat GUID 起始 4 字节
-                            if (tag == 0xFFFE && got >= 40) tag = (UInt16)BitConverter.ToUInt32(fmt, 24);
+                            // WAVEFORMATEXTENSIBLE：有效位与声道掩码在偏移 18/20，真实格式在 SubFormat GUID 起始 4 字节
+                            if (tag == 0xFFFE && got >= 40)
+                            {
+                                validBits = BitConverter.ToUInt16(fmt, 18);
+                                channelMask = BitConverter.ToInt32(fmt, 20);
+                                tag = (UInt16)BitConverter.ToUInt32(fmt, 24);
+                            }
                         }
 
                         Skip(size - got + (size & 1));
@@ -188,7 +195,7 @@ public class WaveFileReader : IAudioContainerReader
                         _dataSize = ResolveDataSize(size);
                         if (_stream.CanSeek) _stream.Seek(_dataOffset, SeekOrigin.Begin);
 
-                        return BuildFormat(tag, channels, sampleRate, bitsPerSample);
+                        return BuildFormat(tag, channels, sampleRate, bitsPerSample, validBits, channelMask);
                     }
 
                 default:
@@ -203,7 +210,7 @@ public class WaveFileReader : IAudioContainerReader
         _dataOffset = _stream.CanSeek ? _stream.Position : 0;
         _dataSize = 0;
 
-        return BuildFormat(tag, channels, sampleRate, bitsPerSample);
+        return BuildFormat(tag, channels, sampleRate, bitsPerSample, validBits, channelMask);
     }
 
     private Int64 ResolveDataSize(Int64 size)
@@ -219,7 +226,7 @@ public class WaveFileReader : IAudioContainerReader
         return -1;
     }
 
-    private static AudioFormat BuildFormat(UInt16 tag, Int32 channels, Int32 sampleRate, Int32 bitsPerSample)
+    private static AudioFormat BuildFormat(UInt16 tag, Int32 channels, Int32 sampleRate, Int32 bitsPerSample, Int32 validBits, Int32 channelMask)
     {
         var encoding = tag switch
         {
@@ -237,6 +244,9 @@ public class WaveFileReader : IAudioContainerReader
             SamplesPerFrame = sampleRate / 50, // 20ms
             Encoding = encoding,
             IsFloat = tag == 0x0003,
+            // 有效位只在小于容器位深时有意义（如 24-in-32）
+            ValidBitsPerSample = validBits > 0 && validBits < bitsPerSample ? validBits : 0,
+            ChannelMask = channelMask,
         };
     }
 

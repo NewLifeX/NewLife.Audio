@@ -28,6 +28,9 @@ public class WaveFileWriter : IAudioContainerWriter
         {
             Channels = format.Channels,
             BitsPerSample = format.BitsPerSample,
+            ValidBitsPerSample = format.ValidBitsPerSample,
+            ChannelMask = format.ChannelMask,
+            IsFloat = format.IsFloat,
             PatchSize = stream.CanSeek,
         };
 
