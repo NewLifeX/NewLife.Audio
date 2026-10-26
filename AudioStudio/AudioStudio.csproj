@@ -25,6 +25,8 @@
       <PrivateAssets Condition="'$(Configuration)' != 'Debug'">All</PrivateAssets>
     </PackageReference>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <!-- Windows 系统语音（System.Speech.Synthesis）需要显式引用，TTS 面板才能使用 SAPI 引擎 -->
+    <PackageReference Include="System.Speech" Version="10.0.12" />
   </ItemGroup>
 
   <ItemGroup>

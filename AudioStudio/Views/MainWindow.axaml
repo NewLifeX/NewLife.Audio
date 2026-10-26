@@ -7,6 +7,7 @@
         xmlns:record="using:AudioStudio.Views.Record"
         xmlns:dsp="using:AudioStudio.Views.Dsp"
         xmlns:tools="using:AudioStudio.Views.Tools"
+        xmlns:speech="using:AudioStudio.Views.Speech"
         xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
         xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
         mc:Ignorable="d" d:DesignWidth="900" d:DesignHeight="600"
@@ -45,6 +46,9 @@
             </TabItem>
             <TabItem Header="🔧 编解码工具">
                 <tools:ToolsView DataContext="{Binding Tools}" />
+            </TabItem>
+            <TabItem Header="🗣 语音合成">
+                <speech:TtsView DataContext="{Binding Tts}" />
             </TabItem>
         </TabControl>
     </Grid>

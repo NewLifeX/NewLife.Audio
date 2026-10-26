@@ -1,0 +1,343 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Speech"
+             xmlns:tts="using:NewLife.Audio.Tts"
+             x:Class="AudioStudio.Views.Speech.TtsView"
+             x:DataType="vm:TtsViewModel">
+
+    <Grid RowDefinitions="*,Auto" Margin="8">
+        <TabControl Grid.Row="0">
+
+            <!-- ═══ 合成测试 ═══ -->
+            <TabItem Header="🎯 合成测试">
+                <Grid RowDefinitions="Auto,Auto,Auto,Auto,*" Margin="4" RowSpacing="8">
+
+                    <!-- 文本 -->
+                    <Grid Grid.Row="0" RowDefinitions="Auto,Auto,Auto" RowSpacing="4">
+                        <TextBlock Grid.Row="0" Text="待合成文本" FontSize="12" FontWeight="SemiBold" />
+                        <TextBox Grid.Row="1" Text="{Binding Text}" AcceptsReturn="True" Height="64"
+                                 TextWrapping="Wrap" PlaceholderText="输入要合成的文本" />
+                        <StackPanel Grid.Row="2" Orientation="Horizontal" Spacing="6">
+                            <TextBlock Text="示例:" VerticalAlignment="Center" FontSize="12" />
+                            <Button Content="告警" FontSize="11" Padding="8,2"
+                                    Command="{Binding ApplyPresetCommand}" CommandParameter="alert" />
+                            <Button Content="英文" FontSize="11" Padding="8,2"
+                                    Command="{Binding ApplyPresetCommand}" CommandParameter="english" />
+                            <Button Content="数字" FontSize="11" Padding="8,2"
+                                    Command="{Binding ApplyPresetCommand}" CommandParameter="number" />
+                            <Button Content="长文本" FontSize="11" Padding="8,2"
+                                    Command="{Binding ApplyPresetCommand}" CommandParameter="long" />
+                            <Button Content="中英混排" FontSize="11" Padding="8,2"
+                                    Command="{Binding ApplyPresetCommand}" CommandParameter="mixed" />
+                        </StackPanel>
+                    </Grid>
+
+                    <!-- 引擎与音色 -->
+                    <Grid Grid.Row="1" ColumnDefinitions="*,*" ColumnSpacing="12" RowDefinitions="Auto,Auto,Auto,Auto" RowSpacing="4">
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="引擎" FontSize="12" FontWeight="SemiBold" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="音色（留空用默认）" FontSize="12" FontWeight="SemiBold" />
+                        <ComboBox Grid.Row="1" Grid.Column="0" ItemsSource="{Binding EngineOptions}"
+                                  SelectedItem="{Binding SelectedEngine}" HorizontalAlignment="Stretch">
+                            <ComboBox.ItemTemplate>
+                                <DataTemplate x:DataType="vm:TtsEngineOption">
+                                    <StackPanel Orientation="Vertical" Margin="0,2">
+                                        <TextBlock Text="{Binding Name}" FontSize="12" />
+                                        <TextBlock Text="{Binding Description}" FontSize="10" Opacity="0.7" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ComboBox.ItemTemplate>
+                        </ComboBox>
+                        <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="*,Auto" ColumnSpacing="6" VerticalAlignment="Top">
+                            <TextBox Grid.Column="0" Text="{Binding Voice}" PlaceholderText="音色标识或留空" />
+                            <Button Grid.Column="1" Content="枚举音色" Command="{Binding RefreshEngineCommand}" />
+                        </Grid>
+
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="已识别音色（选中即回填）" FontSize="11" Opacity="0.7" Margin="0,4,0,0" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="引擎参数与高级能力见上方两个页签" FontSize="11" Opacity="0.7" Margin="0,4,0,0" />
+                        <ListBox Grid.Row="3" Grid.Column="0" Height="78" ItemsSource="{Binding Voices}"
+                                 SelectedItem="{Binding SelectedVoice}" BorderThickness="1">
+                            <ListBox.ItemTemplate>
+                                <DataTemplate x:DataType="tts:TtsVoice">
+                                    <StackPanel Orientation="Horizontal" Spacing="6">
+                                        <TextBlock Text="{Binding Name}" FontSize="11" />
+                                        <TextBlock Text="{Binding Culture}" FontSize="11" Opacity="0.6" />
+                                        <TextBlock Text="{Binding Gender}" FontSize="11" Opacity="0.6" />
+                                    </StackPanel>
+                                </DataTemplate>
+                            </ListBox.ItemTemplate>
+                        </ListBox>
+                        <TextBlock Grid.Row="3" Grid.Column="1" Text="{Binding EngineStatus}"
+                                   FontSize="11" Opacity="0.75" TextWrapping="Wrap" VerticalAlignment="Top" />
+                    </Grid>
+
+                    <!-- 参数 -->
+                    <Grid Grid.Row="2" ColumnDefinitions="Auto,*,Auto,*,Auto,Auto" ColumnSpacing="8">
+                        <TextBlock Grid.Column="0" Text="{Binding Rate, StringFormat='语速 {0:F2}x'}" VerticalAlignment="Center" FontSize="12" />
+                        <Slider Grid.Column="1" Minimum="0.5" Maximum="2" TickFrequency="0.1"
+                                IsSnapToTickEnabled="True" Value="{Binding Rate}" />
+                        <TextBlock Grid.Column="2" Text="{Binding Volume, StringFormat='音量 {0:F2}'}" VerticalAlignment="Center" FontSize="12" />
+                        <Slider Grid.Column="3" Minimum="0" Maximum="1" TickFrequency="0.05"
+                                IsSnapToTickEnabled="True" Value="{Binding Volume}" />
+                        <CheckBox Grid.Column="4" Content="磁盘缓存" IsChecked="{Binding UseCache}" FontSize="12" />
+                        <CheckBox Grid.Column="5" Content="用客户端默认选项" IsChecked="{Binding UseClientDefault}"
+                                  FontSize="12" ToolTip.Tip="勾选后不给单次调用传选项，改用 TtsClient.Options 的默认值" />
+                    </Grid>
+
+                    <!-- 用法按钮 -->
+                    <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                            BorderThickness="1" CornerRadius="4" Padding="8">
+                        <WrapPanel Orientation="Horizontal">
+                            <Button Content="▶ 直接播报" Command="{Binding SpeakCommand}" Margin="0,0,6,4" />
+                            <Button Content="■ 停止" Command="{Binding StopSpeakCommand}" Margin="0,0,6,4" />
+                            <Button Content="💾 保存 WAV" Command="{Binding SaveWavCommand}" Margin="0,0,6,4" />
+                            <Button Content="💾 保存 PCM" Command="{Binding SavePcmCommand}" Margin="0,0,6,4" />
+                            <Button Content="🌊 流式统计" Command="{Binding StreamProbeCommand}" Margin="0,0,6,4" />
+                            <Button Content="🔊 回放文件" Command="{Binding PlayLastFileCommand}" Margin="0,0,6,4" />
+                            <Button Content="✅ 全部用法自检" Command="{Binding RunAllCommand}" Margin="0,0,6,4" />
+                            <Button Content="📂 输出目录" Command="{Binding OpenOutputFolderCommand}" Margin="0,0,6,4" />
+                            <Button Content="清空日志" Command="{Binding ClearLogCommand}" Margin="0,0,0,4" />
+                        </WrapPanel>
+                    </Border>
+
+                    <!-- 结果与日志 -->
+                    <Grid Grid.Row="4" ColumnDefinitions="*,*" ColumnSpacing="8">
+                        <Grid Grid.Column="0" RowDefinitions="Auto,*" RowSpacing="4">
+                            <TextBlock Grid.Row="0" Text="最近一次结果" FontSize="12" FontWeight="SemiBold" />
+                            <Border Grid.Row="1" BorderThickness="1" CornerRadius="4" Padding="6"
+                                    Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                                    <SelectableTextBlock Text="{Binding ResultText}" FontSize="12"
+                                                         FontFamily="Consolas" TextWrapping="Wrap" />
+                                </ScrollViewer>
+                            </Border>
+                        </Grid>
+                        <Grid Grid.Column="1" RowDefinitions="Auto,*" RowSpacing="4">
+                            <TextBlock Grid.Row="0" Text="日志" FontSize="12" FontWeight="SemiBold" />
+                            <Border Grid.Row="1" BorderThickness="1" CornerRadius="4">
+                                <ListBox ItemsSource="{Binding Log}" BorderThickness="0">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding}" FontSize="11" FontFamily="Consolas"
+                                                       TextWrapping="Wrap" Margin="2,1" />
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                        </Grid>
+                    </Grid>
+                </Grid>
+            </TabItem>
+
+            <!-- ═══ 引擎参数 ═══ -->
+            <TabItem Header="⚙ 引擎参数">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4" Spacing="8">
+                        <TextBlock Text="参数修改后，下一次合成操作会自动重建引擎并生效"
+                                   FontSize="12" Opacity="0.75" TextWrapping="Wrap" />
+
+                        <!-- HTTP -->
+                        <Expander Header="在线服务（HTTP）参数" IsExpanded="True" IsVisible="{Binding IsHttpEngine}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto,Auto,Auto"
+                                  ColumnSpacing="8" RowSpacing="6" Margin="0,6,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="服务地址" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding HttpUrl}"
+                                         PlaceholderText="http://127.0.0.1:8080/tts，支持 {text} {voice} {speed}" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="方法 / 类型" VerticalAlignment="Center" />
+                                <Grid Grid.Row="1" Grid.Column="1" ColumnDefinitions="120,*" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" Text="{Binding HttpMethod}" />
+                                    <TextBox Grid.Column="1" Text="{Binding HttpContentType}" />
+                                </Grid>
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="请求体模板" VerticalAlignment="Top" Margin="0,4,0,0" />
+                                <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding HttpBodyTemplate}"
+                                         AcceptsReturn="True" Height="60" TextWrapping="Wrap"
+                                         PlaceholderText="支持 {text} {text_json} {voice} {speed}" />
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="返回类型" VerticalAlignment="Center" />
+                                <ComboBox Grid.Row="3" Grid.Column="1" ItemsSource="{Binding ResponseKinds}"
+                                          SelectedItem="{Binding HttpResponseKind}" HorizontalAlignment="Left" MinWidth="140" />
+
+                                <TextBlock Grid.Row="4" Grid.Column="0" Text="采样率 / 超时" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="4" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <NumericUpDown Value="{Binding HttpSampleRate}" Minimum="8000" Maximum="48000"
+                                                   Increment="1000" FormatString="0" Width="140" />
+                                    <TextBlock Text="Hz" VerticalAlignment="Center" />
+                                    <NumericUpDown Value="{Binding HttpTimeout}" Minimum="1" Maximum="300"
+                                                   Increment="5" FormatString="0" Width="120" />
+                                    <TextBlock Text="秒" VerticalAlignment="Center" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="5" Grid.Column="0" Text="请求头" VerticalAlignment="Center" />
+                                <Grid Grid.Row="5" Grid.Column="1" ColumnDefinitions="*,*" ColumnSpacing="8">
+                                    <TextBox Grid.Column="0" Text="{Binding HttpHeaderKey}" PlaceholderText="Authorization" />
+                                    <TextBox Grid.Column="1" Text="{Binding HttpHeaderValue}" PlaceholderText="Bearer xxx" />
+                                </Grid>
+                            </Grid>
+                        </Expander>
+
+                        <!-- 子进程 -->
+                        <Expander Header="子进程合成器（piper 等）参数" IsExpanded="True" IsVisible="{Binding IsProcessEngine}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto,Auto,Auto"
+                                  ColumnSpacing="8" RowSpacing="6" Margin="0,6,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="可执行文件" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding ProcessFileName}" PlaceholderText="piper 或完整路径" />
+
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="参数模板" VerticalAlignment="Top" Margin="0,4,0,0" />
+                                <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding ProcessArguments}"
+                                         AcceptsReturn="True" Height="56" TextWrapping="Wrap"
+                                         PlaceholderText="支持 {text} {voice} {speed} {rate} {length_scale}" />
+
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="输出格式" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                                    <ComboBox ItemsSource="{Binding OutputKinds}" SelectedItem="{Binding ProcessOutputKind}"
+                                              MinWidth="120" />
+                                    <TextBlock Text="采样率" VerticalAlignment="Center" />
+                                    <NumericUpDown Value="{Binding ProcessSampleRate}" Minimum="8000" Maximum="48000"
+                                                   Increment="500" FormatString="0" Width="130" />
+                                    <TextBlock Text="声道" VerticalAlignment="Center" />
+                                    <NumericUpDown Value="{Binding ProcessChannels}" Minimum="1" Maximum="2"
+                                                   Increment="1" FormatString="0" Width="90" />
+                                    <TextBlock Text="超时" VerticalAlignment="Center" />
+                                    <NumericUpDown Value="{Binding ProcessTimeout}" Minimum="1" Maximum="600"
+                                                   Increment="5" FormatString="0" Width="110" />
+                                </StackPanel>
+
+                                <TextBlock Grid.Row="3" Grid.Column="0" Text="开关" VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="3" Grid.Column="1" Orientation="Horizontal" Spacing="12">
+                                    <CheckBox Content="文本写入 stdin" IsChecked="{Binding ProcessWriteToStdin}" />
+                                    <CheckBox Content="文本规范化" IsChecked="{Binding ProcessNormalize}" />
+                                    <CheckBox Content="标点统一" IsChecked="{Binding ProcessUnifyPunctuation}" />
+                                </StackPanel>
+                            </Grid>
+                        </Expander>
+
+                        <!-- espeak -->
+                        <Expander Header="espeak-ng 参数" IsExpanded="True" IsVisible="{Binding IsEspeakEngine}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto"
+                                  ColumnSpacing="8" RowSpacing="6" Margin="0,6,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="可执行文件" VerticalAlignment="Center" />
+                                <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding EspeakFileName}"
+                                         PlaceholderText="留空依次查找 espeak-ng、espeak" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="语速（词/分）" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding EspeakWordsPerMinute}"
+                                               Minimum="80" Maximum="500" Increment="10" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="音量（0~200）" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding EspeakAmplitude}"
+                                               Minimum="0" Maximum="200" Increment="10" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                            </Grid>
+                        </Expander>
+
+                        <!-- macOS say -->
+                        <Expander Header="macOS say 参数" IsExpanded="True" IsVisible="{Binding IsMacSayEngine}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto"
+                                  ColumnSpacing="8" RowSpacing="6" Margin="0,6,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="语速（词/分）" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding SayWordsPerMinute}"
+                                               Minimum="80" Maximum="500" Increment="10" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="采样率" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding SaySampleRate}"
+                                               Minimum="8000" Maximum="48000" Increment="500" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                            </Grid>
+                        </Expander>
+
+                        <!-- 静音引擎 -->
+                        <Expander Header="静音引擎（Null）参数" IsExpanded="True" IsVisible="{Binding IsNullEngine}">
+                            <Grid ColumnDefinitions="Auto,*" RowDefinitions="Auto,Auto,Auto"
+                                  ColumnSpacing="8" RowSpacing="6" Margin="0,6,0,0">
+                                <TextBlock Grid.Row="0" Grid.Column="0" Text="每字符时长（秒）" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="0" Grid.Column="1" Value="{Binding NullSecondsPerChar}"
+                                               Minimum="0" Maximum="5" Increment="0.02" FormatString="0.00"
+                                               HorizontalAlignment="Left" Width="150" />
+                                <TextBlock Grid.Row="1" Grid.Column="0" Text="分块时长（毫秒）" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="1" Grid.Column="1" Value="{Binding NullChunkMilliseconds}"
+                                               Minimum="10" Maximum="500" Increment="10" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                                <TextBlock Grid.Row="2" Grid.Column="0" Text="采样率" VerticalAlignment="Center" />
+                                <NumericUpDown Grid.Row="2" Grid.Column="1" Value="{Binding NullSampleRate}"
+                                               Minimum="8000" Maximum="48000" Increment="1000" FormatString="0"
+                                               HorizontalAlignment="Left" Width="150" />
+                            </Grid>
+                        </Expander>
+
+                        <TextBlock Text="系统语音（SAPI）无需额外参数，直接使用系统已安装音色；其余引擎的音色标识由其自身解析。"
+                                   FontSize="12" Opacity="0.7" TextWrapping="Wrap" IsVisible="{Binding IsSystemEngine}" />
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+
+            <!-- ═══ 高级能力 ═══ -->
+            <TabItem Header="🧪 高级能力">
+                <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+                    <StackPanel Margin="4" Spacing="10">
+
+                        <!-- 文本规范化 -->
+                        <Border BorderThickness="1" CornerRadius="4" Padding="8">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="文本规范化（TtsText / ChineseNumber）" FontSize="13" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding NormalizeInput}" AcceptsReturn="True" Height="52" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="数字读法" VerticalAlignment="Center" FontSize="12" />
+                                    <ComboBox ItemsSource="{Binding NumberModes}" SelectedItem="{Binding NumberMode}"
+                                              MinWidth="130" />
+                                    <Button Content="规范化" Command="{Binding NormalizeTextCommand}" />
+                                </StackPanel>
+                                <Border BorderThickness="1" CornerRadius="4" Padding="6"
+                                        Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                                    <ScrollViewer MaxHeight="160" MinHeight="90" HorizontalScrollBarVisibility="Disabled">
+                                        <SelectableTextBlock Text="{Binding NormalizeOutput}" FontSize="12"
+                                                             FontFamily="Consolas" TextWrapping="Wrap" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 磁盘缓存 -->
+                        <Border BorderThickness="1" CornerRadius="4" Padding="8">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="磁盘缓存（TtsCache / CachedTtsEngine）" FontSize="13" FontWeight="SemiBold" />
+                                <CheckBox Content="给当前引擎挂载磁盘缓存（主界面同样可切换）" IsChecked="{Binding UseCache}" />
+                                <TextBlock Text="{Binding CacheInfo}" FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <Button Content="刷新统计" Command="{Binding RefreshCacheInfoCommand}" />
+                                    <Button Content="清空缓存" Command="{Binding ClearCacheCommand}" />
+                                    <Button Content="打开输出目录" Command="{Binding OpenOutputFolderCommand}" />
+                                </StackPanel>
+                                <TextBlock Text="{Binding LastSavedPathDisplay, StringFormat='最近输出：{0}'}"
+                                           FontSize="11" Opacity="0.75" TextWrapping="Wrap" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- 预生成 -->
+                        <Border BorderThickness="1" CornerRadius="4" Padding="8">
+                            <StackPanel Spacing="6">
+                                <TextBlock Text="预生成语音库（TtsPreGenerated）" FontSize="13" FontWeight="SemiBold" />
+                                <TextBox Text="{Binding PregenerateTexts}" AcceptsReturn="True" Height="70"
+                                         TextWrapping="Wrap" PlaceholderText="每行一句固定播报语" />
+                                <Button Content="预生成" Command="{Binding PregenerateCommand}" HorizontalAlignment="Left" />
+                                <Border BorderThickness="1" CornerRadius="4" Padding="6"
+                                        Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}">
+                                    <ScrollViewer MaxHeight="140" MinHeight="60" HorizontalScrollBarVisibility="Disabled">
+                                        <SelectableTextBlock Text="{Binding PregenerateInfo}" FontSize="12"
+                                                             FontFamily="Consolas" TextWrapping="Wrap" />
+                                    </ScrollViewer>
+                                </Border>
+                            </StackPanel>
+                        </Border>
+                    </StackPanel>
+                </ScrollViewer>
+            </TabItem>
+        </TabControl>
+
+        <!-- 状态栏 -->
+        <Grid Grid.Row="1" ColumnDefinitions="*,Auto" Margin="4,6,4,0">
+            <TextBlock Grid.Column="0" Text="{Binding Status}" FontSize="12" VerticalAlignment="Center" />
+            <ProgressBar Grid.Column="1" Width="120" Height="8" IsIndeterminate="True"
+                         IsVisible="{Binding IsBusy}" />
+        </Grid>
+    </Grid>
+</UserControl>

@@ -4,6 +4,7 @@ using AudioStudio.ViewModels.Convert;
 using AudioStudio.ViewModels.Devices;
 using AudioStudio.ViewModels.Record;
 using AudioStudio.ViewModels.Dsp;
+using AudioStudio.ViewModels.Speech;
 using AudioStudio.ViewModels.Tools;
 
 namespace AudioStudio.ViewModels;
@@ -29,6 +30,9 @@ public partial class MainViewModel : ViewModelBase
     /// <summary>编解码工具</summary>
     public ToolsViewModel Tools { get; }
 
+    /// <summary>语音合成测试</summary>
+    public TtsViewModel Tts { get; }
+
     /// <summary>当前选中 Tab 索引</summary>
     [ObservableProperty]
     private Int32 _selectedTab;
@@ -41,5 +45,6 @@ public partial class MainViewModel : ViewModelBase
         Recording = new RecordingViewModel();
         Dsp = new DspViewModel();
         Tools = new ToolsViewModel();
+        Tts = new TtsViewModel();
     }
 }
