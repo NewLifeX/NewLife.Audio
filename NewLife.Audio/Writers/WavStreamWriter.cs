@@ -27,10 +27,13 @@ public sealed class WavStreamWriter : AudioStreamWriter
     /// <summary>是否在结束时回填长度。仅当输出流可 seek 时生效</summary>
     public Boolean PatchSize { get; set; }
 
+    /// <summary>可选的 LIST/INFO 块（含块头），在 fmt 之后、data 之前写入</summary>
+    public Byte[] ListInfo { get; set; }
+
     /// <summary>audio/wav</summary>
     public override String ContentType => "audio/wav";
 
-    /// <summary>写入 WAV 头（44 字节 RIFF + fmt + data chunk）</summary>
+    /// <summary>写入 WAV 头（RIFF + fmt + 可选 LIST/INFO + data chunk）</summary>
     /// <param name="stream">输出流</param>
     /// <param name="cancellationToken">取消令牌</param>
     public override async ValueTask WriteHeaderAsync(Stream stream, CancellationToken cancellationToken = default)
@@ -46,7 +49,9 @@ public sealed class WavStreamWriter : AudioStreamWriter
         var maxDataSize = 0x7FFFFFFF;
         var riffSize = maxDataSize - 8;
 
-        var header = new Byte[44];
+        var info = ListInfo;
+        var infoLength = info?.Length ?? 0;
+        var header = new Byte[44 + infoLength];
         var writer = new SpanWriter(header.AsSpan());
 
         // RIFF chunk
@@ -64,7 +69,12 @@ public sealed class WavStreamWriter : AudioStreamWriter
         writer.Write((Int16)blockAlign);
         writer.Write((Int16)bitsPerSample);
 
+        // 可选的 LIST/INFO 标签块
+        if (infoLength > 0) Array.Copy(info, 0, header, 36, infoLength);
+
         // data sub-chunk
+        var dataHeader = 36 + infoLength;
+        writer = new SpanWriter(header.AsSpan(dataHeader));
         writer.Write(0x61746164u);       // "data"
         writer.Write(maxDataSize);
 
@@ -72,6 +82,43 @@ public sealed class WavStreamWriter : AudioStreamWriter
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
 
         _headerWritten = true;
+    }
+
+    /// <summary>在 data 块之前插入 LIST/INFO 标签块（要求可定位且尚未写入音频数据）</summary>
+    /// <param name="stream">输出流</param>
+    /// <param name="listInfo">LIST/INFO 块字节（含块头）</param>
+    /// <returns>插入成功返回 true；流不可定位或已有数据返回 false</returns>
+    /// <remarks>头部已按 44 字节写出，这里把其中的 data 块头后移，为标签块腾出空间。</remarks>
+    public Boolean InsertListInfo(Stream stream, Byte[] listInfo)
+    {
+        if (listInfo == null || listInfo.Length == 0) return false;
+        if (stream == null || !stream.CanSeek || _dataSize > 0) return false;
+
+        var end = stream.Position;
+        try
+        {
+            ListInfo = listInfo;
+
+            stream.Position = 36;
+            stream.Write(listInfo, 0, listInfo.Length);
+
+            var header = new Byte[8];
+            var writer = new SpanWriter(header.AsSpan());
+            writer.Write(0x61746164u);       // "data"
+            writer.Write(0x7FFFFFFF);
+
+            stream.Write(header, 0, header.Length);
+            stream.Position = 36L + listInfo.Length + header.Length;
+            stream.Flush();
+        }
+        catch
+        {
+            ListInfo = null;
+            stream.Position = end;
+            return false;
+        }
+
+        return true;
     }
 
     /// <summary>直接写入 PCM 数据（16-bit 有符号整数小端）</summary>
@@ -96,8 +143,9 @@ public sealed class WavStreamWriter : AudioStreamWriter
         var position = stream.Position;
         try
         {
-            var dataSize = (Int32)Math.Min(_dataSize, 0x7FFFFFFF - 36);
-            var riffSize = dataSize + 36;
+            var infoLength = ListInfo?.Length ?? 0;
+            var dataSize = (Int32)Math.Min(_dataSize, 0x7FFFFFFF - 36 - infoLength);
+            var riffSize = dataSize + 36 + infoLength;
 
             var buffer = new Byte[4];
             var writer = new SpanWriter(buffer.AsSpan());
@@ -107,7 +155,7 @@ public sealed class WavStreamWriter : AudioStreamWriter
             await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
 
             writer = new SpanWriter(buffer.AsSpan());
-            stream.Position = 40;
+            stream.Position = 40 + infoLength;
             writer.Write(dataSize);
             await stream.WriteAsync(buffer, cancellationToken).ConfigureAwait(false);
 

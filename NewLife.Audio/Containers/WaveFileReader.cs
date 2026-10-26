@@ -18,6 +18,7 @@ public class WaveFileReader : IAudioContainerReader
     private const UInt32 FmtMagic = 0x20746D66;    // "fmt "
     private const UInt32 DataMagic = 0x61746164;   // "data"
     private const UInt32 Ds64Magic = 0x34367364;   // "ds64"
+    private const UInt32 ListMagic = 0x5453494C;   // "LIST"
 
     private readonly Stream _stream;
     private readonly AudioFormat _format;
@@ -157,6 +158,18 @@ public class WaveFileReader : IAudioContainerReader
                         var ds = new Byte[read];
                         var got = ReadFully(ds, 0, read);
                         if (got >= 16) _ds64DataSize = (Int64)BitConverter.ToUInt64(ds, 8);
+
+                        Skip(size - got + (size & 1));
+                        break;
+                    }
+
+                case ListMagic:
+                    {
+                        // LIST/INFO：常见标签（INAM/IART/IPRD/…），解析后继续查找 data
+                        var read = size < 65536 ? (Int32)size : 65536;
+                        var list = new Byte[read];
+                        var got = ReadFully(list, 0, read);
+                        if (got >= 4) WaveInfoChunk.TryParse(list, 0, got, Metadata);
 
                         Skip(size - got + (size & 1));
                         break;

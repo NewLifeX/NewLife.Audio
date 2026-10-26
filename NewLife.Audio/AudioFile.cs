@@ -231,6 +231,12 @@ public class AudioFile
         using var stream = File.OpenRead(Path);
         switch (Info.Container)
         {
+            case AudioContainerKind.Wav:
+            case AudioContainerKind.Rf64:
+                {
+                    using var reader = new WaveFileReader(stream);
+                    return HasTags(reader.Metadata) ? reader.Metadata : null;
+                }
             case AudioContainerKind.Mp3:
                 {
                     using var reader = new Mp3FileReader(stream);
@@ -313,6 +319,7 @@ public class AudioFile
                 case ".wav":
                     {
                         using var writer = new WaveFileWriter(stream, format);
+                        if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
                         writer.WriteFrame(audio.Data);
                         writer.Flush();
                         break;

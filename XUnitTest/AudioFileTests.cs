@@ -188,6 +188,58 @@ public class AudioFileTests
         }
     }
 
+    [Fact(DisplayName = "WAV 标签写入后可读回且音频不受影响")]
+    public void Wav_Metadata_RoundTrip()
+    {
+        var pcm = BuildSine(Format, 0.2, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm, new AudioWriteOptions
+            {
+                Metadata = new AudioMetadata { Title = "标题", Artist = "作者", Album = "专辑", Genre = "流派", Comment = "注释", Year = 2024, TrackNumber = 7 },
+            });
+
+            var metadata = AudioFile.Open(path).ReadMetadata();
+            Assert.NotNull(metadata);
+            Assert.Equal("标题", metadata.Title);
+            Assert.Equal("作者", metadata.Artist);
+            Assert.Equal("专辑", metadata.Album);
+            Assert.Equal("流派", metadata.Genre);
+            Assert.Equal("注释", metadata.Comment);
+            Assert.Equal(2024, metadata.Year);
+            Assert.Equal(7, metadata.TrackNumber);
+
+            Assert.Equal(pcm, AudioFile.ReadPcm(path).Data);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "WAV 标签写入后 RIFF 长度一致")]
+    public void Wav_Metadata_RiffSizeConsistent()
+    {
+        var pcm = BuildSine(Format, 0.1, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "标题" } });
+
+            var bytes = File.ReadAllBytes(path);
+            var riffSize = BitConverter.ToInt32(bytes, 4);
+            var dataSize = BitConverter.ToInt32(bytes, bytes.Length - pcm.Length - 4);
+
+            Assert.Equal(bytes.Length - 8, riffSize);
+            Assert.Equal(pcm.Length, dataSize);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
     [Fact(DisplayName = "另存为默认沿用源文件标签")]
     public void SaveAs_PreservesMetadata()
     {
