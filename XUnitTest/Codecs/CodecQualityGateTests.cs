@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
+using System.IO;
 using NewLife.Audio;
 using NewLife.Audio.Codecs;
 using NewLife.Data;
@@ -90,6 +91,44 @@ public class CodecQualityGateTests
         Assert.True(decoded.Length > 0);
         var factor = watch.Elapsed.TotalSeconds / seconds;
         Assert.True(factor < 1.0, $"{gate.Name}: 实时因子={factor:F3}，编解码慢于实时（{watch.ElapsedMilliseconds}ms / {seconds}s）");
+    }
+
+    [Theory(DisplayName = "损坏与截断码流只允许抛出明确的无效数据类异常")]
+    [MemberData(nameof(Gates))]
+    public void Decode_CorruptOrTruncatedData_DoesNotThrowUnexpected(Gate gate)
+    {
+        // 随机字节：允许判定为「无效数据/不支持」，但不允许越界、空引用等实现缺陷异常逃逸
+        var garbage = new Byte[64];
+        new Random(20240601).NextBytes(garbage);
+        AssertDecoderEitherWorksOrRejects(gate, garbage, "随机字节");
+
+        // 截断：合法码流砍掉尾部后同样只允许明确拒绝
+        var encoded = gate.Codec.FromPcm(ToBytes(CreateSignal(gate.SampleRate, 0.25)), gate.Option).GetSpan().ToArray();
+        if (encoded.Length > 8)
+        {
+            var truncated = encoded.AsSpan(0, encoded.Length / 3).ToArray();
+            AssertDecoderEitherWorksOrRejects(gate, truncated, "截断码流");
+        }
+    }
+
+    private static void AssertDecoderEitherWorksOrRejects(Gate gate, Byte[] data, String scenario)
+    {
+        try
+        {
+            Assert.NotNull(gate.Codec.ToPcm(data, null));
+        }
+        catch (InvalidDataException)
+        {
+            // 明确判定数据无效，符合预期
+        }
+        catch (NotSupportedException)
+        {
+            // 缺少必要配置（如 AAC 的 AudioSpecificConfig），同样属于明确拒绝
+        }
+        catch (Exception ex)
+        {
+            Assert.Fail($"{gate.Name} 解码{scenario}时抛出未预期异常 {ex.GetType().Name}：{ex.Message}");
+        }
     }
     #endregion
 
