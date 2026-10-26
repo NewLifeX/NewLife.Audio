@@ -229,7 +229,7 @@ internal sealed class Mp3Layer3Encoder
     #endregion
 
     #region 子带分析
-    /// <summary>多相子带分析，把 PCM 变换为 <see cref="_slots"/> 个时隙的子带样本</summary>
+    /// <summary>多相子带分析，把当前帧的 1152 个采样变换为 <see cref="_slots"/> 个时隙的子带样本</summary>
     /// <param name="pcm">交错 PCM</param>
     /// <param name="offset">起始偏移</param>
     /// <param name="channel">声道序号</param>
@@ -256,8 +256,9 @@ internal sealed class Mp3Layer3Encoder
                 var sum = 0f;
                 for (var j = 0; j < 8; j++)
                 {
+                    // ISO 11172-3 分析窗以 X[0] 为最新采样；本项目历史缓冲最新采样在末尾，故倒序取
                     var k = i + 64 * j;
-                    sum += window[k] * hist[k];
+                    sum += window[k] * hist[Mp3EncoderTables.FilterLength - 1 - k];
                 }
                 _y[i] = sum;
             }
