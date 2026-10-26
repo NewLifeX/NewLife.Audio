@@ -427,7 +427,7 @@ public class RtspClient : IDisposable
             "L16" or "L8" => AVTypes.LPCM,
             "MPA" or "MPEG" => AVTypes.MPEGAUDIO,
             "MP4A-LATM" or "MPEG4-GENERIC" => AVTypes.AAC,
-            "OPUS" => AVTypes.Transparent,
+            "OPUS" => AVTypes.Opus,
             _ => AVTypes.Transparent,
         };
 

@@ -61,6 +61,8 @@ public enum AVTypes : Byte
     MP4AUDIO = 27,
     /// <summary>AMR 语音</summary>
     AMR = 28,
+    /// <summary>Opus 音频（RTP 动态负载类型 96 起）</summary>
+    Opus = 29,
 
     /// <summary>透明传输</summary>
     Transparent = 91,

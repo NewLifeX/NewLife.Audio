@@ -1,5 +1,7 @@
+using NewLife;
 using NewLife.Audio.DSP;
 using NewLife.Audio.Writers;
+using NewLife.Audio.Codecs;
 using NewLife.Buffers;
 
 namespace NewLife.Audio.Containers;
@@ -21,11 +23,19 @@ public class OggFileWriter : IAudioContainerWriter
     private Int32 _packetCount;
     private Boolean _headerWritten;
     private Boolean _completed;
+    private Boolean _vorbis;
+    private AudioMetadata _metadata;
 
     private static readonly Random _rnd = new();
 
     /// <summary>音频格式</summary>
     public AudioFormat Format => _format;
+
+    /// <summary>Opus 解码器预跳采样数（48 kHz 时间基），默认 0；本地编码时建议设为 <see cref="NewLife.Audio.Codecs.OpusCodec.GetLookahead(NewLife.Audio.Codecs.OpusOptions)"/>，须在写入第一帧前设置</summary>
+    public Int32 PreSkip { get; set; }
+
+    /// <summary>已写入的音频帧数</summary>
+    public Int32 PacketCount => _packetCount;
 
     /// <summary>初始化 OGG 写入器</summary>
     /// <param name="stream">输出流</param>
@@ -37,39 +47,52 @@ public class OggFileWriter : IAudioContainerWriter
         _format = format ?? throw new ArgumentNullException(nameof(format));
         _codecType = codecType;
         _serialNo = (UInt32)_rnd.Next();
-
-        WriteOggHeaders();
     }
 
     /// <summary>写入元数据（OGG 容器中映射到 VorbisComment / OpusTags）</summary>
-    /// <param name="metadata">音频元数据</param>
+    /// <param name="metadata">音频元数据，须在首帧写入前调用</param>
     public void WriteMetadata(AudioMetadata metadata)
     {
-        // OGG 容器元数据已通过头包写入，此处可扩展为追加 VorbisComment
+        // 头页延迟到首帧或 Flush 时写入，元数据可在构造后补充
+        _metadata = metadata;
     }
 
     /// <summary>写入一帧编码数据</summary>
     /// <param name="frame">编码音频帧</param>
-    public void WriteFrame(ReadOnlySpan<Byte> frame)
+    public void WriteFrame(ReadOnlySpan<Byte> frame) => WriteFrame(frame, -1);
+
+    /// <summary>写入一帧编码数据，并指定该帧解出的每声道样本数</summary>
+    /// <param name="frame">编码音频帧</param>
+    /// <param name="samplesPerFrame">每声道样本数。Vorbis 必填；Opus 传 0 时按 TOC 解析</param>
+    public void WriteFrame(ReadOnlySpan<Byte> frame, Int32 samplesPerFrame)
     {
         if (_completed) return;
 
         if (!_headerWritten)
+        {
+            if (_codecType == AVTypes.Vorbis && !_vorbis)
+                throw new InvalidOperationException(L.T("Vorbis headers must be written before audio frames."));
             WriteOggHeaders();
+        }
 
         _packetCount++;
+        var samples = samplesPerFrame >= 0
+            ? samplesPerFrame
+            : _vorbis
+                ? 1024
+                : (OpusPacketHeader.TryParse(frame, out var header) ? header.TotalSamples : 960);
+        _granulePosition += samples;
+
         var page = BuildOggPage(frame, _granulePosition, headerType: 0x00);
         _stream.Write(page, 0, page.Length);
-
-        // 更新 granule position（每帧增加 samplesPerFrame）
-        var samplesPerFrame = _codecType == AVTypes.Transparent ? 960 : 1024; // Opus: 20ms@48k, Vorbis: 默认
-        _granulePosition += samplesPerFrame;
     }
 
     /// <summary>完成写入并刷新缓冲区</summary>
     public void Flush()
     {
         if (_completed) return;
+
+        if (!_headerWritten) WriteOggHeaders();
         _completed = true;
 
         // 写入 EOS 页
@@ -90,28 +113,33 @@ public class OggFileWriter : IAudioContainerWriter
 
     #region 头包
 
+    private Boolean IsOpus => !_vorbis && (_codecType == AVTypes.Opus || _codecType == AVTypes.Transparent);
+
     private void WriteOggHeaders()
     {
-        if (_headerWritten) return;
+        if (_headerWritten || _vorbis) return;
 
-        if (_codecType == AVTypes.Transparent)
+        if (IsOpus)
         {
+            if (_format.Channels is not (1 or 2)) throw new NotSupportedException(L.T("Ogg Opus supports 1 or 2 channels."));
+            if (PreSkip < 0 || PreSkip > 65535) throw new ArgumentOutOfRangeException(nameof(PreSkip), L.T("Opus pre-skip must be between 0 and 65535."));
+
             // Opus: OpusHead + OpusTags
             var opusHead = BuildOpusHeadPacket();
             var page0 = BuildOggPage(opusHead, granulePosition: 0, headerType: 0x02); // BOS
             _stream.Write(page0, 0, page0.Length);
 
-            var opusTags = BuildOpusTagsPacket("NewLife.Audio");
+            var opusTags = BuildOpusTagsPacket("NewLife.Audio", _metadata);
             var page1 = BuildOggPage(opusTags, granulePosition: 0, headerType: 0x00);
             _stream.Write(page1, 0, page1.Length);
+
+            _granulePosition = PreSkip;
+            _headerWritten = true;
         }
         else
         {
-            // Vorbis: 需外部提供头包，此处写入占位
-            // 调用方应使用 WriteVorbisHeaders 方法写入实际头包
+            // Vorbis: 需外部提供头包，调用方应使用 WriteVorbisHeaders
         }
-
-        _headerWritten = true;
     }
 
     /// <summary>写入 Vorbis 三个头包（Identification / Comment / Setup）</summary>
@@ -122,16 +150,18 @@ public class OggFileWriter : IAudioContainerWriter
     {
         if (_headerWritten) return;
 
+        _vorbis = true;
+
         // Identification 头页（BOS）
         var page0 = BuildOggPage(identification, granulePosition: 0, headerType: 0x02);
         _stream.Write(page0, 0, page0.Length);
 
-        // Comment + Setup 合并在一个页中（推荐做法）
-        var combined = new Byte[comment.Length + setup.Length];
-        comment.CopyTo(combined, 0);
-        setup.CopyTo(combined, comment.Length);
-        var page1 = BuildOggPage(combined, granulePosition: 0, headerType: 0x00);
+        // Comment 与 Setup 各占一页，保证 OggFileReader 能把它们识别为两个独立头包
+        var page1 = BuildOggPage(comment, granulePosition: 0, headerType: 0x00);
         _stream.Write(page1, 0, page1.Length);
+
+        var page2 = BuildOggPage(setup, granulePosition: 0, headerType: 0x00);
+        _stream.Write(page2, 0, page2.Length);
 
         _headerWritten = true;
     }
@@ -148,13 +178,11 @@ public class OggFileWriter : IAudioContainerWriter
     private Byte[] BuildOggPage(ReadOnlySpan<Byte> payload, Int64 granulePosition, Byte headerType)
     {
         var payloadLen = payload.Length;
-        // 计算段表：每段最多 255 字节
+        // 计算段表：每段最多 255 字节；整包长度是 255 的整数倍时，末尾仍需要一个 0 长度段作为包结束标记。
+        // EOS 空页使用 0 个段（页面不含数据包），避免解码器把空包当成非法 Opus 包。
         var fullSegments = payloadLen / 255;
         var lastSegmentSize = payloadLen % 255;
-        var segmentCount = fullSegments + (lastSegmentSize > 0 ? 1 : 0);
-
-        // 边界情况：payload 为空时仍需 1 个段（长度为 0）
-        if (segmentCount == 0) segmentCount = 1;
+        var segmentCount = payloadLen == 0 && headerType == 0x04 ? 0 : fullSegments + 1;
 
         var headerSize = 27 + segmentCount;
         var page = new Byte[headerSize + payloadLen];
@@ -182,10 +210,8 @@ public class OggFileWriter : IAudioContainerWriter
         // 27+: segment table
         for (var i = 0; i < fullSegments; i++)
             writer.WriteByte(255);
-        if (lastSegmentSize > 0)
+        if (segmentCount > 0)
             writer.WriteByte((Byte)lastSegmentSize);
-        if (payloadLen == 0)
-            writer.WriteByte(0);
 
         // 拷贝负载
         if (payloadLen > 0)
@@ -203,31 +229,49 @@ public class OggFileWriter : IAudioContainerWriter
 
     #region Opus 包构建
 
-    private const Int32 OpusSamplesPerFrame = 960;
-    private const Int32 OpusPreSkip = 3840;
-
     /// <summary>构建 OpusHead 标识包（19 字节）</summary>
-    private static Byte[] BuildOpusHeadPacket()
+    private Byte[] BuildOpusHeadPacket()
     {
         var packet = new Byte[19];
         var writer = new SpanWriter(packet.AsSpan());
-        writer.Write(0x7375704Fu);       // "Opus"
-        writer.Write(0x64616548u);       // "Head"
-        writer.WriteByte(1);             // Version: 1
-        writer.WriteByte(1);             // Channels: 1
-        writer.Write((Int16)OpusPreSkip); // Pre-skip: 3840
-        writer.Write(48000);             // Input sample rate: 48000
-        writer.Write((Int16)0);          // Output gain: 0
-        writer.WriteByte(0);             // Channel mapping family: 0
+        writer.Write(0x7375704Fu);              // "Opus"
+        writer.Write(0x64616548u);              // "Head"
+        writer.WriteByte(1);                    // Version: 1
+        writer.WriteByte((Byte)_format.Channels); // Channels
+        writer.Write((Int16)PreSkip);           // Pre-skip
+        writer.Write(_format.SampleRate);       // Input sample rate
+        writer.Write((Int16)0);                 // Output gain: 0
+        writer.WriteByte(0);                    // Channel mapping family: 0
         return packet;
     }
 
     /// <summary>构建 OpusTags 注释包</summary>
     /// <param name="vendor">厂商字符串</param>
-    private static Byte[] BuildOpusTagsPacket(String vendor)
+    /// <param name="metadata">音频元数据</param>
+    private static Byte[] BuildOpusTagsPacket(String vendor, AudioMetadata metadata)
     {
+        var comments = new List<String>();
+        if (metadata != null)
+        {
+            if (!String.IsNullOrEmpty(metadata.Title)) comments.Add("TITLE=" + metadata.Title);
+            if (!String.IsNullOrEmpty(metadata.Artist)) comments.Add("ARTIST=" + metadata.Artist);
+            if (!String.IsNullOrEmpty(metadata.Album)) comments.Add("ALBUM=" + metadata.Album);
+            if (!String.IsNullOrEmpty(metadata.Genre)) comments.Add("GENRE=" + metadata.Genre);
+            if (metadata.TrackNumber > 0) comments.Add("TRACKNUMBER=" + metadata.TrackNumber);
+            if (metadata.Year > 0) comments.Add("DATE=" + metadata.Year);
+            if (!String.IsNullOrEmpty(metadata.Comment)) comments.Add("COMMENT=" + metadata.Comment);
+        }
+
         var vendorBytes = System.Text.Encoding.UTF8.GetBytes(vendor);
+        var commentBytes = new List<Byte[]>(comments.Count);
         var packetLen = 8 + 4 + vendorBytes.Length + 4;
+        foreach (var comment in comments)
+        {
+            var bytes = System.Text.Encoding.UTF8.GetBytes(comment);
+            commentBytes.Add(bytes);
+            packetLen += 4 + bytes.Length;
+        }
+
         var packet = new Byte[packetLen];
         var writer = new SpanWriter(packet.AsSpan());
         writer.Write(0x7375704Fu);       // "Opus"
@@ -235,7 +279,13 @@ public class OggFileWriter : IAudioContainerWriter
         writer.Write(vendorBytes.Length);
         vendorBytes.AsSpan().CopyTo(writer.GetSpan(vendorBytes.Length));
         writer.Advance(vendorBytes.Length);
-        writer.Write(0);                 // User comment list length: 0
+        writer.Write(commentBytes.Count);
+        foreach (var bytes in commentBytes)
+        {
+            writer.Write(bytes.Length);
+            bytes.AsSpan().CopyTo(writer.GetSpan(bytes.Length));
+            writer.Advance(bytes.Length);
+        }
         return packet;
     }
 

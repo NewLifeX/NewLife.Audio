@@ -14,6 +14,8 @@ public class AudioCodecFactory
 {
     private readonly CodecRegistry _registry = new();
     private readonly List<IAudioChipHeader> _chipHeaders = [];
+    private readonly Dictionary<AVTypes, IAudioCodec> _statefulCodecs = [];
+    private readonly Object _sync = new();
     private IAudioChipHeader _lastChipHeader;
 
     /// <summary>编解码器注册表</summary>
@@ -37,6 +39,7 @@ public class AudioCodecFactory
         _registry.RegisterFactory(AVTypes.AAC, () => new AacCodec());
         _registry.RegisterFactory(AVTypes.AACLC, () => new AacCodec());
         _registry.RegisterFactory(AVTypes.HEAAC, () => new AacCodec());
+        _registry.RegisterFactory(AVTypes.Opus, () => new OpusCodec());
         _registry.RegisterFactory(AVTypes.Transparent, () => new OpusCodec());
 
         // 注册芯片头处理器（按优先级排序）
@@ -49,6 +52,40 @@ public class AudioCodecFactory
     /// <param name="avType">音频编码类型</param>
     /// <param name="codec">编解码器实例</param>
     public void Register(AVTypes avType, IAudioCodec codec) => _registry.Register(avType, codec);
+
+    /// <summary>重置指定编码类型的有状态编解码器。开始新音频流或切换参数时调用</summary>
+    /// <param name="avType">音频编码类型</param>
+    public void ResetCodec(AVTypes avType)
+    {
+        lock (_sync)
+        {
+            if (_statefulCodecs.TryGetValue(avType, out var codec))
+            {
+                if (codec is OpusCodec opus)
+                    opus.Reset();
+                else if (codec is IDisposable disposable)
+                    disposable.Dispose();
+
+                _statefulCodecs.Remove(avType);
+            }
+
+            _lastChipHeader = null;
+        }
+    }
+
+    private IAudioCodec GetCodec(AVTypes avType)
+    {
+        lock (_sync)
+        {
+            if (_statefulCodecs.TryGetValue(avType, out var codec)) return codec;
+
+            codec = _registry.GetCodec(avType);
+            if (_registry.IsFactory(avType) && codec is ICodecInfo info && info.IsStateful)
+                _statefulCodecs[avType] = codec;
+
+            return codec;
+        }
+    }
 
     /// <summary>去除芯片头。按注册顺序尝试所有芯片头处理器</summary>
     /// <param name="data">设备数据</param>
@@ -94,7 +131,7 @@ public class AudioCodecFactory
     {
         data = TrimHI(data, out _);
 
-        var codec = _registry.GetCodec(avType);
+        var codec = GetCodec(avType);
         return codec.ToPcm(data.GetSpan(), null);
     }
 
@@ -105,7 +142,7 @@ public class AudioCodecFactory
     /// <exception cref="NotSupportedException"></exception>
     public IPacket FromPcm(AVTypes avType, IPacket pcm)
     {
-        var codec = _registry.GetCodec(avType);
+        var codec = GetCodec(avType);
         var rs = codec.FromPcm(pcm.GetSpan(), null);
 
         // 如果有上次去除的芯片头，还原之
