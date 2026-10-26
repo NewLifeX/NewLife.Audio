@@ -40,7 +40,7 @@ Conversion PCM bidirectionnelle pour plus de 10 codecs audio, entièrement en C#
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** ADPCM à sous-bandes
 - **IMA ADPCM** (DVI4)
-- **Opus** (implémentation CELT entièrement managée)
+- **Opus** (implémentation managée autonome en cours : parseur de paquets RFC 6716 + codeur de plage, avec ffmpeg en secours)
 - **MP3** (décodage Huffman + quantification inverse + IMDCT + synthèse par sous-bandes)
 - **AAC** (décodage AAC-LC/HE-AAC entièrement managé ; encodage AAC-LC ; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (LPC fixe + codage résiduel Rice + MD5)

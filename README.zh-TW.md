@@ -40,7 +40,7 @@ NuGet：`NewLife.Audio`
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** 子頻帶 ADPCM
 - **IMA ADPCM**（DVI4）
-- **Opus**（純受控 CELT 實作）
+- **Opus**（自研純託管進行中：RFC 6716 封包解析 + 範圍編解碼器，系統 ffmpeg 降級）
 - **MP3**（Huffman 解碼 + 反量化 + IMDCT + 子頻帶合成）
 - **AAC**（純託管 AAC-LC/HE-AAC 解碼；AAC-LC 編碼；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 殘差編碼 + MD5）

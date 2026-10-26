@@ -29,7 +29,13 @@
 | `G711ACodec` | G.711 A-law 编解码器（无状态，类级单例） |
 | `G711UCodec` | G.711 μ-law 编解码器（无状态，类级单例，查表法实现） |
 | `AacCodec` | AAC 编解码器（纯托管：AAC-LC/HE-AAC v1/v2 解码 + AAC-LC 编码；ADTS/raw+ASC/MP4-M4A/3GP；详见 [AAC 编解码设计](AAC-编解码设计.md)） |
-| `OpusCodec` | Opus 编解码器（纯托管 CELT 实现，有状态，工厂模式创建实例） |
+| `OpusCodec` | Opus 编解码器（自研路线：包解析 + 范围编码器已就绪，M2~M5 完成 CELT/SILK；当前降级调用系统 ffmpeg，有状态，工厂模式创建实例） |
+| `OpusOptions` | Opus 选项：采样率、声道、比特率、帧时长、VBR/DTX/FEC/复杂度/带宽/信号类型 |
+| `OpusPacket` | Opus 包结构解析（`ref struct`，TOC、Code 0~3、帧数/帧长、VBR/CBR、padding） |
+| `OpusPacketHeader` | Opus 包 TOC 解析的兼容层：模式、带宽、声道、帧数、每帧样本数与总时长 |
+| `OpusRangeDecoder` / `OpusRangeEncoder` | RFC 6716 范围编解码器，供 CELT/SILK 使用的熵编码基础 |
+| `OpusManagedCodec` | 进程内托管编解码切换点（M1 不可用，M2 起逐步开启） |
+| `OpusProcessCodec` | 操作系统降级：探测 ffmpeg + libopus，通过 stdin/stdout 完成单包编解码 |
 | `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5，含 Xing/Info/VBRI 信息帧静音处理；编码 Layer III CBR） |
 | `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman → 帧组装，支持 9 档采样率与单/立体声 |
 | `Mp3HuffmanEncoder` | 由解码表反推的 Huffman 编码表，保证收发使用同一份 ISO 码表 |
@@ -197,8 +203,21 @@ public interface IAudioChipHeader
 | 无状态编解码器使用类级单例 | 如 G.711/ADPCM/G.722/G.726 不保存流状态，一个实例服务多路数据，避免重复分配 |
 | 有状态编解码器通过工厂创建 | 如 Opus/AAC/FLAC 需保存帧间状态，`RegisterFactory` 为每个流创建独立实例 |
 | AAC 全托管、不引入原生依赖 | AAC-LC 编解码与 HE-AAC 解码统一用纯托管实现；`FaacEncoder` 标记 `[Obsolete]` 并停止主链路引用，下一主版本移除 |
+| Opus 自研纯托管 | 不引入第三方编解码包，避免原生 libopus 部署门槛；包解析与范围编码器先落地，CELT/SILK 按 M2~M5 推进；系统 ffmpeg 仅作为 M1 降级与互操作验证，不进入主链路依赖 |
 | `option` 参数保留 `Object` 类型 | 各编解码器配置差异大，统一为 `Object` 避免接口膨胀 |
 | 芯片头处理独立接口 | 便于新增厂商适配，不修改工厂核心逻辑 |
+
+---
+
+## 6. Opus 支持（自研 M1）
+
+- **包解析**：`OpusPacket` 覆盖 Code 0~3、CBR/VBR、padding、2.5~60 ms、单/双声道与 120 ms 上限。
+- **熵编码基础**：`OpusRangeDecoder` / `OpusRangeEncoder` 按 RFC 6716 §4.1/§5.1 实现符号、二进制、ICDF、整数与 raw bits。
+- **当前编解码**：`OpusCodec` 在托管 CELT/SILK 完成前调用 `OpusProcessCodec`（系统 ffmpeg + libopus）完成标准 Opus 双向；无 ffmpeg 时抛出清晰的 `NotSupportedException`。
+- **连续 PCM**：`OpusCodec.Encode` 逐帧产出多个标准 Opus 包；`FromPcm` 保持“一帧一包”语义。
+- **容器**：Ogg Opus 头包、页、granule position 与 lacing 按 RFC 7845 + RFC 3533 处理。
+- **pre-skip**：`OpusCodec.GetLookahead` 返回 libopus 6.5 ms 算法延迟（48 kHz = 312，16 kHz = 104）。
+- **路线图**：M2 CELT 解码 → M3 CELT 编码 → M4 SILK 解码 → M5 SILK 编码 → M6 性能/AOT/互操作，详见 [OPUS-自研编解码](OPUS-自研编解码.md)。
 
 ---
 

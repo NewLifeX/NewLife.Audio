@@ -40,7 +40,7 @@ NuGet：`NewLife.Audio`
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** サブバンド ADPCM
 - **IMA ADPCM**（DVI4）
-- **Opus**（純マネージド CELT 実装）
+- **Opus**（自社純マネージ実装を進行中：RFC 6716 パケットパーサー + レンジコーダー、ffmpeg フォールバック付き）
 - **MP3**（ハフマン復号 + 逆量子化 + IMDCT + サブバンド合成）
 - **AAC**（純マネージド AAC-LC/HE-AAC デコード、AAC-LC エンコード、ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差符号化 + MD5）

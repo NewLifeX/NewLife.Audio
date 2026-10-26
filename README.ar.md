@@ -40,7 +40,7 @@ NuGet: `NewLife.Audio`
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** ADPCM ضمن النطاقات الفرعية
 - **IMA ADPCM** (DVI4)
-- **Opus** (تنفيذ CELT مُدار بالكامل)
+- **Opus** (تنفيذ ذاتي مُدار بالكامل قيد التطوير: محلل حزم RFC 6716 + مُرمِّز المدى، مع ffmpeg كبديل)
 - **MP3** (فك ترميز Huffman + التكميم العكسي + IMDCT + تركيب النطاقات الفرعية)
 - **AAC** (فك ترميز AAC-LC/HE-AAC مُدار بالكامل؛ ترميز AAC-LC؛ ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (LPC ثابت + ترميز البواقي Rice + MD5)

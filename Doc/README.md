@@ -11,6 +11,7 @@
 | [多语言本地化](多语言本地化.md) | 31 种运行时语言、词表规范、带前缀日志与校验 |
 | [测试稳定性规约](测试稳定性规约.md) | 跨平台/跨指令集测试规则、运行矩阵与失败处理 |
 | [CODEC 编解码引擎](CODEC-编解码引擎.md) | 编解码器架构与数据流 |
+| [OPUS 自研编解码](OPUS-自研编解码.md) | Opus 自研路线、M1 现状、M2~M6 里程碑、ffmpeg 降级 |
 | [AAC 编解码设计](AAC-编解码设计.md) | AAC-LC/HE-AAC 全托管编解码架构、测试与实施路线 |
 | [CONT 容器格式](CONT-容器格式.md) | WAV/Ogg/MP4/FLAC 容器读写 |
 | [DEVIO 音频设备 IO](DEVIO-音频设备IO.md) | WaveOut/WASAPI/ASIO 与跨平台回退 |

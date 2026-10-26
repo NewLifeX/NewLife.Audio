@@ -40,7 +40,7 @@ Bidirektionale PCM-Konvertierung für über 10 Audio-Codecs, vollständig in rei
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** Subband-ADPCM
 - **IMA ADPCM** (DVI4)
-- **Opus** (reine verwaltete CELT-Implementierung)
+- **Opus** (eigene reine Managed-Implementierung in Arbeit: RFC-6716-Paketparser + Range-Coder, ffmpeg als Fallback)
 - **MP3** (Huffman-Dekodierung + inverse Quantisierung + IMDCT + Subband-Synthese)
 - **AAC** (vollständig verwaltete AAC-LC/HE-AAC-Dekodierung; AAC-LC-Kodierung; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (Fixed LPC + Rice-Restkodierung + MD5)

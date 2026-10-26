@@ -42,7 +42,7 @@ Nuget：NewLife.Audio
 - **G.711** μ-law / A-law
 - **G.722** / **G.726** 子带 ADPCM
 - **IMA ADPCM**（DVI4）
-- **Opus**（纯托管 CELT 实现）
+- **Opus**（自研纯托管进行中：RFC 6716 包解析 + 范围编解码器，系统 ffmpeg 降级）
 - **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman）
 - **AAC**（纯托管 AAC-LC/HE-AAC 解码；AAC-LC 编码；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）

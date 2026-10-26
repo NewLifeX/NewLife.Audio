@@ -125,7 +125,7 @@ await tts.SaveAsync("请注意", "alert.wav",
 | 裸 PCM | 16 位小端 | ✅ 支持（流式/自定义协议） |
 | MP3 编码 | 现有 `Mp3Codec.FromPcm` 是简化实现，帧长与 Huffman 不符合标准，标准解码器无法互通 | ❌ 不暴露 |
 | AAC 编码 | 纯托管 AAC-LC 编码器已可用（ADTS/raw），TTS 输出尚未接入 | 🟡 可用，待接入 |
-| Opus 编码 | 现有 `OpusCodec.FromPcm` 为简化 CELT，未验证标准互操作 | ❌ 不暴露 |
+| Opus 编码 | `OpusCodec` 自研 M1：包解析/范围编解码器就绪，托管 CELT/SILK 未完成；当前通过系统 ffmpeg 降级，可与标准解码器互操作 | 🟡 编解码降级可用，托管实现进行中，TTS 输出待接入 |
 | FLAC 编码 | 现有实现帧头/子帧不完整，解码器仅支持 Verbatim 子帧 | ❌ 不暴露 |
 | Ogg Opus 封装 | `OggOpusStreamWriter` 可封装**已编码**的 Opus 包 | 🟡 仅供在线服务透传 |
 
@@ -133,7 +133,7 @@ await tts.SaveAsync("请注意", "alert.wav",
 
 后续路线（需单独立项）：
 
-1. **网络流式首选 Opus**：引入纯托管 `Concentus`，PCM 重采样到 48kHz 后编码，接现有 `OggOpusStreamWriter`，输出 `audio/ogg; codecs=opus`。
+1. **网络流式首选 Opus**：`OpusCodec` 已接入自研包解析与范围编解码器，托管 CELT/SILK 完成前通过系统 ffmpeg 降级；PCM 按源采样率编码后接 `OggOpusStreamWriter`，输出 `audio/ogg; codecs=opus`。
 2. **文件分发需要 MP3**：Windows Media Foundation（内置）或可选原生 LAME。
 3. **无损 FLAC**：重写为可互操作的纯托管编码器（固定预测 + Rice + 正确帧头/CRC）。
 

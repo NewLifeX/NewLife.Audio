@@ -4,7 +4,7 @@
 #   1. 打包 NewLife.Audio；
 #   2. 检查 nupkg 必须包含 lib 资产、README 与图标；
 #   3. 创建临时项目，仅用 PackageReference 引用刚打的包；
-#   4. 运行 G.711 编解码与中文词表查表，断言包内嵌多语言表可用。
+#   4. 运行 G.711 编解码、Opus 包解析与中文词表查表，断言包内嵌多语言表可用。
 #
 # 用法：
 #   pwsh -File tools/check-package-consumer.ps1
@@ -48,6 +48,7 @@ try {
     $entries = @($zip.Entries | ForEach-Object { $_.FullName.Replace('\', '/') })
     $required = @(
         "lib/net461/NewLife.Audio.dll",
+        "lib/net8.0/NewLife.Audio.dll",
         "lib/netstandard2.0/NewLife.Audio.dll",
         "lib/netstandard2.1/NewLife.Audio.dll",
         "README.nuget.md",
@@ -101,6 +102,19 @@ var decoded = codec.ToPcm(encoded.GetSpan(), null);
 if (encoded.Total != pcm.Length / 2 || decoded.Total != pcm.Length)
 {
     Console.Error.WriteLine(`$"编解码长度异常: {encoded.Total}/{decoded.Total}");
+    return 1;
+}
+
+var opusPacket = OpusPacket.Parse(new Byte[] { 0x00, 0xAA, 0xBB });
+if (opusPacket.FrameCount != 1 || opusPacket.TotalSamplesPerChannel != 480 || opusPacket.Channels != 1)
+{
+    Console.Error.WriteLine("Opus 包解析异常");
+    return 1;
+}
+var opusHeader = OpusPacketHeader.Parse(new Byte[] { 0x00, 0xAA, 0xBB });
+if (opusHeader.TotalSamples != 480)
+{
+    Console.Error.WriteLine("Opus 包头解析异常");
     return 1;
 }
 
