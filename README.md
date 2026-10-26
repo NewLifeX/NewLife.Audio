@@ -99,7 +99,7 @@ Network audio streaming:
 ### 🔈 Text-to-Speech (TTS)
 Turn text into sound with three lines of code:
 - **Speak directly** — `await new TtsClient().SayAsync("text")` via Windows SAPI / macOS `say` / Linux `espeak-ng` (on Windows .NET Core/.NET 5+, reference the `System.Speech` package)
-- **Save to file** — WAV / raw PCM, chosen by file extension
+- **Save to file** — WAV / raw PCM / MP3 / FLAC, chosen by file extension (compressed formats go through the resample → encode → container pipeline)
 - **Stream out** — PCM chunks for HTTP/WebSocket generate-as-you-send
 - **Pluggable engines** — system speech, `HttpTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
 - **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`

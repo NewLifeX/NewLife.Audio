@@ -73,7 +73,19 @@ internal static class TtsFormatHelper
         {
             ".wav" or ".wave" => TtsFormat.Wav,
             ".pcm" => TtsFormat.Pcm,
-            _ => throw new NotSupportedException(L.T("Unsupported TTS output format: {0}. Supported formats: .wav, .pcm.", ext)),
+            ".mp3" => TtsFormat.Mp3,
+            ".flac" => TtsFormat.Flac,
+            _ => throw new NotSupportedException(L.T("Unsupported TTS output format: {0}. Supported formats: .wav, .pcm, .mp3, .flac.", ext)),
         };
     }
+
+    /// <summary>取压缩容器扩展名，非压缩格式返回 null</summary>
+    /// <param name="format">输出格式</param>
+    /// <returns>容器扩展名</returns>
+    public static String GetContainer(TtsFormat format) => format switch
+    {
+        TtsFormat.Mp3 => ".mp3",
+        TtsFormat.Flac => ".flac",
+        _ => null,
+    };
 }

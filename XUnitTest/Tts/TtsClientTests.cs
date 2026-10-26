@@ -314,7 +314,7 @@ public class TtsClientTests
         using var tts = new TtsClient(new FakeTtsEngine("fake"));
 
         await Assert.ThrowsAsync<NotSupportedException>(
-            () => tts.SaveAsync("你好", TempFile(".mp3"), cancellationToken: TestContext.Current.CancellationToken));
+            () => tts.SaveAsync("你好", TempFile(".ogg"), cancellationToken: TestContext.Current.CancellationToken));
     }
 
     [Fact(DisplayName = "StreamAsync 逐块产出 PCM 并携带格式")]

@@ -101,7 +101,7 @@ Nuget：NewLife.Audio
 ### 🔈 语音合成（TTS）
 把文字变成声音，普通用户三行代码可用：
 - **直接播报** — `await new TtsClient().SayAsync("文字")`，Windows SAPI / macOS `say` / Linux `espeak-ng`（Windows .NET Core/.NET 5+ 应用需引用 `System.Speech` 包）
-- **文件输出** — WAV / 裸 PCM，扩展名决定格式
+- **文件输出** — WAV / 裸 PCM / MP3 / FLAC，扩展名决定格式（压缩格式走重采样 → 编码 → 容器管线）
 - **流式输出** — 逐块 PCM，适合 HTTP/WebSocket 边合成边发送
 - **引擎可插拔** — 系统语音、`HttpTtsEngine`、`ProcessTtsEngine`、自定义 `ITtsEngine`
 - **可选高级** — 音色/语速、磁盘缓存、预生成语音库、文本规范化（`NewLife.Audio.Tts.Advanced`）

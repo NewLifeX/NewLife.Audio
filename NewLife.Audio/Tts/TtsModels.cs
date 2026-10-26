@@ -10,6 +10,12 @@ public enum TtsFormat
 
     /// <summary>裸 PCM（16 位有符号整数，小端）</summary>
     Pcm = 2,
+
+    /// <summary>MP3 文件（ID3v2 标签 + MPEG 音频帧）</summary>
+    Mp3 = 3,
+
+    /// <summary>FLAC 文件（无损压缩）</summary>
+    Flac = 4,
 }
 
 /// <summary>语音合成选项</summary>

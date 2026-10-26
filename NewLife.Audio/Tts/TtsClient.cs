@@ -12,7 +12,7 @@ namespace NewLife.Audio.Tts;
 /// <para>三个主入口都是异步方法，最后一个参数统一为 <see cref="CancellationToken"/>：</para>
 /// <list type="bullet">
 /// <item><see cref="SayAsync"/>：直接播报，播完/取消/<see cref="Stop"/> 时任务完成。</item>
-/// <item><see cref="SaveAsync(String, String, TtsOptions, CancellationToken)"/>：保存为 WAV/PCM 文件。</item>
+/// <item><see cref="SaveAsync(String, String, TtsOptions, CancellationToken)"/>：保存为 WAV/PCM/MP3/FLAC 文件。</item>
 /// <item><see cref="StreamAsync"/>：逐块产出 PCM，适合 HTTP/WebSocket 边合成边发送。</item>
 /// </list>
 /// </remarks>
@@ -123,7 +123,7 @@ public sealed class TtsClient : IDisposable
         _speaker = null;
     }
 
-    /// <summary>保存为音频文件。扩展名决定格式：<c>.wav</c> 或 <c>.pcm</c></summary>
+    /// <summary>保存为音频文件。扩展名决定格式：<c>.wav</c>、<c>.pcm</c>、<c>.mp3</c>、<c>.flac</c></summary>
     /// <param name="text">待合成文本</param>
     /// <param name="path">输出路径</param>
     /// <param name="options">本次合成选项，为 null 时使用 <see cref="Options"/></param>
@@ -142,7 +142,7 @@ public sealed class TtsClient : IDisposable
         return result;
     }
 
-    /// <summary>保存到输出流。WAV 会写入标准 RIFF/WAVE 头，PCM 直接写裸数据</summary>
+    /// <summary>保存到输出流。WAV 写入标准 RIFF/WAVE 头，PCM 直接写裸数据，MP3/FLAC 走压缩编码管线</summary>
     /// <param name="text">待合成文本</param>
     /// <param name="output">输出流</param>
     /// <param name="format">输出格式</param>
@@ -159,7 +159,7 @@ public sealed class TtsClient : IDisposable
         var watch = Stopwatch.StartNew();
         var result = new TtsResult { Engine = engine.Name };
 
-        using var writer = new TtsWaveWriter(output, format);
+        using var writer = new TtsOutputWriter(output, format);
         await foreach (var chunk in engine.SynthesizeAsync(text, opt, cancellationToken).ConfigureAwait(false))
         {
             if (chunk?.Data == null || chunk.Data.Length == 0) continue;
