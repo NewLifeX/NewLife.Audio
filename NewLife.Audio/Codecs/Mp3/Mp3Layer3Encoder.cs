@@ -7,7 +7,7 @@ namespace NewLife.Audio.Codecs;
 /// 纯托管实现，覆盖 MPEG-1（32/44.1/48 kHz）、MPEG-2 LSF（16/22.05/24 kHz）与 MPEG-2.5（8/11.025/12 kHz），
 /// 支持单声道与立体声、CBR 码率，长块编码（无窗口切换）。
 /// <para>信号链：多相子带分析 → 36 点 MDCT → 频率反转与反混叠折叠 → 标量量化（缩放因子带）
-/// → Huffman 编码 → 帧组装。量化采用带内等信噪比分配，并以比特预算二分搜索全局尺度，
+/// → Huffman 编码（含表 16~23 的 ESC 扩展）→ 帧组装。量化采用带内等信噪比分配，并以比特预算二分搜索全局尺度，
 /// 不使用比特池（main_data_begin 恒为 0），每帧自包含。</para>
 /// </remarks>
 internal sealed class Mp3Layer3Encoder
@@ -22,8 +22,8 @@ internal sealed class Mp3Layer3Encoder
     /// <summary>MPEG-1 scalefac_compress 与 (slen1, slen2) 的映射表</summary>
     private static readonly Byte[] ScfcEncode = [0, 1, 2, 3, 12, 5, 6, 7, 9, 10, 11, 13, 14, 15, 18, 19];
 
-    /// <summary>长块量化幅值上限（长块 Huffman 表不含 ESC 扩展）</summary>
-    private const Int32 MaxQuantizedValue = 15;
+    /// <summary>量化幅值上限（表 16~23 的 ESC 扩展最高可表示 8206）</summary>
+    private const Int32 MaxQuantizedValue = Mp3HuffmanEncoder.MaxEscapeValue;
 
     /// <summary>量化上限对应的最大幅度比，用于反推最小量化步长</summary>
     private static readonly Single MaxValueRatio = (Single)Math.Pow(MaxQuantizedValue, 4.0 / 3.0);
@@ -70,6 +70,7 @@ internal sealed class Mp3Layer3Encoder
     private readonly Int32[] _quant = new Int32[576];
     private readonly Single[] _bandMax;
     private readonly Single[] _bandEnergy;
+    private readonly Single[] _bandRms;
     private readonly Single[] _bandStep;
     private readonly Single[] _bandTilt;
     private readonly Int32[] _scales;
@@ -154,6 +155,7 @@ internal sealed class Mp3Layer3Encoder
 
         _bandMax = new Single[bands.Length];
         _bandEnergy = new Single[bands.Length];
+        _bandRms = new Single[bands.Length];
         _bandStep = new Single[bands.Length];
         _bandTilt = BuildBandTilt(bands);
         _scales = new Int32[bands.Length];
@@ -199,6 +201,8 @@ internal sealed class Mp3Layer3Encoder
             for (var ch = 0; ch < _channels; ch++)
             {
                 var share = budget / (total - index);
+                // part2_3_length 只有 12 位
+                if (share > 4095) share = 4095;
                 if (share < 0) share = 0;
 
                 Mdct(ch, gr);
@@ -294,9 +298,25 @@ internal sealed class Mp3Layer3Encoder
 
         for (var sb = 0; sb < 32; sb++)
         {
+            // 前 18 个样本来自上一个颗粒（granule 0 取上一帧尾部，其余取本帧前一颗粒），后 18 个为本颗粒
+            if (granule > 0)
+            {
+                var prev = (granule - 1) * 18;
+                for (var n = 0; n < 18; n++)
+                {
+                    block[n] = sub[(prev + n) * 32 + sb];
+                }
+            }
+            else
+            {
+                for (var n = 0; n < 18; n++)
+                {
+                    block[n] = hist[n * 32 + sb];
+                }
+            }
+
             for (var n = 0; n < 18; n++)
             {
-                block[n] = hist[n * 32 + sb];
                 block[18 + n] = sub[(granule * 18 + n) * 32 + sb];
             }
 
@@ -375,6 +395,7 @@ internal sealed class Mp3Layer3Encoder
             }
             _bandMax[b] = (Single)(max * OutputScale);
             _bandEnergy[b] = energy;
+            _bandRms[b] = width > 0 ? (Single)(Math.Sqrt(energy / width) * OutputScale) : 0f;
             offset += width;
         }
 
@@ -413,6 +434,14 @@ internal sealed class Mp3Layer3Encoder
         _scale[channel] = hi;
         var total = Measure(hi, spec, info);
 
+        // 兜底：二分可能受浮点精度影响停在上界，确保不超过颗粒比特预算
+        for (var i = 0; i < 10 && total > budget; i++)
+        {
+            hi *= 1.5f;
+            _scale[channel] = hi;
+            total = Measure(hi, spec, info);
+        }
+
         WriteGranuleData(info);
 
 
@@ -429,16 +458,17 @@ internal sealed class Mp3Layer3Encoder
     {
         var bands = _bands;
 
-        // 1. 逐带确定量化步长，兼顾幅值上限与频域倾斜
+        // 1. 逐带确定量化步长：以带内 RMS 为基准（比峰值更贴近听感），并受幅值上限约束
         var maxStep = 1e-9f;
         for (var b = 0; b < bands.Length; b++)
         {
             var max = _bandMax[b];
-            var step = max > 0 ? max * scale * _bandTilt[b] : 1e9f;
+            var rms = _bandRms[b];
+            var step = rms > 0 ? rms * scale * _bandTilt[b] : 1e9f;
             var minStep = max > 0 ? max / MaxValueRatio : 1e-9f;
             if (step < minStep) step = minStep;
             _bandStep[b] = step;
-            if (step > maxStep) maxStep = step;
+            if (step > maxStep && step < 1e8f) maxStep = step;
         }
 
         // 2. 由最大步长确定 global_gain，缩放因子按相对步长分配

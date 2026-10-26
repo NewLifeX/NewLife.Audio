@@ -131,15 +131,36 @@ public class Mp3EncoderTests
     {
         const Int32 rate = 44100;
 
-        // 基线取自 IMP-001 登记时的实测值（正弦约 15 dB、白噪约 0 dB）；
-        // 分析滤波缺陷修复后应把门槛抬到正弦 ≥ 40 dB、白噪 ≥ 25 dB。
+        // IMP-001 修复后基线：320kbps 单声道正弦 ≥40 dB、白噪 ≥25 dB
         var sine = BuildTone(rate, 1, rate, 1000, 0.3);
         var sineSnr = MeasureSnr(sine, rate, 320);
-        Assert.True(sineSnr > 10, $"1 kHz 正弦 SNR 低于基线：{sineSnr:F1} dB");
+        Assert.True(sineSnr > 40, $"1 kHz 正弦 SNR 低于基线：{sineSnr:F1} dB");
 
         var noise = BuildNoise(rate, 1, rate, 0.3);
         var noiseSnr = MeasureSnr(noise, rate, 320);
-        Assert.True(noiseSnr > -5, $"白噪 SNR 低于基线：{noiseSnr:F1} dB");
+        Assert.True(noiseSnr > 25, $"白噪 SNR 低于基线：{noiseSnr:F1} dB");
+    }
+
+    [Fact(DisplayName = "MP3 编码在大幅值信号下仍满足颗粒比特预算")]
+    public void Encode_LoudSignal_KeepsGranuleBudget()
+    {
+        var rate = 44100;
+        var pcm = BuildTone(rate, 1, rate, 1000, 0.95);
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = rate, Channels = 1, Bitrate = 320 }).GetSpan().ToArray();
+
+        var offset = 0;
+        var frames = 0;
+        while (offset + 4 <= encoded.Length)
+        {
+            var header = Mp3Codec.ParseFrameHeader(encoded, offset);
+            Assert.NotNull(header);
+            Assert.True(header.FrameSize > 0);
+            offset += header.FrameSize;
+            frames++;
+        }
+
+        Assert.True(frames > 0);
+        Assert.Equal(encoded.Length, offset);
     }
 
     private static Double MeasureSnr(Byte[] pcm, Int32 sampleRate, Int32 bitrate)
