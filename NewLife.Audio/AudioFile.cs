@@ -324,7 +324,7 @@ public class AudioFile
     /// <param name="path">目标文件路径</param>
     /// <param name="metadata">新标签</param>
     /// <exception cref="NotSupportedException">容器不支持仅改标签</exception>
-    /// <remarks>MP3 重建前置 ID3v2 标签并丢弃尾部 ID3v1，FLAC 替换 VORBIS_COMMENT 块；音频帧原样保留。
+    /// <remarks>MP3 优先在原 ID3v2 标签区原地重写（新标签放不下时重建）并丢弃尾部 ID3v1，FLAC 替换 VORBIS_COMMENT 块；音频帧原样保留。
     /// 写入采用临时文件 + 原子替换，失败时目标文件保持原状。</remarks>
     public static void UpdateMetadata(String path, AudioMetadata metadata)
     {
