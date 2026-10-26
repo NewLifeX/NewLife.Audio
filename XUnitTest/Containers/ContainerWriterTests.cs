@@ -62,21 +62,28 @@ public class RawPcmReaderExtraTests
         Assert.Throws<ArgumentNullException>(() => new RawPcmReader(null));
     }
 
-    [Fact(DisplayName = "容器工厂未知格式回退RawPcm且不吞掉流首字节")]
+    [Fact(DisplayName = "容器工厂未知格式抛异常且不消费流")]
     public void Factory_UnknownFormat_PreservesStreamPosition()
     {
         var data = new Byte[640];
         data[0] = 0x11;
         var ms = new MemoryStream(data);
 
-        var reader = AudioContainerFactory.CreateReader(ms);
+        Assert.Throws<NotSupportedException>(() => AudioContainerFactory.CreateReader(ms));
+        Assert.Equal(0, ms.Position);
+        Assert.Equal(0x11, ms.ReadByte());
+    }
 
-        Assert.IsType<RawPcmReader>(reader);
-        Assert.Equal(2, reader.TotalFrames);
+    [Fact(DisplayName = "写出器创建失败时释放文件句柄")]
+    public void Factory_UnsupportedWriteExtension_ReleasesFile()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"nla-{Guid.NewGuid():N}.xyz");
 
-        var frame = reader.ReadFrame();
-        Assert.NotNull(frame);
-        Assert.Equal(0x11, frame.ReadBytes()[0]);
+        Assert.Throws<NotSupportedException>(() => AudioContainerFactory.CreateWriter(path, AudioFormat.Default));
+
+        // 句柄泄漏时 Windows 上删除会失败
+        File.Delete(path);
+        Assert.False(File.Exists(path));
     }
 }
 

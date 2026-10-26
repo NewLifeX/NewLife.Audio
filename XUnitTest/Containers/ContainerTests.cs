@@ -96,13 +96,101 @@ public class ContainerFactoryTests
         Assert.IsType<WaveFileReader>(reader);
     }
 
-    [Fact(DisplayName = "容器工厂未知格式回退RawPcmReader")]
-    public void CreateReader_Unknown_ReturnsRawPcm()
+    [Fact(DisplayName = "容器工厂未知格式抛异常且不消费流")]
+    public void CreateReader_Unknown_Throws()
     {
         var data = new Byte[20];
         var ms = new MemoryStream(data);
 
-        var reader = AudioContainerFactory.CreateReader(ms);
-        Assert.IsType<RawPcmReader>(reader);
+        Assert.Throws<NotSupportedException>(() => AudioContainerFactory.CreateReader(ms));
+        Assert.Equal(0, ms.Position);
+    }
+
+    [Fact(DisplayName = "容器工厂空流抛异常而不是按裸PCM解码")]
+    public void CreateReader_Empty_Throws()
+    {
+        var ms = new MemoryStream();
+
+        Assert.Throws<NotSupportedException>(() => AudioContainerFactory.CreateReader(ms, ".pcm"));
+    }
+
+    [Fact(DisplayName = "容器工厂 null流抛ArgumentNullException")]
+    public void CreateReader_NullStream_Throws()
+    {
+        Assert.Throws<ArgumentNullException>(() => AudioContainerFactory.CreateReader((Stream)null));
+    }
+
+    [Fact(DisplayName = "容器工厂从不可定位流识别WAV且不丢文件头")]
+    public void CreateReader_NonSeekableWav_KeepsHeader()
+    {
+        var wav = BuildWav(100);
+        using var stream = new NonSeekableReadStream(new MemoryStream(wav));
+
+        var reader = AudioContainerFactory.CreateReader(stream);
+
+        Assert.IsType<WaveFileReader>(reader);
+        Assert.Equal(16000, reader.Format.SampleRate);
+        var frame = reader.ReadFrame();
+        Assert.NotNull(frame);
+        Assert.True(frame.Length > 0);
+    }
+
+    [Fact(DisplayName = "容器工厂不可定位未知流抛异常")]
+    public void CreateReader_NonSeekableUnknown_Throws()
+    {
+        using var stream = new NonSeekableReadStream(new MemoryStream(new Byte[640]));
+
+        Assert.Throws<NotSupportedException>(() => AudioContainerFactory.CreateReader(stream));
+    }
+
+    /// <summary>构造最小有效 WAV 数据</summary>
+    /// <param name="dataSize">data 块字节数</param>
+    /// <returns>WAV 字节</returns>
+    private static Byte[] BuildWav(Int32 dataSize)
+    {
+        var data = new Byte[44 + dataSize];
+        data[0] = (Byte)'R'; data[1] = (Byte)'I'; data[2] = (Byte)'F'; data[3] = (Byte)'F';
+        var fileSize = data.Length - 8;
+        data[4] = (Byte)(fileSize & 0xFF);
+        data[5] = (Byte)((fileSize >> 8) & 0xFF);
+        data[6] = (Byte)((fileSize >> 16) & 0xFF);
+        data[7] = (Byte)((fileSize >> 24) & 0xFF);
+        data[8] = (Byte)'W'; data[9] = (Byte)'A'; data[10] = (Byte)'V'; data[11] = (Byte)'E';
+        data[12] = (Byte)'f'; data[13] = (Byte)'m'; data[14] = (Byte)'t'; data[15] = (Byte)' ';
+        data[16] = 16;
+        data[20] = 1;
+        data[22] = 1;
+        data[24] = 0x80; data[25] = 0x3E;
+        data[34] = 16;
+        data[36] = (Byte)'d'; data[37] = (Byte)'a'; data[38] = (Byte)'t'; data[39] = (Byte)'a';
+        data[40] = (Byte)(dataSize & 0xFF);
+        data[41] = (Byte)((dataSize >> 8) & 0xFF);
+
+        return data;
+    }
+
+    /// <summary>不可定位的只读流</summary>
+    private sealed class NonSeekableReadStream : Stream
+    {
+        private readonly Stream _inner;
+
+        public NonSeekableReadStream(Stream inner) => _inner = inner;
+
+        public override Boolean CanRead => true;
+        public override Boolean CanSeek => false;
+        public override Boolean CanWrite => false;
+        public override Int64 Length => throw new NotSupportedException();
+        public override Int64 Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override Int64 Seek(Int64 offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(Int64 value) => throw new NotSupportedException();
+        public override void Write(Byte[] buffer, Int32 offset, Int32 count) => throw new NotSupportedException();
+        public override Int32 Read(Byte[] buffer, Int32 offset, Int32 count) => _inner.Read(buffer, offset, count);
+
+        protected override void Dispose(Boolean disposing)
+        {
+            if (disposing) _inner.Dispose();
+            base.Dispose(disposing);
+        }
     }
 }

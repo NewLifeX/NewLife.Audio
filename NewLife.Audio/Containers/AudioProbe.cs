@@ -407,42 +407,5 @@ public static class AudioProbe
         public override void Write(Byte[] buffer, Int32 offset, Int32 count) => _inner.Write(buffer, offset, count);
         protected override void Dispose(Boolean disposing) { }
     }
-
-    /// <summary>把已读取的前缀字节重新拼回不可定位流的包装流</summary>
-    private sealed class PrependStream : Stream
-    {
-        private readonly Byte[] _prefix;
-        private readonly Stream _inner;
-        private Int32 _offset;
-
-        public PrependStream(Byte[] prefix, Stream inner)
-        {
-            _prefix = prefix;
-            _inner = inner;
-        }
-
-        public override Boolean CanRead => true;
-        public override Boolean CanSeek => false;
-        public override Boolean CanWrite => false;
-        public override Int64 Length => throw new NotSupportedException();
-        public override Int64 Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
-        public override void Flush() { }
-        public override Int64 Seek(Int64 offset, SeekOrigin origin) => throw new NotSupportedException();
-        public override void SetLength(Int64 value) => throw new NotSupportedException();
-        public override void Write(Byte[] buffer, Int32 offset, Int32 count) => throw new NotSupportedException();
-
-        public override Int32 Read(Byte[] buffer, Int32 offset, Int32 count)
-        {
-            if (_offset < _prefix.Length)
-            {
-                var n = Math.Min(count, _prefix.Length - _offset);
-                Array.Copy(_prefix, _offset, buffer, offset, n);
-                _offset += n;
-                return n;
-            }
-
-            return _inner.Read(buffer, offset, count);
-        }
-    }
     #endregion
 }
