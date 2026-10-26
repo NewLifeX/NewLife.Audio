@@ -3,7 +3,11 @@ using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Containers;
 
-/// <summary>原始 PCM 数据解析器。支持手动指定或自动推断格式</summary>
+/// <summary>原始 PCM 数据解析器。需由调用方显式指定采样率、位深、声道与帧长</summary>
+/// <remarks>
+/// 无头 PCM 缺少可用于可靠推断的信息（长度可被任意帧长整除，静音与低电平信号也无法区分采样率），
+/// 因此本类不做启发式推断；需要自动识别容器与编码时请使用容器探测（CONT-8）或 WAV/AIFF 等带头部格式。
+/// </remarks>
 public class RawPcmReader : IAudioContainerReader
 {
     private readonly Stream _stream;

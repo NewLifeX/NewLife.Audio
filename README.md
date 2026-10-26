@@ -204,4 +204,7 @@ Website: https://newlifex.com · Open source organization: https://github.com/Ne
 
 MIT License © 2002-2026 NewLife Team
 
+Third-party components (SharpJaad.AAC, EggEncoder MDCT, minimp3 tables) are listed in
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md).
+
 [GitHub](https://github.com/NewLifeX/NewLife.Audio) | [Website](https://newlifex.com)

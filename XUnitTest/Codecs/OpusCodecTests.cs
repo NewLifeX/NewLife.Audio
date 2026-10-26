@@ -49,6 +49,14 @@ public class OpusCodecTests
         Assert.True(decoded.Total == 0);
     }
 
+    [Fact(DisplayName = "Opus进程回退先校验包结构再探测后端")]
+    public void ProcessCodec_InvalidPacket_ThrowsArgument()
+    {
+        // 无 ffmpeg 环境同样应报"非法包"，而不是后端不可用（IMP-004）
+        Assert.Throws<ArgumentException>(() => OpusProcessCodec.DecodePacket(new Byte[] { 0x03, 0x00, 0x00 }, new OpusOptions()));
+        Assert.Empty(OpusProcessCodec.DecodePacket(Array.Empty<Byte>(), new OpusOptions()));
+    }
+
     [Fact(DisplayName = "Opus非法选项抛出参数异常")]
     public void Options_Invalid_Throws()
     {

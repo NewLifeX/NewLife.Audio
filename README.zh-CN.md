@@ -204,4 +204,7 @@ NewLife 生态按依赖分层，各项目独立版本、独立发版。下面的
 
 MIT License © 2002-2026 新生命开发团队
 
+第三方组件（SharpJaad.AAC、EggEncoder MDCT、minimp3 码表）声明见
+[THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md)。
+
 [GitHub](https://github.com/NewLifeX/NewLife.Audio) | [网站](https://newlifex.com)

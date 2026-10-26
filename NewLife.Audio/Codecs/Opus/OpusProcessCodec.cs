@@ -62,9 +62,11 @@ public static class OpusProcessCodec
         if (packet.Length == 0) return [];
         if (options == null) throw new ArgumentNullException(nameof(options));
         options.Validate();
-        EnsureAvailable();
 
+        // 先校验包结构：非法包直接返回空，不因缺少 ffmpeg 而抛出后端异常
         if (!OpusPacket.TryParse(packet, out var parsed)) throw new ArgumentException(L.T("Not a valid Opus packet."), nameof(packet));
+
+        EnsureAvailable();
 
         // 单包封装为最小 Ogg Opus 流，交给 ffmpeg 解码；pre-skip 取 0，保持“一包进、整包样本出”的语义
         using var input = new MemoryStream();

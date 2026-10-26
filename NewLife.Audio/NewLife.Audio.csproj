@@ -51,6 +51,12 @@
     <Content Include="..\Doc\leaf.png" Link="leaf.png" PackagePath="\" />
   </ItemGroup>
   <ItemGroup>
+    <None Include="..\THIRD-PARTY-NOTICES.md">
+      <Pack>True</Pack>
+      <PackagePath>\</PackagePath>
+    </None>
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\README.nuget.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
