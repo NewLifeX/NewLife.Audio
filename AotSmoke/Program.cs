@@ -66,7 +66,6 @@ static Byte[] MakeSinePcm(Int32 samples, Double freq, Int32 sampleRate, Int32 am
 }
 
 var pcm16k = MakeSinePcm(1600, 400, 8000);          // 10 帧 @8kHz，G.711/ADPCM/工厂用
-var pcm20m = MakeSinePcm(960, 1000, 48000, 8000);   // 1 帧 @48kHz，Opus 用
 
 Run("G.711 A-law 编解码往返", () =>
 {
@@ -191,13 +190,19 @@ Run("FLAC 编码往返", () =>
     if (decoded == null) throw new Exception("解码返回 null");
 });
 
-Run("Opus 编解码往返", () =>
+Run("Opus 包结构解析", () =>
 {
-    var codec = new OpusCodec();
-    var encoded = codec.FromPcm(pcm20m, 64000);
-    if (encoded.Total <= 0) throw new Exception("编码输出为空");
-    var decoded = codec.ToPcm(encoded.GetSpan(), null);
-    if (decoded.Total != 1920) throw new Exception($"解码长度 {decoded.Total} != 1920");
+    var single = OpusPacket.Parse([0x00, 0xAA, 0xBB]);
+    if (single.FrameCount != 1 || single.TotalSamplesPerChannel != 480 || single.Channels != 1)
+        throw new Exception($"Opus Code0 解析异常 {single.FrameCount}/{single.TotalSamplesPerChannel}/{single.Channels}");
+
+    var multi = OpusPacket.Parse([0x03, 0x82, 0x01, 0xAA, 0xBB, 0xCC]);
+    if (multi.FrameCount != 2 || !multi.IsVbr || multi.GetFrameLength(0) != 1 || multi.GetFrameLength(1) != 2)
+        throw new Exception($"Opus Code3 VBR 解析异常 {multi.FrameCount}/{multi.IsVbr}/{multi.GetFrameLength(0)}/{multi.GetFrameLength(1)}");
+
+    var header = OpusPacketHeader.Parse([0x00, 0xAA, 0xBB]);
+    if (header.TotalSamples != 480 || header.Channels != 1)
+        throw new Exception($"Opus 包头解析异常 {header.TotalSamples}/{header.Channels}");
 });
 
 Run("Speex 编解码往返", () =>

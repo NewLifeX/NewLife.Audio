@@ -35,6 +35,9 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
     private CancellationTokenSource? _cts;
     private Thread? _playbackThread;
     private Int64 _currentFrame;
+    private Int32 _pcmSkipRemaining;
+    private Int64 _pcmSamplesWritten;
+    private Int64 _pcmTotalSamples;
     private Boolean _disposed;
 
     /// <summary>播放状态</summary>
@@ -125,6 +128,15 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
             _currentFrame = 0;
             _currentFrameIndex = 0;
             _position = 0;
+            _pcmSamplesWritten = 0;
+            _pcmSkipRemaining = 0;
+            _pcmTotalSamples = 0;
+
+            if (_reader is OggFileReader ogg)
+            {
+                _pcmSkipRemaining = ogg.PreSkip;
+                _pcmTotalSamples = ogg.TotalSamples;
+            }
 
             // 获取编解码器
             if (AudioServiceHelper.CodecRegistry.IsSupported(_codecType))
@@ -200,6 +212,10 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         _currentFrame = frameIndex;
         _currentFrameIndex = frameIndex;
         Position = seconds;
+        _pcmSamplesWritten = 0;
+        _pcmSkipRemaining = 0;
+        _pcmTotalSamples = 0;
+        if (_codec is OpusCodec opus) opus.Reset();
 
         // 如果正在播放，清空播放器缓冲区
         if (State == PlaybackState.Playing)
@@ -240,17 +256,23 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
                     pcmData = packet.ToArray();
                 }
 
+                // Opus/Ogg 按 pre-skip 与最终 granule 裁剪首尾无效样本
+                pcmData = TrimPcm(pcmData, _audioFormat?.Channels ?? 1);
+
                 // 应用音量
-                if (Math.Abs(_volume - 1.0) > 0.01)
+                if (pcmData.Length > 0 && Math.Abs(_volume - 1.0) > 0.01)
                 {
                     ApplyVolume(pcmData, _volume);
                 }
 
-                // 触发 PCM 数据事件（用于频谱分析）
-                PcmDataAvailable?.Invoke(this, pcmData);
+                if (pcmData.Length > 0)
+                {
+                    // 触发 PCM 数据事件（用于频谱分析）
+                    PcmDataAvailable?.Invoke(this, pcmData);
 
-                // 写入播放缓冲区（非阻塞）
-                player.Write(pcmData);
+                    // 写入播放缓冲区（非阻塞）
+                    player.Write(pcmData);
+                }
 
                 // 更新进度
                 _currentFrame++;
@@ -304,6 +326,35 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>按 Ogg Opus pre-skip 与最终 granule 裁剪 PCM 首尾无效样本</summary>
+    private Byte[] TrimPcm(Byte[] pcmData, Int32 channels)
+    {
+        if (pcmData.Length == 0) return pcmData;
+
+        var bytesPerSample = 2 * Math.Max(1, channels);
+        if (_pcmSkipRemaining > 0)
+        {
+            var skipBytes = Math.Min(pcmData.Length, _pcmSkipRemaining * bytesPerSample);
+            if (skipBytes > 0)
+            {
+                pcmData = pcmData.AsSpan(skipBytes).ToArray();
+                _pcmSkipRemaining -= skipBytes / bytesPerSample;
+            }
+        }
+
+        if (_pcmTotalSamples > 0)
+        {
+            var remaining = _pcmTotalSamples - _pcmSamplesWritten;
+            if (remaining <= 0) return [];
+
+            var maxBytes = (Int32)Math.Min(pcmData.Length, remaining * bytesPerSample);
+            if (maxBytes < pcmData.Length) pcmData = pcmData.AsSpan(0, maxBytes).ToArray();
+        }
+
+        _pcmSamplesWritten += pcmData.Length / bytesPerSample;
+        return pcmData;
+    }
+
     private void StopPlayback()
     {
         _cts?.Cancel();
@@ -323,6 +374,22 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         _currentFrame = 0;
         _currentFrameIndex = 0;
         Position = 0;
+
+        // 停止后回到起点，保证再次播放从头开始
+        if (_reader != null)
+        {
+            try { _reader.SeekFrame(0); } catch { /* 不可定位流忽略 */ }
+        }
+        if (_codec is OpusCodec opus) opus.Reset();
+
+        _pcmSamplesWritten = 0;
+        _pcmSkipRemaining = 0;
+        _pcmTotalSamples = 0;
+        if (_reader is OggFileReader ogg)
+        {
+            _pcmSkipRemaining = ogg.PreSkip;
+            _pcmTotalSamples = ogg.TotalSamples;
+        }
     }
 
     private void CloseReader()
@@ -338,6 +405,9 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         _metadata = null;
         _duration = 0;
         _totalFrames = 0;
+        _pcmSkipRemaining = 0;
+        _pcmSamplesWritten = 0;
+        _pcmTotalSamples = 0;
     }
 
     private void OnPlaybackStopped(Object? sender, EventArgs e)

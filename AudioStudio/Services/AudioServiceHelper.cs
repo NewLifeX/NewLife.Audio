@@ -24,6 +24,7 @@ public static class AudioServiceHelper
         CodecRegistry.Register(AVTypes.AAC, new AacCodec());
         CodecRegistry.Register(AVTypes.AACLC, new AacCodec());
         CodecRegistry.Register(AVTypes.HEAAC, new AacCodec());
+        CodecRegistry.RegisterFactory(AVTypes.Opus, () => new OpusCodec());
         CodecRegistry.Register(AVTypes.Transparent, new OpusCodec());
         // LPCM 无需编解码器，数据已是 PCM
     }

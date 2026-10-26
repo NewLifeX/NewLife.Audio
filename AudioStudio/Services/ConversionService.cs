@@ -61,6 +61,17 @@ public class ConversionService
         var srcCodec = GetCodec(srcCodecType);
         var dstCodec = GetCodec(dstCodecType);
 
+        // Opus 只接受 8/12/16/24/48 kHz；其他采样率在转换时重采样
+        var srcChannels = srcFormat.Channels > 0 ? srcFormat.Channels : 1;
+        var srcRate = srcFormat.SampleRate > 0 ? srcFormat.SampleRate : 48000;
+        var pcmRate = srcCodec is OpusCodec ? OpusOptions.GetNearestSampleRate(srcRate) : srcRate;
+        var srcOpusOptions = srcCodec is OpusCodec ? new OpusOptions { SampleRate = pcmRate, Channels = srcChannels } : null;
+        var dstOpusOptions = dstCodec is OpusCodec ? new OpusOptions { SampleRate = OpusOptions.GetNearestSampleRate(pcmRate), Channels = srcChannels } : null;
+
+        // Ogg Opus 写入器使用编码器算法延迟作为 pre-skip，避免播放时带入编码器前导静音
+        if (writer is OggFileWriter oggWriter && dstOpusOptions != null)
+            oggWriter.PreSkip = OpusCodec.GetLookahead(dstOpusOptions);
+
         // 逐帧转换
         var totalFrames = reader.TotalFrames;
         var frameCount = 0L;
@@ -74,24 +85,53 @@ public class ConversionService
 
             // 源 → PCM
             if (srcCodec != null && srcCodecType != AVTypes.LPCM)
-                pcmData = srcCodec.ToPcm(frame.GetSpan(), null);
+                pcmData = srcCodec.ToPcm(frame.GetSpan(), srcOpusOptions);
             else
                 pcmData = frame; // 已经是 PCM
 
             // PCM → 目标
-            if (dstCodec != null && dstCodecType != AVTypes.LPCM)
+            if (dstCodec is OpusCodec opusCodec)
             {
-                var encoded = dstCodec.FromPcm(pcmData.GetSpan(), null);
+                var pcm = pcmData.ToArray();
+                if (pcmRate != dstOpusOptions.SampleRate)
+                    pcm = Resample(pcm, pcmRate, dstOpusOptions.SampleRate, srcChannels);
+
+                // Opus 包不自带长度边界，连续 PCM 通过 Encode 逐帧产出多个包
+                foreach (var packet in opusCodec.Encode(pcm, dstOpusOptions))
+                {
+                    if (packet.Total > 0) writer.WriteFrame(packet.GetSpan());
+                }
+            }
+            else if (dstCodec != null && dstCodecType != AVTypes.LPCM)
+            {
+                var pcm = pcmData.ToArray();
+                if (pcmRate != dstFormat.SampleRate)
+                    pcm = Resample(pcm, pcmRate, dstFormat.SampleRate, srcChannels);
+
+                var encoded = dstCodec.FromPcm(pcm, null);
                 writer.WriteFrame(encoded.GetSpan());
             }
             else
             {
-                writer.WriteFrame(pcmData.GetSpan());
+                var pcm = pcmData.ToArray();
+                if (pcmRate != dstFormat.SampleRate)
+                    pcm = Resample(pcm, pcmRate, dstFormat.SampleRate, srcChannels);
+
+                writer.WriteFrame(pcm);
             }
 
             frameCount++;
             if (totalFrames > 0 && progress != null)
                 progress.Report((Double)frameCount / totalFrames);
+        }
+
+        // Opus 编码器可能缓存不足一帧的 PCM，结束时补静音输出
+        if (dstCodec is OpusCodec tailCodec)
+        {
+            foreach (var packet in tailCodec.Encode(ReadOnlySpan<Byte>.Empty, flush: true))
+            {
+                if (packet.Total > 0) writer.WriteFrame(packet.GetSpan());
+            }
         }
 
         writer.Flush();
@@ -142,7 +182,7 @@ public class ConversionService
             ".wav" => AVTypes.LPCM,
             ".mp3" => AVTypes.MP3,
             ".aac" or ".m4a" => AVTypes.AAC,
-            ".ogg" or ".opus" => AVTypes.Transparent, // Opus
+            ".ogg" or ".opus" => AVTypes.Opus,
             ".flac" => AVTypes.LPCM, // FLAC 容器自身处理
             ".g711a" or ".alaw" => AVTypes.G711A,
             ".g711u" or ".ulaw" or ".mu-law" => AVTypes.G711U,
@@ -160,5 +200,36 @@ public class ConversionService
         if (avType == AVTypes.LPCM) return null;
         try { return _codecFactory.Registry.GetCodec(avType); }
         catch { return null; }
+    }
+
+    /// <summary>按声道拆分后重采样，避免立体声交错样本被跨声道插值</summary>
+    private static Byte[] Resample(Byte[] pcm, Int32 inputRate, Int32 outputRate, Int32 channels)
+    {
+        if (pcm.Length == 0 || inputRate == outputRate || inputRate <= 0 || outputRate <= 0) return pcm;
+        if (channels <= 1) return Resampler.ResamplePcm(pcm, inputRate, outputRate);
+
+        var samples = pcm.Length / 2 / channels;
+        var outputSamples = (Int32)((Int64)samples * outputRate / inputRate);
+        var result = new Byte[outputSamples * channels * 2];
+        var channelBytes = new Byte[samples * 2];
+
+        for (var ch = 0; ch < channels; ch++)
+        {
+            for (var i = 0; i < samples; i++)
+            {
+                channelBytes[i * 2] = pcm[(i * channels + ch) * 2];
+                channelBytes[i * 2 + 1] = pcm[(i * channels + ch) * 2 + 1];
+            }
+
+            var resampled = Resampler.ResamplePcm(channelBytes, inputRate, outputRate);
+            var count = Math.Min(outputSamples, resampled.Length / 2);
+            for (var i = 0; i < count; i++)
+            {
+                result[(i * channels + ch) * 2] = resampled[i * 2];
+                result[(i * channels + ch) * 2 + 1] = resampled[i * 2 + 1];
+            }
+        }
+
+        return result;
     }
 }
