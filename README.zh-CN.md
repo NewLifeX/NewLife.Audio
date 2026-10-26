@@ -43,7 +43,7 @@ Nuget：NewLife.Audio
 - **G.722** / **G.726** 子带 ADPCM
 - **IMA ADPCM**（DVI4）
 - **Opus**（自研纯托管进行中：RFC 6716 包解析 + 范围编解码器，系统 ffmpeg 降级）
-- **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman，支持 M/S 联合立体声、CBR/VBR/ABR + Xing 信息帧与简化心理声学模型；短块尚未实现）
+- **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成，比特池、坏帧错误隐藏与 CRC 校验；编码：多相分析 + MDCT + 量化 + Huffman，支持 M/S 联合立体声、CBR/VBR/ABR + Xing 信息帧、简化心理声学模型、跨帧比特池与可选 CRC；短块尚未实现）
 - **AAC**（纯托管 AAC-LC/HE-AAC 解码；AAC-LC 编码；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
 - **Ogg Vorbis**（纯托管解码：floor 0/1、residue 0/1/2、声道耦合、MDCT；编码为长块基线）
@@ -88,7 +88,7 @@ Nuget：NewLife.Audio
 音频文件格式读写：
 - **WAV** — 完整 RIFF 解析与写入（EXTENSIBLE/浮点/24 位/RF64/LIST-INFO）
 - **Ogg** — 页级读写（Opus/Vorbis）
-- **MP3** — 帧索引、ID3v2/v1、Xing/Info/VBRI、gapless
+- **MP3** — 帧索引、ID3v2.2/v2.3/v2.4 + v1（反同步、压缩帧、原地改标签）、Xing/Info/VBRI、gapless
 - **MP4/M4A** — ISO BMFF：ftyp/moov/mdat box 解析与生成，iTunes 标签
 - **FLAC** — 原生 fLaC 元数据读写（STREAMINFO/SEEKTABLE/VORBIS_COMMENT）
 - **AIFF/CAF** — AIFF 读写；CAF 读取

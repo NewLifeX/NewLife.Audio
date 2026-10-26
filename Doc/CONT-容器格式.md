@@ -1,6 +1,6 @@
 # CONT-容器格式
 
-> 版本：v1.3 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.4 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 6 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -26,11 +26,11 @@
 | `IAudioContainerReader` | 容器读取器接口：`Format` / `CodecType` / `TotalFrames` / `Duration` / `Metadata` 属性 + `ReadFrame()` / `SeekFrame()`，实现 `IDisposable` |
 | `IAudioContainerWriter` | 容器写入器接口：`Format` 属性 + `WriteMetadata()` / `WriteFrame()` / `Flush()`，实现 `IDisposable` |
 | `AudioContainerFactory` | 容器工厂：`CreateReader(path)` / `CreateReader(stream, hint)` / `CreateWriter(path, format)` / `CreateWriter(stream, hint, format)`；写出支持 `.wav` / `.ogg` / `.opus` / `.mp3` / `.mp4` / `.m4a` / `.flac`；读取按扩展名或魔术字节识别 WAV/Ogg/FLAC/MP3/MP4，未识别时抛 `NotSupportedException`（判断未知流用 `AudioProbe`，读裸 PCM 显式构造 `RawPcmReader`）；不可定位流会把已读取的头部字节还回读取器 |
-| `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器：RIFF 块遍历、`fmt` 16/18/40、EXTENSIBLE、浮点、24/32 bit、RF64、`LIST/INFO`；写入为流式头 + 结束回填 |
+| `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器：RIFF 块遍历、`fmt` 16/18/40、EXTENSIBLE（读有效位与声道掩码；指定掩码或有效位时写 40 字节 EXTENSIBLE 头，否则写 16 字节 fmt）、浮点、24/32 bit、RF64、`LIST/INFO`；写入为流式头 + 结束回填 |
 | `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（Vorbis + Opus；OpusHead/OpusTags、lacing、granule/pre-skip 按 RFC 7845；Vorbis identification/comment/setup 独立头页由 `WriteVorbisHeaders` 写入） |
 | `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器（ISO BMFF 基础盒子 + `esds` + `udta/meta/ilst` 标签；无编辑列表/章节） |
 | `Mp3FileReader` / `Mp3FileWriter` | MP3 文件读写器：ID3v2 标签 + 帧索引 + Xing/Info/VBRI 信息帧解析（帧数/字节数）；写入支持帧透传与 PCM 压缩 |
-| `Mp3Id3Tag` | ID3v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成；ID3v1/v1.1 尾标签读写（含 80 项流派表），读取时 ID3v2 优先于 ID3v1 |
+| `Mp3Id3Tag` | ID3v2.2/v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成，支持反同步、zlib 压缩帧与旧标签区原地重写；ID3v1/v1.1 尾标签读写（含 80 项流派表），读取时 ID3v2 优先于 ID3v1 |
 | `FlacContainerReader` / `FlacFileWriter` | FLAC 原生容器读写：读取 fLaC 元数据块（STREAMINFO/VORBIS_COMMENT）并按帧头 CRC-8 定位；写入 STREAMINFO/SEEKTABLE/VORBIS_COMMENT 与规范帧 |
 | `AiffFileReader` / `AiffFileWriter` / `CafFileReader` | AIFF/AIFF-C 双向读写（FORM/COMM、80 位扩展浮点采样率、16 位大端 PCM、sowt 小端可读）；CAF 读取（desc+data、未压缩 lpcm） |
 | `RawPcmReader` | 原始 PCM 解析器：按调用方给定的采样率/位深/声道/帧长切帧；不做启发式推断 |
