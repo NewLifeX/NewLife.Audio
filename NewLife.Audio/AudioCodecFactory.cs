@@ -1,4 +1,4 @@
-﻿using NewLife.Audio.ChipHeaders;
+using NewLife.Audio.ChipHeaders;
 using NewLife.Audio.Codecs;
 using NewLife.Data;
 
@@ -33,9 +33,10 @@ public class AudioCodecFactory
         _registry.Register(AVTypes.G726, new G726Codec());
         _registry.Register(AVTypes.MP3, new Mp3Codec());
         _registry.Register(AVTypes.MPEGAUDIO, new Mp3Codec());
-        _registry.Register(AVTypes.AAC, new AacCodec());
-        _registry.Register(AVTypes.AACLC, new AacCodec());
-        _registry.Register(AVTypes.HEAAC, new AacCodec());
+        // AAC 为有状态编解码器，按流创建独立实例
+        _registry.RegisterFactory(AVTypes.AAC, () => new AacCodec());
+        _registry.RegisterFactory(AVTypes.AACLC, () => new AacCodec());
+        _registry.RegisterFactory(AVTypes.HEAAC, () => new AacCodec());
         _registry.RegisterFactory(AVTypes.Transparent, () => new OpusCodec());
 
         // 注册芯片头处理器（按优先级排序）

@@ -6,9 +6,10 @@ namespace NewLife.Audio.AAC;
 
 /// <summary>FAAC AAC 编码器（可选 libfaac 原生实现）</summary>
 /// <remarks>
-/// 依赖 Windows 下的 <c>Audio/libfaac.dll</c>；原生库不可用时由 <see cref="Codecs.AacCodec"/> 回退到托管编码。
+/// 仅为兼容保留并已标记 <see cref="ObsoleteAttribute"/>；AAC 编解码主链路不再使用本类型，原生库不可用时直接抛出 <see cref="DllNotFoundException"/>。
 /// 编码器需要凑满一帧（<see cref="FrameSize"/> 字节）后才能输出，调用方应持续写入并处理返回的 0 长度结果。
 /// </remarks>
+[Obsolete("FaacEncoder will be removed in the next major version; AAC encoding will be provided by the pure-managed AacCodec implementation.")]
 public class FaacEncoder : DisposeBase
 {
     private IntPtr _handle = IntPtr.Zero;
@@ -253,9 +254,8 @@ public class FaacEncoder : DisposeBase
 
 /// <summary>FAAC 原生互操作辅助方法</summary>
 /// <remarks>
-/// 仅服务于可选的 libfaac 原生互操作（<see cref="FaacEncoder"/>）。为兼容 NativeAOT/裁剪，
-/// 统一使用 AOT 友好的 Marshal 泛型重载（SizeOf&lt;T&gt;/PtrToStructure&lt;T&gt;/StructureToPtr&lt;T&gt;）并携带 DAM 标注，
-/// 不产生 IL3050/IL2091；libfaac 不存在时由 <see cref="Codecs.AacCodec"/> 回退到纯托管透传编码。
+/// 仅服务于已标记 <see cref="ObsoleteAttribute"/> 的 <see cref="FaacEncoder"/>，AAC 编解码主链路不再使用。
+/// 为兼容 NativeAOT/裁剪，统一使用 AOT 友好的 Marshal 泛型重载并携带 DAM 标注，不产生 IL3050/IL2091。
 /// </remarks>
 public static class InteropExtensions
 {

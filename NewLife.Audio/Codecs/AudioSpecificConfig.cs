@@ -29,6 +29,9 @@ public sealed class AudioSpecificConfig
     /// <summary>声道配置（1=单声道, 2=立体声, 3-7 多声道）</summary>
     public Int32 ChannelConfiguration { get; set; }
 
+    /// <summary>实际声道数（7.1 配置的枚举值为 7，但实际为 8 声道）</summary>
+    public Int32 ChannelCount => ChannelConfiguration == 7 ? 8 : ChannelConfiguration;
+
     /// <summary>帧长度标志。true=960/帧, false=1024/帧</summary>
     public Boolean FrameLengthFlag { get; set; }
 
@@ -97,9 +100,8 @@ public sealed class AudioSpecificConfig
     {
         if (adts == null) throw new ArgumentNullException(nameof(adts));
 
-        // ADTS profile 是 0-based（0=Main,1=LC,2=SSR,3=LTP）
-        // AOT 是 1-based（1=Main,2=LC,3=SSR,4=LTP）
-        var aot = adts.Profile + 1;
+        // AdtsInfo.Profile 与 AOT 一致，均为 1-based（1=Main,2=LC,3=SSR,4=LTP）
+        var aot = adts.Profile;
 
         return new AudioSpecificConfig
         {
@@ -147,6 +149,13 @@ public sealed class AudioSpecificConfig
         if (config.ExtensionFlag && reader.RemainingBits > 0)
         {
             ParseExtension(config, reader);
+        }
+        // 向后兼容 SBR：AOT=LC + syncExtensionType(0x2B7) + SBR/PS 参数
+        else if (!config.ExtensionFlag && reader.RemainingBits >= 11)
+        {
+            var sync = reader.Read(11);
+            if (sync == 0x2B7 && reader.RemainingBits >= 5)
+                ParseExtension(config, reader);
         }
 
         return config;
@@ -210,6 +219,12 @@ public sealed class AudioSpecificConfig
         // 扩展
         if (ExtensionFlag && ExtensionAudioObjectType > 0)
             WriteExtension(ref writer);
+        else if (!ExtensionFlag && ExtensionAudioObjectType > 0)
+        {
+            // 向后兼容 SBR：syncExtensionType(0x2B7) + 扩展参数
+            writer.Write(0x2B7, 11);
+            WriteExtension(ref writer);
+        }
 
         return writer.ToArray();
     }
@@ -244,9 +259,9 @@ public sealed class AudioSpecificConfig
     /// <returns>AdtsInfo 实例</returns>
     public AacCodec.AdtsInfo ToAdtsInfo(Int32 frameLength = 0, Boolean protectionAbsent = true)
     {
-        // AOT → ADTS profile: AOT-1（Main=0, LC=1, SSR=2, LTP=3）
-        var profile = AudioObjectType - 1;
-        if (profile < 0) profile = 0;
+        // AdtsInfo.Profile 与 AOT 一致，均为 1-based（1=Main,2=LC,3=SSR,4=LTP）
+        var profile = AudioObjectType;
+        if (profile < 1) profile = 1;
 
         return new AacCodec.AdtsInfo
         {
