@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "串流不支援定位。"
 "The stream does not support reading.": "串流不支援讀取。"
 "The stream does not support writing.": "串流不支援寫入。"
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

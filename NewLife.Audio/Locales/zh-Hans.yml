@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "流不支持定位。"
 "The stream does not support reading.": "流不支持读取。"
 "The stream does not support writing.": "流不支持写入。"
+"Container {0} does not support tag-only update.": "容器 {0} 不支持仅修改标签。"

@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Aliran tidak menyokong carian."
 "The stream does not support reading.": "Aliran tidak menyokong pembacaan."
 "The stream does not support writing.": "Aliran tidak menyokong penulisan."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

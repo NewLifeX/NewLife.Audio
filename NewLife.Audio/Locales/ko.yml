@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "스트림은 탐색을 지원하지 않습니다."
 "The stream does not support reading.": "스트림은 읽기를 지원하지 않습니다."
 "The stream does not support writing.": "스트림은 쓰기를 지원하지 않습니다."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

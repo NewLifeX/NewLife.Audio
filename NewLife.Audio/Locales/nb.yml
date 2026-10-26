@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Strømmen støtter ikke søking."
 "The stream does not support reading.": "Strømmen støtter ikke lesing."
 "The stream does not support writing.": "Strømmen støtter ikke skriving."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

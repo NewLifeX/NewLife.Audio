@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Потік не підтримує позиціонування."
 "The stream does not support reading.": "Потік не підтримує читання."
 "The stream does not support writing.": "Потік не підтримує запис."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

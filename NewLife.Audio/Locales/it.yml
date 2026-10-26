@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Il flusso non supporta la ricerca."
 "The stream does not support reading.": "Il flusso non supporta la lettura."
 "The stream does not support writing.": "Il flusso non supporta la scrittura."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "A stream nem támogatja a keresést."
 "The stream does not support reading.": "A stream nem támogatja az olvasást."
 "The stream does not support writing.": "A stream nem támogatja az írást."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

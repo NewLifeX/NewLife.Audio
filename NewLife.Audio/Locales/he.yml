@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "הזרם אינו תומך בחיפוש."
 "The stream does not support reading.": "הזרם אינו תומך בקריאה."
 "The stream does not support writing.": "הזרם אינו תומך בכתיבה."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

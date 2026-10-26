@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Stream nepodporuje hledání."
 "The stream does not support reading.": "Stream nepodporuje čtení."
 "The stream does not support writing.": "Stream nepodporuje zápis."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

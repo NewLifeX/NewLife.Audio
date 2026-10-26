@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Akış konumlandırmayı desteklemiyor."
 "The stream does not support reading.": "Akış okumayı desteklemiyor."
 "The stream does not support writing.": "Akış yazmayı desteklemiyor."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

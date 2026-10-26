@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "De stream ondersteunt geen zoeken."
 "The stream does not support reading.": "De stream ondersteunt geen lezen."
 "The stream does not support writing.": "De stream ondersteunt geen schrijven."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

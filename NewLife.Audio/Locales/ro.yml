@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Fluxul nu acceptă căutarea."
 "The stream does not support reading.": "Fluxul nu acceptă citirea."
 "The stream does not support writing.": "Fluxul nu acceptă scrierea."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

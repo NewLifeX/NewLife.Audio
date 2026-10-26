@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Virta ei tue hakua."
 "The stream does not support reading.": "Virta ei tue lukemista."
 "The stream does not support writing.": "Virta ei tue kirjoittamista."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

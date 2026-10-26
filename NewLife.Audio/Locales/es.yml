@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "La secuencia no admite búsqueda."
 "The stream does not support reading.": "La secuencia no admite lectura."
 "The stream does not support writing.": "La secuencia no admite escritura."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

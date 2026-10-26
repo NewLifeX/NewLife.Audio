@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "স্ট্রিম সন্ধান সমর্থন করে না।"
 "The stream does not support reading.": "স্ট্রিম পড়া সমর্থন করে না।"
 "The stream does not support writing.": "স্ট্রিম লেখা সমর্থন করে না।"
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

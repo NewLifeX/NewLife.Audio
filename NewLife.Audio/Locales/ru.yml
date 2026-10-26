@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Поток не поддерживает позиционирование."
 "The stream does not support reading.": "Поток не поддерживает чтение."
 "The stream does not support writing.": "Поток не поддерживает запись."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

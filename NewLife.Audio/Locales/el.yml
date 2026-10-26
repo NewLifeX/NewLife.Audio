@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "Η ροή δεν υποστηρίζει αναζήτηση."
 "The stream does not support reading.": "Η ροή δεν υποστηρίζει ανάγνωση."
 "The stream does not support writing.": "Η ροή δεν υποστηρίζει εγγραφή."
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."

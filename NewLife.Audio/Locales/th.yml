@@ -30,3 +30,4 @@
 "The stream does not support seeking.": "สตรีมไม่รองรับการค้นหา"
 "The stream does not support reading.": "สตรีมไม่รองรับการอ่าน"
 "The stream does not support writing.": "สตรีมไม่รองรับการเขียน"
+"Container {0} does not support tag-only update.": "Container {0} does not support tag-only update."
