@@ -145,7 +145,7 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             if (option is Int32 bitrate) options.Bitrate = bitrate;
         }
 
-        var encoder = new Mp3Layer3Encoder(options.SampleRate, options.Channels, options.Bitrate);
+        var encoder = new Mp3Layer3Encoder(options.SampleRate, options.Channels, options.Bitrate) { UseCrc = options.UseCrc };
         var data = pcm.ToArray();
         var frameBytes = encoder.FrameSamples * options.Channels * 2;
         var frameBuf = new Byte[encoder.MaxFrameBytes];
@@ -153,7 +153,11 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         var vbr = options.Mode != Mp3RateMode.Cbr;
         var writeInfo = vbr || options.WriteInfoFrame;
         var sizes = writeInfo ? new List<Int32>() : null;
-        var ms = new MemoryStream(data.Length + 1024);
+        var frames = new List<EncodedFrame>();
+        var mpeg1 = options.SampleRate >= 32000;
+        var sideInfoBytes = mpeg1 ? (options.Channels == 1 ? 17 : 32) : (options.Channels == 1 ? 9 : 17);
+        var mainOffset = 4 + (options.UseCrc ? 2 : 0) + sideInfoBytes;
+        var reservoir = 0;
 
         // 末尾补零让帧数覆盖「原始样本 + 编码器延迟」，gapless 尾部填充才不为负
         var delay = writeInfo ? encoder.EncoderDelay : 0;
@@ -170,14 +174,43 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         var minRate = options.MinBitrate * 1000;
         var maxRate = options.MaxBitrate * 1000;
 
+        Int32 EncodeOne(Byte[] source, Int32 sourceOffset)
+        {
+            encoder.ReservoirBytes = reservoir;
+            var len = vbr
+                ? EncodeVariableFrame(encoder, source, sourceOffset, frameBuf, options.Mode, demandScale, targetBits, minRate, maxRate, reservoir, ref drift, out _)
+                : encoder.EncodeFrame(source, sourceOffset, frameBuf);
+
+            var capacity = len - mainOffset;
+            if (capacity < 0) capacity = 0;
+            var mainBits = encoder.LastMainDataBits;
+            var mainBytes = (mainBits + 7) >> 3;
+            if (mainBytes > capacity + reservoir) mainBytes = capacity + reservoir;
+            if (mainBytes < 0) mainBytes = 0;
+
+            var header = new Byte[mainOffset];
+            Array.Copy(frameBuf, header, Math.Min(mainOffset, len));
+            var mainData = new Byte[mainBytes];
+            if (mainBytes > 0) encoder.CopyLastMainData(mainData, 0, mainBytes);
+
+            frames.Add(new EncodedFrame
+            {
+                Header = header,
+                MainData = mainData,
+                Capacity = capacity,
+                MainDataBegin = Math.Max(0, mainBytes - capacity),
+            });
+            sizes?.Add(len);
+
+            // 只有本帧末尾的空闲区能被下一帧向前引用；更早的空闲区已被本帧数据隔断
+            reservoir = Math.Min(encoder.MaxReservoirBytes, Math.Max(0, capacity - mainBytes));
+            return len;
+        }
+
         var offset = 0;
         while (offset + frameBytes <= data.Length)
         {
-            var len = vbr
-                ? EncodeVariableFrame(encoder, data, offset, frameBuf, options.Mode, demandScale, targetBits, minRate, maxRate, ref drift, out _)
-                : encoder.EncodeFrame(data, offset, frameBuf);
-            ms.Write(frameBuf, 0, len);
-            sizes?.Add(len);
+            EncodeOne(data, offset);
             offset += frameBytes;
         }
 
@@ -185,14 +218,11 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         {
             var tail = new Byte[frameBytes];
             Array.Copy(data, offset, tail, 0, data.Length - offset);
-            var len = vbr
-                ? EncodeVariableFrame(encoder, tail, 0, frameBuf, options.Mode, demandScale, targetBits, minRate, maxRate, ref drift, out _)
-                : encoder.EncodeFrame(tail, 0, frameBuf);
-            ms.Write(frameBuf, 0, len);
-            sizes?.Add(len);
+            EncodeOne(tail, 0);
         }
 
-        if (!writeInfo || sizes == null || sizes.Count == 0) return new ArrayPacket(ms.ToArray());
+        var audio = BuildReservoirFrames(frames, mpeg1, sideInfoBytes, options.UseCrc);
+        if (!writeInfo || sizes == null || sizes.Count == 0) return new ArrayPacket(audio);
 
         // 前置 Xing/Info 信息帧，附带 gapless 裁剪信息
         var quality = options.Mode == Mp3RateMode.Vbr ? Clamp(options.VbrQuality, 0, 9) * 10 : 100;
@@ -201,16 +231,123 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         if (padding < 0) padding = 0;
 
         var magic = Mp3XingHeader.Build(options.SampleRate, options.Channels, sizes.Count, sizes, vbr, quality, delay, padding);
-        var output = new MemoryStream(magic.Length + (Int32)ms.Length);
+        var output = new MemoryStream(magic.Length + audio.Length);
         output.Write(magic, 0, magic.Length);
-        ms.Position = 0;
-        ms.CopyTo(output);
+        output.Write(audio, 0, audio.Length);
 
         return new ArrayPacket(output.ToArray());
     }
 
+    /// <summary>已编码帧，主数据与帧头分离以便按比特池重排</summary>
+    private sealed class EncodedFrame
+    {
+        /// <summary>帧头、可选 CRC 与边信息</summary>
+        public Byte[] Header { get; set; }
+
+        /// <summary>本帧主数据</summary>
+        public Byte[] MainData { get; set; }
+
+        /// <summary>本帧主数据区容量（字节）</summary>
+        public Int32 Capacity { get; set; }
+
+        /// <summary>主数据起始位置相对本帧主数据区向前回溯的字节数</summary>
+        public Int32 MainDataBegin { get; set; }
+    }
+
+    /// <summary>按比特池把各帧主数据重排为连续码流</summary>
+    /// <param name="frames">已编码帧</param>
+    /// <param name="mpeg1">是否为 MPEG-1（main_data_begin 为 9 位）</param>
+    /// <param name="sideInfoBytes">边信息字节数</param>
+    /// <param name="useCrc">是否带 CRC</param>
+    /// <returns>重排后的完整 MP3 帧序列</returns>
+    private static Byte[] BuildReservoirFrames(List<EncodedFrame> frames, Boolean mpeg1, Int32 sideInfoBytes, Boolean useCrc)
+    {
+        if (frames.Count == 0) return [];
+
+        var total = 0;
+        foreach (var frame in frames) total += frame.Capacity;
+
+        // 先把所有主数据按比特池规则铺到连续区域：当前帧可向前借用上一帧未用完的尾部
+        var stream = new Byte[total];
+        var capacityBefore = 0;
+        foreach (var frame in frames)
+        {
+            var begin = Math.Min(frame.MainDataBegin, capacityBefore);
+            frame.MainDataBegin = begin;
+            var start = capacityBefore - begin;
+            if (frame.MainData.Length > 0)
+            {
+                var count = Math.Min(frame.MainData.Length, stream.Length - start);
+                Array.Copy(frame.MainData, 0, stream, start, count);
+            }
+            capacityBefore += frame.Capacity;
+        }
+
+        var output = new MemoryStream(total + frames.Count * 8);
+        capacityBefore = 0;
+        foreach (var frame in frames)
+        {
+            var sideOffset = frame.Header.Length - sideInfoBytes;
+            if (mpeg1)
+            {
+                // 9 位 main_data_begin：边信息前 8 位 + 第 9 位在下一字节最高位
+                var value = frame.MainDataBegin;
+                frame.Header[sideOffset] = (Byte)(value >> 1);
+                frame.Header[sideOffset + 1] = (Byte)((frame.Header[sideOffset + 1] & 0x7F) | ((value & 1) << 7));
+            }
+            else
+            {
+                frame.Header[sideOffset] = (Byte)frame.MainDataBegin;
+            }
+
+            if (useCrc)
+            {
+                var crc = ComputeCrc(frame.Header, sideOffset, sideInfoBytes);
+                frame.Header[4] = (Byte)(crc >> 8);
+                frame.Header[5] = (Byte)(crc & 0xFF);
+            }
+
+            output.Write(frame.Header, 0, frame.Header.Length);
+            output.Write(stream, capacityBefore, frame.Capacity);
+            capacityBefore += frame.Capacity;
+        }
+
+        return output.ToArray();
+    }
+
+    /// <summary>计算 MP3 帧 CRC-16（覆盖帧头第 3~4 字节与边信息）</summary>
+    /// <param name="frame">帧数据</param>
+    /// <param name="sideOffset">边信息起始偏移</param>
+    /// <param name="sideBytes">边信息字节数</param>
+    /// <returns>CRC-16 值</returns>
+    private static Int32 ComputeCrc(Byte[] frame, Int32 sideOffset, Int32 sideBytes)
+    {
+        var crc = 0xFFFF;
+        for (var b = 2; b < 4; b++)
+        {
+            for (var bit = 7; bit >= 0; bit--) crc = UpdateCrc(crc, (frame[b] & (1 << bit)) != 0);
+        }
+        for (var b = 0; b < sideBytes; b++)
+        {
+            for (var bit = 7; bit >= 0; bit--) crc = UpdateCrc(crc, (frame[sideOffset + b] & (1 << bit)) != 0);
+        }
+
+        return crc;
+    }
+
+    private static Int32 UpdateCrc(Int32 crc, Boolean bit)
+    {
+        crc ^= bit ? 0x8000 : 0;
+        for (var i = 0; i < 8; i++)
+        {
+            crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x8005) & 0xFFFF : (crc << 1) & 0xFFFF;
+        }
+
+        return crc;
+    }
+
     /// <summary>编码一帧并返回本帧码率</summary>
-    private static Int32 EncodeVariableFrame(Mp3Layer3Encoder encoder, Byte[] pcm, Int32 offset, Byte[] frameBuf, Mp3RateMode mode, Double demandScale, Double targetBits, Int32 minRate, Int32 maxRate, ref Double drift, out Int32 bitrate)
+    private static Int32 EncodeVariableFrame(Mp3Layer3Encoder encoder, Byte[] pcm, Int32 offset, Byte[] frameBuf, Mp3RateMode mode, Double demandScale, Double targetBits, Int32 minRate, Int32 maxRate, Int32 reservoirBytes, ref Double drift, out Int32 bitrate)
     {
         var demand = encoder.PrepareFrame(pcm, offset, true, (Single)demandScale);
 
@@ -219,7 +356,8 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             : demand * targetBits / (drift > 0 ? drift : demand);
         if (desired < 0) desired = 0;
 
-        encoder.Bitrate = encoder.SelectBitrate((Int32)desired, minRate, maxRate);
+        encoder.ReservoirBytes = reservoirBytes;
+        encoder.Bitrate = encoder.SelectBitrate((Int32)desired, minRate, maxRate, reservoirBytes);
         bitrate = encoder.Bitrate;
 
         var len = encoder.EncodePrepared(frameBuf);

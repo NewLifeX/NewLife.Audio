@@ -7,8 +7,8 @@ namespace NewLife.Audio.Codecs;
 /// 纯托管实现，覆盖 MPEG-1（32/44.1/48 kHz）、MPEG-2 LSF（16/22.05/24 kHz）与 MPEG-2.5（8/11.025/12 kHz），
 /// 支持单声道与立体声、CBR 码率，长块编码（无窗口切换）。
 /// <para>信号链：多相子带分析 → 36 点 MDCT → 频率反转与反混叠折叠 → 标量量化（缩放因子带）
-/// → Huffman 编码（含表 16~23 的 ESC 扩展）→ 帧组装。量化采用带内等信噪比分配，并以比特预算二分搜索全局尺度，
-/// 不使用比特池（main_data_begin 恒为 0），每帧自包含。</para>
+/// → Huffman 编码（含表 16~23 的 ESC 扩展）→ 帧组装。量化采用带内等信噪比分配，并以比特预算二分搜索全局尺度；
+/// 默认每帧自包含（main_data_begin=0），批量编码时调用方可设置 <see cref="ReservoirBytes"/> 借用前一帧空闲区。</para>
 /// </remarks>
 internal sealed class Mp3Layer3Encoder
 {
@@ -93,6 +93,7 @@ internal sealed class Mp3Layer3Encoder
     private readonly Int32[,] _bandCost;
 
     private readonly Mp3BitWriter _mainWriter = new(4096);
+    private readonly Mp3BitWriter _sideWriter = new(64);
     private readonly Mp3BitWriter _frameWriter = new(2048);
     private readonly GranuleInfo[][] _info;
 
@@ -119,6 +120,20 @@ internal sealed class Mp3Layer3Encoder
         }
     }
 
+    /// <summary>是否写入 CRC-16 保护</summary>
+    public Boolean UseCrc { get; set; }
+
+    /// <summary>可从前一帧比特池借用的字节数</summary>
+    /// <remarks>置 0 表示每帧自包含；批量编码时由调用方按上一帧未用容量设置，最大 511 字节。</remarks>
+    public Int32 ReservoirBytes { get; set; }
+
+    /// <summary>最近一次 <see cref="EncodePrepared"/> 的主数据比特数</summary>
+    public Int32 LastMainDataBits { get; private set; }
+
+    /// <summary>比特池允许的最大字节数</summary>
+    /// <remarks>MPEG-1 的 main_data_begin 为 9 位，MPEG-2/2.5 为 8 位。</remarks>
+    public Int32 MaxReservoirBytes => _mpeg1 ? 511 : 255;
+
     /// <summary>当前帧的主数据比特需求，来自最近一次 <see cref="PrepareFrame"/></summary>
     public Int32 DemandBits => _demandBits;
 
@@ -144,8 +159,9 @@ internal sealed class Mp3Layer3Encoder
     /// <param name="desiredBits">本帧期望的主数据比特数</param>
     /// <param name="lowest">可选最低码率（bps），小于等于 0 表示取最低档</param>
     /// <param name="highest">可选最高码率（bps），小于等于 0 表示取最高档</param>
+    /// <param name="reservoirBytes">可从前一帧比特池借用的字节数</param>
     /// <returns>吸附到标准档位后的码率（bps）</returns>
-    public Int32 SelectBitrate(Int32 desiredBits, Int32 lowest, Int32 highest)
+    public Int32 SelectBitrate(Int32 desiredBits, Int32 lowest, Int32 highest, Int32 reservoirBytes = 0)
     {
         var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
         var lo = lowest > 0 ? FindBitrateIndex(bitrates, lowest / 1000) : 1;
@@ -154,21 +170,22 @@ internal sealed class Mp3Layer3Encoder
 
         for (var i = lo; i <= hi; i++)
         {
-            if (GetFrameBudget(i) >= desiredBits) return bitrates[i] * 1000;
+            if (GetFrameBudget(i, reservoirBytes) >= desiredBits) return bitrates[i] * 1000;
         }
 
         return bitrates[hi] * 1000;
     }
 
-    /// <summary>指定码率档位下扣除帧头与边信息后的主数据比特预算</summary>
+    /// <summary>指定码率档位下扣除帧头、CRC 与边信息后的主数据比特预算</summary>
     /// <param name="bitrateIndex">码率档位序号</param>
+    /// <param name="reservoirBytes">可额外借用的比特池字节数</param>
     /// <returns>主数据比特数</returns>
-    private Int32 GetFrameBudget(Int32 bitrateIndex)
+    private Int32 GetFrameBudget(Int32 bitrateIndex, Int32 reservoirBytes = 0)
     {
         var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
         var frameBytes = (_mpeg1 ? 144 : 72) * bitrates[bitrateIndex] * 1000 / _sampleRate;
 
-        return frameBytes * 8 - 32 - _sideInfoBits;
+        return frameBytes * 8 - 32 - _sideInfoBits - (UseCrc ? 16 : 0) + reservoirBytes * 8;
     }
 
     /// <summary>每帧样本数（每声道）</summary>
@@ -314,6 +331,18 @@ internal sealed class Mp3Layer3Encoder
         return _demandBits;
     }
 
+    /// <summary>复制最近一次编码的主数据字节</summary>
+    /// <param name="target">目标数组</param>
+    /// <param name="offset">目标起始偏移</param>
+    /// <param name="byteCount">最多复制的字节数</param>
+    /// <returns>主数据实际占用的字节数（向上取整）</returns>
+    public Int32 CopyLastMainData(Byte[] target, Int32 offset, Int32 byteCount)
+    {
+        _mainWriter.CopyTo(target, offset, byteCount);
+
+        return _mainWriter.ByteLength;
+    }
+
     /// <summary>按当前比特率把已分析的帧编码输出</summary>
     /// <param name="output">输出缓冲区，长度至少为 <see cref="MaxFrameBytes"/></param>
     /// <returns>写入的帧字节数</returns>
@@ -325,7 +354,8 @@ internal sealed class Mp3Layer3Encoder
 
         // 逐颗粒/声道编码主数据
         _mainWriter.Reset();
-        var budget = frameBytes * 8 - 32 - _sideInfoBits;
+        var reservoir = Math.Max(0, Math.Min(MaxReservoirBytes, ReservoirBytes));
+        var budget = frameBytes * 8 - 32 - _sideInfoBits - (UseCrc ? 16 : 0) + reservoir * 8;
 
         // 按估算需求比例为各声道分配预算，避免零需求的 side 声道浪费一半码率
         var channelBudget = new Int32[_channels];
@@ -371,12 +401,20 @@ internal sealed class Mp3Layer3Encoder
 
         // 组装帧
         _frameWriter.Reset();
+        _sideWriter.Reset();
         WriteFrameHeader(_frameWriter, pad);
-        WriteSideInfo(_frameWriter);
+        WriteSideInfo(_sideWriter);
+        if (UseCrc)
+        {
+            var crc = ComputeCrc(_frameWriter, 16, 16, _sideWriter);
+            _frameWriter.Write(crc, 16);
+        }
+        _frameWriter.AppendFrom(_sideWriter, 0, _sideWriter.Position);
         _frameWriter.AppendFrom(_mainWriter, 0, _mainWriter.Position);
         _frameWriter.CopyTo(output, 0, frameBytes);
 
-        // 主数据超出本帧容量时会被截断，调用方可换更高码率重编
+        LastMainDataBits = Math.Min(_mainWriter.Position, budget);
+        // 主数据超出本帧容量（含可借用比特池）时会被截断，调用方可换更高码率重编
         LastFrameTruncated = _mainWriter.Position > budget;
 
         // 更新子带历史（L/R 与 M/S 各自维护，供下一帧选择任一模式时使用）
@@ -1035,7 +1073,7 @@ internal sealed class Mp3Layer3Encoder
         writer.Write(0x7FF, 11);
         writer.Write(_versionBits, 2);
         writer.Write(1, 2);          // Layer III
-        writer.Write(1, 1);          // 无 CRC
+        writer.Write(UseCrc ? 0 : 1, 1); // protection_bit：0 表示带 CRC
         writer.Write(_bitrateIndex, 4);
         writer.Write(_sampleRateIndex, 2);
         writer.Write(padding, 1);
@@ -1105,6 +1143,26 @@ internal sealed class Mp3Layer3Encoder
     #endregion
 
     #region 辅助
+    private static Int32 ComputeCrc(Mp3BitWriter header, Int32 startBit, Int32 bitCount, Mp3BitWriter side)
+    {
+        var crc = 0xFFFF;
+        for (var i = 0; i < bitCount; i++) crc = UpdateCrc(crc, header.ReadBitAt(startBit + i));
+        for (var i = 0; i < side.Position; i++) crc = UpdateCrc(crc, side.ReadBitAt(i));
+
+        return crc;
+    }
+
+    private static Int32 UpdateCrc(Int32 crc, Boolean bit)
+    {
+        crc ^= bit ? 0x8000 : 0;
+        for (var i = 0; i < 8; i++)
+        {
+            crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x8005) & 0xFFFF : (crc << 1) & 0xFFFF;
+        }
+
+        return crc;
+    }
+
     private Int32 NextPadding()
     {
         var step = (_mpeg1 ? 144 : 72) * _bitrate;

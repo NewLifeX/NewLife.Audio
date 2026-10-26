@@ -22,6 +22,10 @@ public class Mp3EncoderOptions
     /// <summary>CBR 下是否也写入 Info 信息帧（携带 gapless 裁剪信息），默认 false</summary>
     public Boolean WriteInfoFrame { get; set; }
 
+    /// <summary>是否写入 CRC-16 保护，默认 false</summary>
+    /// <remarks>开启后帧头 protection_bit=0，并在 4 字节帧头后、边信息前写入 CRC-16；解码端会自动校验。</remarks>
+    public Boolean UseCrc { get; set; }
+
     /// <summary>VBR 质量档位，0 最高质量、9 最小体积，默认 2</summary>
     /// <remarks>仅在 <see cref="Mode"/> 为 <see cref="Mp3RateMode.Vbr"/> 时生效</remarks>
     public Int32 VbrQuality { get; set; } = 2;

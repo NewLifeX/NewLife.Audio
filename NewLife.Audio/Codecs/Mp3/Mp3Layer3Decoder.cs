@@ -117,6 +117,7 @@ internal sealed class Mp3Layer3Decoder
         var offset = SkipId3v2(input);
         var output = new MemoryStream(input.Length * 8);
         var pcm = new Int16[1152 * 2];
+        var lastPcm = new Int16[pcm.Length];
 
         while (offset + 4 <= input.Length)
         {
@@ -141,7 +142,19 @@ internal sealed class Mp3Layer3Decoder
             }
 
             Array.Clear(pcm, 0, pcm.Length);
-            DecodeFrame(input, offset, header, pcm);
+            try
+            {
+                if (header.HasCrc && !ValidateCrc(input, offset, header)) throw new InvalidDataException("Invalid MP3 frame CRC.");
+
+                DecodeFrame(input, offset, header, pcm);
+                Array.Copy(pcm, lastPcm, pcm.Length);
+            }
+            catch (Exception ex) when (ex is InvalidDataException or IndexOutOfRangeException or ArgumentOutOfRangeException or OverflowException)
+            {
+                // 坏帧用上一好帧衰减填充，避免网络流/损坏文件整段解码中断
+                for (var i = 0; i < pcm.Length; i++) pcm[i] = (Int16)(lastPcm[i] >> 1);
+                Array.Copy(pcm, lastPcm, pcm.Length);
+            }
 
             var samples = (header.Version == Mp3Version.Mpeg1 ? 2 : 1) * 576;
             var count = samples * channels;
@@ -160,6 +173,39 @@ internal sealed class Mp3Layer3Decoder
     #endregion
 
     #region 帧头与 ID3
+    private static Boolean ValidateCrc(Byte[] data, Int32 offset, Mp3Header header)
+    {
+        var sideInfo = header.Version == Mp3Version.Mpeg1 ? (header.Channels == 1 ? 17 : 32) : (header.Channels == 1 ? 9 : 17);
+        var crcOffset = offset + 4;
+        if (crcOffset + 2 + sideInfo > data.Length) return false;
+
+        var expected = (data[crcOffset] << 8) | data[crcOffset + 1];
+        var crc = 0xFFFF;
+
+        // CRC 覆盖帧头第 3~4 字节（同步字之后 16 位）与边信息
+        for (var b = 2; b < 4; b++)
+        {
+            for (var bit = 7; bit >= 0; bit--) crc = UpdateCrc(crc, (data[offset + b] & (1 << bit)) != 0);
+        }
+        for (var b = 0; b < sideInfo; b++)
+        {
+            for (var bit = 7; bit >= 0; bit--) crc = UpdateCrc(crc, (data[crcOffset + 2 + b] & (1 << bit)) != 0);
+        }
+
+        return crc == expected;
+    }
+
+    private static Int32 UpdateCrc(Int32 crc, Boolean bit)
+    {
+        crc ^= bit ? 0x8000 : 0;
+        for (var i = 0; i < 8; i++)
+        {
+            crc = (crc & 0x8000) != 0 ? ((crc << 1) ^ 0x8005) & 0xFFFF : (crc << 1) & 0xFFFF;
+        }
+
+        return crc;
+    }
+
     /// <summary>判断是否为 Xing/Info/VBRI 信息帧（不含音频数据）</summary>
     /// <param name="data">码流</param>
     /// <param name="offset">帧起始偏移</param>
@@ -346,11 +392,11 @@ internal sealed class Mp3Layer3Decoder
         var totalBytes = keep + mainBytes;
         _bits.Init(_mainData, 0, totalBytes * 8);
 
-        // 比特池尚未攒够时本帧无法解码，但仍要保存主数据
+        // 比特池尚未攒够时本帧无法解码，但仍要保存主数据，再按坏帧隐藏
         if (_reservoirLen < mainDataBegin)
         {
             SaveReservoir(totalBytes);
-            return;
+            throw new InvalidDataException("MP3 bit reservoir underflow.");
         }
 
         var granules = mpeg1 ? 2 : 1;
