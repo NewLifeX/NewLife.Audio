@@ -225,6 +225,12 @@ public class AudioFile
             case AudioContainerKind.Mp3:
                 {
                     var source = File.ReadAllBytes(Path);
+                    if (Mp3Id3Tag.TryRewriteInPlace(source, options.Metadata, out var patched))
+                    {
+                        WriteAllBytesAtomic(path, patched);
+                        return true;
+                    }
+
                     var start = Mp3Id3Tag.Skip(source);
                     var end = source.Length;
                     if (end - start >= Mp3Id3Tag.V1Size
@@ -331,6 +337,12 @@ public class AudioFile
         {
             case AudioContainerKind.Mp3:
                 {
+                    if (Mp3Id3Tag.TryRewriteInPlace(data, metadata, out var patched))
+                    {
+                        WriteAllBytesAtomic(path, patched);
+                        return;
+                    }
+
                     var start = Mp3Id3Tag.Skip(data);
                     var end = data.Length;
                     if (end - start >= Mp3Id3Tag.V1Size && data[end - Mp3Id3Tag.V1Size] == 'T' && data[end - Mp3Id3Tag.V1Size + 1] == 'A' && data[end - Mp3Id3Tag.V1Size + 2] == 'G') end -= Mp3Id3Tag.V1Size;

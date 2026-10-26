@@ -1,11 +1,13 @@
+using System.IO.Compression;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Containers;
 
 /// <summary>ID3v2 标签读写</summary>
 /// <remarks>
-/// 支持 ID3v2.3 / ID3v2.4 的读取（文本编码 0~3 全部兼容），写入统一使用 v2.4 + UTF-8。
-/// 仅处理常见文本帧与封面帧：TIT2/TPE1/TALB/TYER/TRCK/TCON/COMM/APIC。
+/// 支持 ID3v2.2 / v2.3 / v2.4 的读取（文本编码 0~3 全部兼容，含反同步与 zlib 压缩帧），
+/// 写入统一使用 v2.4 + UTF-8；标签变小时可在原标签区内原地重写，音频偏移保持不变。
+/// 仅处理常见文本帧与封面帧：TIT2/TPE1/TALB/TYER/TRCK/TCON/COMM/APIC（v2.2 映射 TT2/TP1/TAL/TYE/TRK/TCO/COM/PIC）。
 /// </remarks>
 internal static class Mp3Id3Tag
 {
@@ -144,37 +146,184 @@ internal static class Mp3Id3Tag
         if (data[0] != 'I' || data[1] != 'D' || data[2] != '3') return false;
 
         var version = data[3];
-        if (version < 3 || version > 4) return false;
+        if (version < 2 || version > 4) return false;
+        var flags = data[5];
 
         var size = (data[6] & 0x7F) << 21 | (data[7] & 0x7F) << 14 | (data[8] & 0x7F) << 7 | (data[9] & 0x7F);
         length = HeaderSize + size;
         if (length > data.Length) length = data.Length;
 
         var pos = HeaderSize;
-        // 扩展头（v2.3 标志位 0x40）
-        if ((data[5] & 0x40) != 0 && pos + 4 <= length)
+        // 扩展头（v2.3/v2.4 标志位 0x40）
+        if ((flags & 0x40) != 0 && version >= 3 && pos + 4 <= length)
         {
             var ext = (data[pos] << 24) | (data[pos + 1] << 16) | (data[pos + 2] << 8) | data[pos + 3];
             if (version == 4) ext = (data[pos] & 0x7F) << 21 | (data[pos + 1] & 0x7F) << 14 | (data[pos + 2] & 0x7F) << 7 | (data[pos + 3] & 0x7F);
             pos += ext + 4;
         }
 
-        while (pos + 10 <= length)
+        var frameHeaderSize = version == 2 ? 6 : 10;
+        var tagUnsync = (flags & 0x80) != 0;
+        while (pos + frameHeaderSize <= length)
         {
             if (data[pos] == 0) break;
 
-            var id = System.Text.Encoding.ASCII.GetString(data, pos, 4);
-            var frameSize = version == 4
-                ? (data[pos + 4] & 0x7F) << 21 | (data[pos + 5] & 0x7F) << 14 | (data[pos + 6] & 0x7F) << 7 | (data[pos + 7] & 0x7F)
-                : (data[pos + 4] << 24) | (data[pos + 5] << 16) | (data[pos + 6] << 8) | data[pos + 7];
-            var frameStart = pos + 10;
-            if (frameSize <= 0 || frameStart + frameSize > length) break;
+            String id;
+            Int32 frameSize;
+            Int32 frameStart;
+            if (version == 2)
+            {
+                id = System.Text.Encoding.ASCII.GetString(data, pos, 3);
+                frameSize = (data[pos + 3] << 16) | (data[pos + 4] << 8) | data[pos + 5];
+                frameStart = pos + 6;
+            }
+            else
+            {
+                id = System.Text.Encoding.ASCII.GetString(data, pos, 4);
+                frameSize = version == 4
+                    ? (data[pos + 4] & 0x7F) << 21 | (data[pos + 5] & 0x7F) << 14 | (data[pos + 6] & 0x7F) << 7 | (data[pos + 7] & 0x7F)
+                    : (data[pos + 4] << 24) | (data[pos + 5] << 16) | (data[pos + 6] << 8) | data[pos + 7];
+                frameStart = pos + 10;
+            }
 
-            ReadFrame(id, data, frameStart, frameSize, metadata);
-            pos = frameStart + frameSize;
+            if (frameSize <= 0 || frameSize > length - frameStart) break;
+            var frameEnd = frameStart + frameSize;
+
+            var payload = data;
+            var payloadOffset = frameStart;
+            var payloadSize = frameSize;
+
+            if (version >= 3)
+            {
+                var format = data[pos + 9];
+                if (version == 3)
+                {
+                    if ((format & 0x20) != 0) { payloadOffset++; payloadSize--; }
+                    if ((format & 0x40) != 0) { pos = frameEnd; continue; }
+                    if ((format & 0x80) != 0)
+                    {
+                        if (payloadSize < 4 || !TryDecompressZlib(data, payloadOffset + 4, payloadSize - 4, out var decompressed))
+                        {
+                            pos = frameEnd;
+                            continue;
+                        }
+                        payload = decompressed;
+                        payloadOffset = 0;
+                        payloadSize = decompressed.Length;
+                    }
+                }
+                else
+                {
+                    if ((format & 0x40) != 0) { payloadOffset++; payloadSize--; }
+                    if ((format & 0x04) != 0) { pos = frameEnd; continue; }
+                    if ((format & 0x01) != 0)
+                    {
+                        if (payloadSize < 4) { pos = frameEnd; continue; }
+                        payloadOffset += 4;
+                        payloadSize -= 4;
+                    }
+                    if ((format & 0x08) != 0)
+                    {
+                        if (!TryDecompressZlib(data, payloadOffset, payloadSize, out var decompressed))
+                        {
+                            pos = frameEnd;
+                            continue;
+                        }
+                        payload = decompressed;
+                        payloadOffset = 0;
+                        payloadSize = decompressed.Length;
+                    }
+                    if ((format & 0x02) != 0)
+                    {
+                        payload = Deunsync(payload, payloadOffset, payloadSize);
+                        payloadOffset = 0;
+                        payloadSize = payload.Length;
+                    }
+                }
+            }
+
+            if (tagUnsync)
+            {
+                payload = Deunsync(payload, payloadOffset, payloadSize);
+                payloadOffset = 0;
+                payloadSize = payload.Length;
+            }
+
+            ReadFrame(NormalizeId(id), payload, payloadOffset, payloadSize, metadata);
+            pos = frameEnd;
         }
 
         return true;
+    }
+
+    /// <summary>把 ID3v2.2 三字符帧标识映射到 v2.3/v2.4 标识</summary>
+    /// <param name="id">原始帧标识</param>
+    /// <returns>规范帧标识</returns>
+    private static String NormalizeId(String id) => id switch
+    {
+        "TT2" => "TIT2",
+        "TP1" => "TPE1",
+        "TAL" => "TALB",
+        "TYE" => "TYER",
+        "TRK" => "TRCK",
+        "TCO" => "TCON",
+        "COM" => "COMM",
+        "PIC" => "PIC",
+        _ => id,
+    };
+
+    /// <summary>去除 ID3 反同步插入的 0x00</summary>
+    /// <param name="data">源数据</param>
+    /// <param name="offset">起始偏移</param>
+    /// <param name="size">长度</param>
+    /// <returns>反同步后的数据</returns>
+    private static Byte[] Deunsync(Byte[] data, Int32 offset, Int32 size)
+    {
+        if (size <= 0 || offset < 0 || offset + size > data.Length) return [];
+
+        var result = new Byte[size];
+        var pos = 0;
+        var end = offset + size;
+        for (var i = offset; i < end; i++)
+        {
+            result[pos++] = data[i];
+            if (data[i] == 0xFF && i + 1 < end && data[i + 1] == 0) i++;
+        }
+
+        if (pos == size) return result;
+
+        var trimmed = new Byte[pos];
+        Array.Copy(result, trimmed, pos);
+
+        return trimmed;
+    }
+
+    /// <summary>解压 zlib 压缩的帧数据，失败时返回 false</summary>
+    /// <param name="data">源数据</param>
+    /// <param name="offset">起始偏移</param>
+    /// <param name="size">长度</param>
+    /// <param name="result">解压结果</param>
+    /// <returns>是否成功解压</returns>
+    private static Boolean TryDecompressZlib(Byte[] data, Int32 offset, Int32 size, out Byte[] result)
+    {
+        result = null;
+        if (size <= 2 || offset < 0 || offset + size > data.Length) return false;
+
+        try
+        {
+            // zlib 头 2 字节 + DEFLATE 数据 + Adler-32 尾 4 字节
+            using var input = new MemoryStream(data, offset + 2, Math.Max(0, size - 6));
+            using var deflate = new DeflateStream(input, CompressionMode.Decompress);
+            using var output = new MemoryStream();
+            deflate.CopyTo(output);
+            result = output.ToArray();
+
+            return true;
+        }
+        catch (Exception ex) when (ex is InvalidDataException or IOException)
+        {
+            return false;
+        }
     }
 
     /// <summary>跳过 ID3v2 标签，返回首个音频帧的偏移</summary>
@@ -187,7 +336,8 @@ internal static class Mp3Id3Tag
 
         var size = (data[6] & 0x7F) << 21 | (data[7] & 0x7F) << 14 | (data[8] & 0x7F) << 7 | (data[9] & 0x7F);
         var skip = HeaderSize + size;
-        if ((data[5] & 0x10) != 0) skip += 10;
+        // 仅 v2.4 支持 10 字节 footer
+        if (data[3] == 4 && (data[5] & 0x10) != 0) skip += 10;
 
         return skip < data.Length ? skip : data.Length;
     }
@@ -220,6 +370,9 @@ internal static class Mp3Id3Tag
                 break;
             case "APIC":
                 metadata.CoverImage = ReadPicture(data, offset, size);
+                break;
+            case "PIC":
+                metadata.CoverImage = ReadPictureV22(data, offset, size);
                 break;
         }
     }
@@ -291,6 +444,39 @@ internal static class Mp3Id3Tag
         return picture;
     }
 
+    /// <summary>读取 ID3v2.2 PIC 帧（3 字节图片格式代替 MIME）</summary>
+    /// <param name="data">源数据</param>
+    /// <param name="offset">载荷起始偏移</param>
+    /// <param name="size">载荷长度</param>
+    /// <returns>图片数据；无效时返回 null</returns>
+    private static Byte[] ReadPictureV22(Byte[] data, Int32 offset, Int32 size)
+    {
+        if (size <= 5) return null;
+
+        var encoding = data[offset];
+        var pos = offset + 4; // 编码 1 字节 + 图片格式 3 字节
+        var end = offset + size;
+        pos++; // 图片类型
+
+        if (encoding == 1 || encoding == 2)
+        {
+            while (pos + 1 < end && !(data[pos] == 0 && data[pos + 1] == 0)) pos += 2;
+            pos += 2;
+        }
+        else
+        {
+            while (pos < end && data[pos] != 0) pos++;
+            pos++;
+        }
+
+        if (pos >= end) return null;
+
+        var picture = new Byte[end - pos];
+        Array.Copy(data, pos, picture, 0, picture.Length);
+
+        return picture;
+    }
+
     private static String Decode(Byte[] data, Int32 offset, Int32 size, Int32 encoding)
     {
         if (size <= 0) return null;
@@ -306,6 +492,44 @@ internal static class Mp3Id3Tag
     #endregion
 
     #region 写入
+    /// <summary>在原有 ID3v2 标签区内原地重写标签</summary>
+    /// <param name="data">完整文件数据</param>
+    /// <param name="metadata">新元数据</param>
+    /// <param name="output">重写后的文件数据；无法原地重写时返回 null</param>
+    /// <returns>是否成功原地重写</returns>
+    /// <remarks>
+    /// 仅当新标签不大于旧标签区且旧标签不带 footer 时可用。新标签用尾部填充补齐旧区域，
+    /// 音频字节与起始偏移保持不变，避免整段音频搬移。
+    /// </remarks>
+    public static Boolean TryRewriteInPlace(Byte[] data, AudioMetadata metadata, out Byte[] output)
+    {
+        output = null;
+        if (data == null || metadata == null || data.Length < HeaderSize) return false;
+        if (data[0] != 'I' || data[1] != 'D' || data[2] != '3') return false;
+        if (data[3] == 4 && (data[5] & 0x10) != 0) return false;
+
+        var oldLength = Skip(data);
+        if (oldLength <= HeaderSize || oldLength > data.Length) return false;
+
+        var tag = Write(metadata, 0);
+        if (tag.Length == 0 || tag.Length > oldLength) return false;
+
+        var padded = Write(metadata, oldLength - tag.Length);
+        if (padded.Length != oldLength) return false;
+
+        // 原地更新仍丢弃尾部 ID3v1，避免旧标题继续被只读 v1 的播放器使用
+        var end = data.Length;
+        if (end - oldLength >= V1Size
+            && data[end - V1Size] == 'T' && data[end - V1Size + 1] == 'A' && data[end - V1Size + 2] == 'G')
+            end -= V1Size;
+
+        output = new Byte[end];
+        Array.Copy(data, output, end);
+        Array.Copy(padded, 0, output, 0, padded.Length);
+
+        return true;
+    }
+
     /// <summary>构造 ID3v2.4 标签</summary>
     /// <param name="metadata">元数据</param>
     /// <param name="padding">尾部预留字节数，便于后续原地扩展</param>
