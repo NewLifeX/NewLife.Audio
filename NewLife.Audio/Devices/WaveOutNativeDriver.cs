@@ -15,9 +15,12 @@ public class WaveOutNativeDriver : IAudioDriver
     /// <summary>驱动名称</summary>
     public String Name => "Windows WaveOut (winmm.dll)";
 
-    /// <summary>枚举输出设备</summary>
+    /// <summary>枚举音频设备（输出 + 输入）</summary>
+    /// <returns>设备列表；非 Windows 平台返回空列表</returns>
     public IReadOnlyList<AudioDeviceInfo> EnumerateDevices()
     {
+        if (!AudioDriverFactory.IsWindows) return [];
+
         var devices = new List<AudioDeviceInfo>();
         var count = NativeMethods.waveOutGetNumDevs();
         for (var i = 0; i < count && i < 16; i++)
@@ -34,8 +37,28 @@ public class WaveOutNativeDriver : IAudioDriver
                 });
             }
         }
-        if (devices.Count == 0)
+
+        var inCount = NativeMethods.waveInGetNumDevs();
+        for (var i = 0; i < inCount && i < 16; i++)
+        {
+            var caps = new NativeMethods.WAVEINCAPS();
+            if (NativeMethods.waveInGetDevCaps((UIntPtr)i, ref caps, (UInt32)Marshal.SizeOf(caps)) == 0)
+            {
+                devices.Add(new()
+                {
+                    Id = i.ToString(),
+                    Name = caps.szPname,
+                    IsInput = true,
+                    IsDefault = i == 0,
+                });
+            }
+        }
+
+        // 没有任何物理设备时保留一个"默认设备"条目，waveOut/waveIn 的 WAVE_MAPPER(0) 仍然可用
+        if (!devices.Any(e => !e.IsInput))
             devices.Add(new() { Id = "0", Name = L.T("Default audio device"), IsInput = false, IsDefault = true });
+        if (!devices.Any(e => e.IsInput))
+            devices.Add(new() { Id = "0", Name = L.T("Default recording device"), IsInput = true, IsDefault = true });
 
         return devices;
     }
@@ -44,12 +67,15 @@ public class WaveOutNativeDriver : IAudioDriver
     public AudioDeviceInfo GetDefaultOutputDevice()
     {
         var devices = EnumerateDevices();
-        return devices.Count > 0 ? devices[0] : new() { Id = "0", Name = L.T("Default audio device"), IsDefault = true };
+        return devices.FirstOrDefault(e => !e.IsInput && e.IsDefault) ?? devices.FirstOrDefault(e => !e.IsInput);
     }
 
     /// <summary>获取默认输入设备</summary>
-    public AudioDeviceInfo GetDefaultInputDevice() =>
-        new() { Id = "capture", Name = L.T("Default recording device"), IsInput = true, IsDefault = true };
+    public AudioDeviceInfo GetDefaultInputDevice()
+    {
+        var devices = EnumerateDevices();
+        return devices.FirstOrDefault(e => e.IsInput && e.IsDefault) ?? devices.FirstOrDefault(e => e.IsInput);
+    }
 
     /// <summary>创建播放器</summary>
     public IAudioPlayer CreatePlayer() => new WaveOutPlayer();
@@ -299,6 +325,19 @@ internal static class NativeMethods
         public UInt32 dwSupport;
     }
 
+    [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Auto)]
+    public struct WAVEINCAPS
+    {
+        public Int16 wMid;
+        public Int16 wPid;
+        public UInt32 vDriverVersion;
+        [MarshalAs(UnmanagedType.ByValTStr, SizeConst = 32)]
+        public String szPname;
+        public UInt32 dwFormats;
+        public Int16 wChannels;
+        public Int16 wReserved1;
+    }
+
     [DllImport("winmm.dll")]
     public static extern Int32 waveOutGetNumDevs();
 
@@ -329,6 +368,12 @@ internal static class NativeMethods
 
     [DllImport("winmm.dll")]
     public static extern Int32 waveOutClose(IntPtr hWaveOut);
+
+    [DllImport("winmm.dll")]
+    public static extern Int32 waveInGetNumDevs();
+
+    [DllImport("winmm.dll", CharSet = CharSet.Auto)]
+    public static extern Int32 waveInGetDevCaps(UIntPtr uDeviceID, ref WAVEINCAPS caps, UInt32 cbCaps);
 
     [DllImport("winmm.dll")]
     public static extern Int32 waveInOpen(out IntPtr hWaveIn, UIntPtr uDeviceID,

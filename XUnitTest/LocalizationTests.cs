@@ -29,14 +29,10 @@ public class LocalizationTests
 
         var expected = new Dictionary<String, String>
         {
-            ["No ASIO driver is installed; the device list is a placeholder."] = "未检测到已安装的 ASIO 驱动，设备列表为空壳",
-            ["ASIO default device (no driver detected)"] = "ASIO 默认设备（未检测到驱动）",
-            ["ASIO default device (no driver installed)"] = "ASIO 默认设备（未安装驱动）",
-            ["WASAPI default output"] = "WASAPI 默认输出",
-            ["WASAPI default input"] = "WASAPI 默认输入",
+            ["No default audio device is available."] = "没有可用的默认音频设备。",
+            ["The ASIO backend is not implemented."] = "ASIO 后端尚未实现。",
             ["Default audio device"] = "默认音频设备",
             ["Default recording device"] = "默认录音设备",
-            ["Default device"] = "默认设备",
             ["Failed to set the FAAC configuration."] = "设置 FAAC 配置失败",
         };
 
@@ -58,7 +54,7 @@ public class LocalizationTests
         WithCulture(zh, () =>
         {
             Assert.Equal("DESCRIBE 返回 404 Not Found", Localization.Translate("DESCRIBE returned {0} {1}", 404, "Not Found"));
-            Assert.Equal("启动捕获线程失败：boom", Localization.Translate("Failed to start the capture thread: {0}", "boom"));
+            Assert.Equal("初始化 WASAPI 音频客户端失败：boom", Localization.Translate("Failed to initialize the WASAPI audio client: {0}", "boom"));
             Assert.Equal("waveOutOpen 返回 2，回退到空壳模式", Localization.Translate("waveOutOpen returned {0}; falling back to the null player.", 2));
             Assert.Equal("BytesToStruct 出错：boom", Localization.Translate("Error in BytesToStruct: {0}", "boom"));
         });
@@ -82,7 +78,7 @@ public class LocalizationTests
                 if (culture == null) continue;
 
                 Localization.Culture = culture;
-                Assert.NotEqual("Default device", Localization.Translate("Default device"));
+                Assert.NotEqual("Default audio device", Localization.Translate("Default audio device"));
             }
         }
         finally
@@ -92,16 +88,16 @@ public class LocalizationTests
     }
 
     [Theory(DisplayName = "多语言词表：新增语言译文生效")]
-    [InlineData("it", "Dispositivo predefinito")]
-    [InlineData("vi", "Thiết bị mặc định")]
-    [InlineData("uk", "Пристрій за замовчуванням")]
-    [InlineData("he", "התקן ברירת מחדל")]
+    [InlineData("it", "Dispositivo audio predefinito")]
+    [InlineData("vi", "Thiết bị âm thanh mặc định")]
+    [InlineData("uk", "Аудіопристрій за замовчуванням")]
+    [InlineData("he", "התקן שמע ברירת מחדל")]
     public void NewCultureTranslations(String code, String expected)
     {
         var culture = TryGetCulture(code);
         if (culture == null) return;
 
-        WithCulture(culture, () => Assert.Equal(expected, Localization.Translate("Default device")));
+        WithCulture(culture, () => Assert.Equal(expected, Localization.Translate("Default audio device")));
     }
 
     [Fact(DisplayName = "多语言词表：31 种语言覆盖全部词条")]
@@ -124,16 +120,13 @@ public class LocalizationTests
             "An RTP packet requires at least a 12-byte header.",
             "The pipe has been closed.",
             "No audio backend is available.",
-            "No ASIO driver is installed; the device list is a placeholder.",
-            "Failed to start the capture thread: {0}",
+            "No default audio device is available.",
+            "Failed to initialize the WASAPI audio client: {0}",
+            "The ASIO backend is not implemented.",
+            "The requested audio format is not supported: {0}",
             "waveOutOpen returned {0}; falling back to the null player.",
-            "ASIO default device (no driver detected)",
-            "ASIO default device (no driver installed)",
-            "WASAPI default output",
-            "WASAPI default input",
             "Default audio device",
             "Default recording device",
-            "Default device",
             "DESCRIBE returned {0} {1}",
             "Failed to set the FAAC configuration.",
             "Error in BytesToStruct: {0}",
@@ -208,7 +201,7 @@ public class LocalizationTests
     {
         WithCulture(CultureInfo.InvariantCulture, () =>
         {
-            Assert.Equal("Default device", Localization.Translate("Default device"));
+            Assert.Equal("Default audio device", Localization.Translate("Default audio device"));
         });
     }
 

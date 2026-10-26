@@ -4,46 +4,67 @@ using NewLife.Audio.DSP;
 namespace NewLife.Audio.Devices;
 
 /// <summary>音频驱动工厂。根据运行时平台自动选择最优驱动</summary>
+/// <remarks>
+/// Windows 上默认使用 <see cref="WaveOutNativeDriver"/>（winmm）；其他平台没有内置原生后端，
+/// <see cref="Create()"/> 返回的驱动在创建播放器/录制器时明确抛出 <see cref="PlatformNotSupportedException"/>，
+/// 不再伪造设备或返回空录制器。<br/>
+/// 驱动选择一律按运行时平台判断，与编译目标框架无关（net461/netstandard/net8.0 行为一致）。
+/// </remarks>
+/// <example>
+/// <code>
+/// if (AudioDriverFactory.IsSupported)
+/// {
+///     using var player = AudioDriverFactory.Create().CreatePlayer();
+///     player.Init(AudioFormat.Default);
+///     player.Write(pcm);
+/// }
+/// </code>
+/// </example>
 public static class AudioDriverFactory
 {
+    /// <summary>是否运行在 Windows</summary>
+    public static Boolean IsWindows => Environment.OSVersion.Platform == PlatformID.Win32NT;
+
+    /// <summary>当前平台是否有可用的音频设备后端</summary>
+    /// <remarks>无可用后端时，<see cref="Create()"/> 返回的驱动在创建播放器/录制器时抛出 <see cref="PlatformNotSupportedException"/>。</remarks>
+    public static Boolean IsSupported => IsWindows;
+
+    /// <summary>枚举当前平台可用的后端名称</summary>
+    /// <returns>后端名称列表（小写）；无可用后端时返回空列表</returns>
+    public static IReadOnlyList<String> GetAvailableBackends() => IsWindows ? ["waveout", "wasapi", "asio"] : [];
+
     /// <summary>创建当前平台最优驱动</summary>
-    public static IAudioDriver Create()
-    {
-#if NETFRAMEWORK || WINDOWS
-        return new WaveOutNativeDriver();
-#else
-        return new FallbackDriver();
-#endif
-    }
+    /// <returns>可用驱动；当前平台无后端时返回不可用驱动</returns>
+    public static IAudioDriver Create() => IsWindows ? new WaveOutNativeDriver() : new UnsupportedDriver();
 
     /// <summary>创建指定名称的驱动</summary>
+    /// <param name="name">驱动名称：waveout / wasapi / asio；未知名称按平台最优驱动处理</param>
+    /// <returns>驱动实例；当前平台无后端时返回不可用驱动</returns>
     public static IAudioDriver Create(String name)
     {
+        if (!IsWindows) return new UnsupportedDriver();
+
         return (name?.ToLower()) switch
         {
-            "waveout" => new WaveOutNativeDriver(),
             "wasapi" => new WasapiDriver(),
             "asio" => new AsioDriver(),
-            _ => Create(),
+            _ => new WaveOutNativeDriver(),
         };
     }
 }
 
-/// <summary>跨平台回退驱动（无硬件加速）</summary>
-internal class FallbackDriver : IAudioDriver
+/// <summary>当前平台不支持的驱动。明确报告不可用，不再伪造设备或静默回退</summary>
+internal class UnsupportedDriver : IAudioDriver
 {
-    public String Name => "Fallback";
+    public String Name => "Unsupported";
 
-    public IReadOnlyList<AudioDeviceInfo> EnumerateDevices() =>
-        new List<AudioDeviceInfo> { new() { Id = "0", Name = L.T("Default device"), IsDefault = true } };
+    public IReadOnlyList<AudioDeviceInfo> EnumerateDevices() => [];
 
-    public AudioDeviceInfo GetDefaultOutputDevice() =>
-        new() { Id = "0", Name = L.T("Default device"), IsDefault = true };
+    public AudioDeviceInfo GetDefaultOutputDevice() => null;
 
-    public AudioDeviceInfo GetDefaultInputDevice() =>
-        new() { Id = "0", Name = L.T("Default device"), IsInput = true, IsDefault = true };
+    public AudioDeviceInfo GetDefaultInputDevice() => null;
 
-    public IAudioPlayer CreatePlayer() => new WaveOutPlayer();
+    public IAudioPlayer CreatePlayer() => throw new PlatformNotSupportedException(L.T("No audio backend is available."));
 
-    public IAudioRecorder CreateRecorder() => new NullRecorder();
+    public IAudioRecorder CreateRecorder() => throw new PlatformNotSupportedException(L.T("No audio backend is available."));
 }

@@ -1,200 +1,66 @@
-using System.Runtime.InteropServices;
+using NewLife;
 using NewLife.Audio.DSP;
-using NewLife.Log;
 
 namespace NewLife.Audio.Devices;
 
 /// <summary>ASIO 低延迟驱动（Steinberg ASIO 协议）</summary>
 /// <remarks>
-/// ASIO (Audio Stream Input/Output) 是 Steinberg 公司开发的专业音频驱动协议。
-/// 提供极低延迟（通常 1~10ms）的多通道音频 I/O，广泛用于专业音频软件。
-///
-/// 本驱动通过尝试枚举已注册的 ASIO COM 组件来检测可用驱动。
-/// 实际播放/录制需要调用 ASIO SDK 函数（ASIOCreateBuffers/ASIOStart/ASIOOutputReady 等）。
-/// 在无 ASIO 驱动环境下，CreatePlayer/CreateRecorder 回退到 Null 模式。
+/// ASIO 需要加载厂商提供的 ASIO 驱动 COM 组件并调用 <c>IASIO::createBuffers</c>/<c>start</c> 等原生接口，
+/// 本库尚未实现该后端。<br/>
+/// 为避免"选择 ASIO 后无声无错"的静默失败，当前行为是：<see cref="EnumerateDevices"/> 返回空列表，
+/// <see cref="CreatePlayer"/>/<see cref="CreateRecorder"/> 明确抛出 <see cref="NotSupportedException"/>。<br/>
+/// Windows 上需要低延迟输出时请使用 WASAPI（<see cref="WasapiDriver"/>）或 WaveOut。
 /// </remarks>
 public class AsioDriver : IAudioDriver
 {
+    /// <summary>是否已实现 ASIO 原生后端</summary>
+    public static Boolean IsSupported => false;
+
     /// <summary>驱动名称</summary>
     public String Name => "ASIO (Steinberg)";
 
-    /// <summary>枚举 ASIO 设备（通过注册表查询已安装的 ASIO 驱动）</summary>
-    public IReadOnlyList<AudioDeviceInfo> EnumerateDevices()
-    {
-        var devices = new List<AudioDeviceInfo>();
-
-        try
-        {
-            // 尝试通过 COM 枚举 ASIO 驱动（按名称 CLSID FromProgID 查询）
-            var asioDrivers = new[] { "Focusrite USB ASIO", "ASIO4ALL v2", "Yamaha Steinberg USB ASIO",
-                "FL Studio ASIO", "Universal Audio Thunderbolt", "PreSonus Studio USB" };
-
-            var idx = 0;
-            foreach (var driverName in asioDrivers)
-            {
-                try
-                {
-                    // 尝试通过 ProgID 方式查询 CLSID
-                    var clsid = GetClsidFromAsioDriverName(driverName);
-                    if (clsid != Guid.Empty)
-                    {
-                        devices.Add(new()
-                        {
-                            Id = $"asio_{idx}",
-                            Name = driverName,
-                            IsDefault = idx == 0,
-                        });
-                        idx++;
-                    }
-                }
-                catch
-                {
-                    // 该驱动未安装
-                }
-            }
-        }
-        catch
-        {
-            // 注册表查询失败时提供回退
-        }
-
-        if (devices.Count == 0)
-        {
-            // 没有任何 ASIO 驱动 → 提供占位设备
-            devices.Add(new() { Id = "asio_default", Name = L.T("ASIO default device (no driver detected)"), IsDefault = true });
-            XTrace.Log.InfoPrefixed("AsioDriver: ", "No ASIO driver is installed; the device list is a placeholder.");
-        }
-
-        return devices;
-    }
+    /// <summary>枚举 ASIO 设备</summary>
+    /// <returns>当前后端未实现，始终返回空列表</returns>
+    public IReadOnlyList<AudioDeviceInfo> EnumerateDevices() => [];
 
     /// <summary>获取默认输出设备</summary>
-    public AudioDeviceInfo GetDefaultOutputDevice()
-    {
-        var devices = EnumerateDevices();
-        return devices.Count > 0 ? devices[0]
-            : new() { Id = "asio_default", Name = L.T("ASIO default device (no driver installed)"), IsDefault = true };
-    }
+    /// <returns>当前后端未实现，始终返回 null</returns>
+    public AudioDeviceInfo GetDefaultOutputDevice() => null;
 
     /// <summary>获取默认输入设备</summary>
-    public AudioDeviceInfo GetDefaultInputDevice()
-    {
-        var devices = EnumerateDevices();
-        return devices.FirstOrDefault(d => d.IsInput) ?? GetDefaultOutputDevice();
-    }
+    /// <returns>当前后端未实现，始终返回 null</returns>
+    public AudioDeviceInfo GetDefaultInputDevice() => null;
 
-    /// <summary>创建 ASIO 播放器（需要 ASIO 驱动）</summary>
-    /// <remarks>在检测到 ASIO 驱动时通过 COM 激活；否则回退到 Null 播放器</remarks>
-    public IAudioPlayer CreatePlayer()
-    {
-        var devices = EnumerateDevices();
-        var hasDriver = devices.Any(d => d.Id != "asio_default");
+    /// <summary>创建 ASIO 播放器</summary>
+    /// <returns>不会返回</returns>
+    /// <exception cref="NotSupportedException">ASIO 后端尚未实现</exception>
+    public IAudioPlayer CreatePlayer() => throw new NotSupportedException(L.T("The ASIO backend is not implemented."));
 
-        if (hasDriver)
-        {
-            // 有 ASIO 驱动，尝试创建真实的 ASIO 播放器
-            return new AsioPlayer();
-        }
-
-        return new NullPlayer();
-    }
-
-    /// <summary>创建 ASIO 录制器（需要 ASIO 驱动）</summary>
-    public IAudioRecorder CreateRecorder()
-    {
-        return new NullRecorder();
-    }
-
-    private static Guid GetClsidFromAsioDriverName(String driverName)
-    {
-        try
-        {
-#if NETFRAMEWORK || WINDOWS
-            var key = Microsoft.Win32.Registry.LocalMachine.OpenSubKey(
-                $@"SOFTWARE\ASIO\{driverName}");
-            if (key != null)
-            {
-                var clsidStr = key.GetValue("CLSID") as String;
-                key.Close();
-                if (clsidStr != null && Guid.TryParse(clsidStr, out var clsid))
-                    return clsid;
-            }
-#endif
-        }
-        catch
-        {
-            // 注册表不可访问
-        }
-
-        return Guid.Empty;
-    }
+    /// <summary>创建 ASIO 录制器</summary>
+    /// <returns>不会返回</returns>
+    /// <exception cref="NotSupportedException">ASIO 后端尚未实现</exception>
+    public IAudioRecorder CreateRecorder() => throw new NotSupportedException(L.T("The ASIO backend is not implemented."));
 }
 
-/// <summary>ASIO 播放器（真实 ASIO 驱动包装）</summary>
-internal class AsioPlayer : IAudioPlayer
-{
-    private AudioFormat _format;
-    private Boolean _playing;
-
-    /// <summary>待播放字节数</summary>
-    public Int32 BufferedBytes => 0;
-
-    /// <summary>播放停止事件</summary>
-    public event EventHandler PlaybackStopped;
-
-    /// <summary>初始化 ASIO 播放器</summary>
-    public void Init(AudioFormat format, String deviceId = null)
-    {
-        _format = format?.Clone() ?? AudioFormat.Default;
-
-        // 完整 ASIO 初始化：
-        // 1. CoCreateInstance(ASIO driver CLSID) → IASIO
-        // 2. IASIO::init(deviceId)
-        // 3. IASIO::getChannels → numInputChannels, numOutputChannels
-        // 4. IASIO::getSampleRate → 设置采样率
-        // 5. IASIO::createBuffers (创建环形缓冲)
-        // 6. IASIO::getBufferSize → minSize/maxSize/preferred/granularity
-        // 7. 创建缓冲区并注册回调
-        // 8. IASIO::start
-    }
-
-    /// <summary>开始播放</summary>
-    public void Play() => _playing = true;
-
-    /// <summary>暂停播放</summary>
-    public void Pause() => _playing = false;
-
-    /// <summary>停止播放</summary>
-    public void Stop()
-    {
-        _playing = false;
-        PlaybackStopped?.Invoke(this, EventArgs.Empty);
-    }
-
-    /// <summary>写入音频数据到 ASIO 输出缓冲</summary>
-    public void Write(Byte[] data) { }
-
-    /// <summary>释放资源</summary>
-    public void Dispose() => Stop();
-}
-
-/// <summary>Null 播放器（无 ASIO 驱动时的回退）</summary>
+/// <summary>空播放器。仅用于无音频后端时的占位，不产生任何声音</summary>
 internal class NullPlayer : IAudioPlayer
 {
     public Int32 BufferedBytes => 0;
     public event EventHandler PlaybackStopped;
+
     public void Init(AudioFormat format, String deviceId = null) { }
     public void Play() { }
     public void Pause() { }
-    public void Stop() { PlaybackStopped?.Invoke(this, EventArgs.Empty); }
+    public void Stop() => PlaybackStopped?.Invoke(this, EventArgs.Empty);
     public void Write(Byte[] data) { }
     public void Dispose() => Stop();
 }
 
-/// <summary>Null 录制器</summary>
+/// <summary>空录制器。仅用于无音频后端的占位，不产生任何数据</summary>
 internal class NullRecorder : IAudioRecorder
 {
     public event EventHandler<Byte[]> DataAvailable;
+
     public void Init(AudioFormat format, String deviceId = null) { }
     public void StartRecording() { }
     public void StopRecording() { }

@@ -15,6 +15,9 @@ public class AudioFormat
     /// <summary>编码类型</summary>
     public AVTypes Encoding { get; set; } = AVTypes.LPCM;
 
+    /// <summary>是否为 IEEE 浮点采样（32 位 float）</summary>
+    public Boolean IsFloat { get; set; }
+
     /// <summary>每帧样本数</summary>
     public Int32 SamplesPerFrame { get; set; } = 160;
 
@@ -42,6 +45,7 @@ public class AudioFormat
         Channels = Channels,
         BitsPerSample = BitsPerSample,
         Encoding = Encoding,
+        IsFloat = IsFloat,
         SamplesPerFrame = SamplesPerFrame,
     };
 }
