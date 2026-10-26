@@ -1,6 +1,6 @@
 # TTS-语音合成
 
-> 版本：v3.0 | 日期：2026-10-25 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v3.1 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 8 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 > 设计目标：普通用户三行代码出声；需要音色、在线服务或自定义模型时再往下看。主命名空间只放极简入口、模型与引擎实现，缓存/预生成/文本规范化全部下沉到 `NewLife.Audio.Tts.Advanced`。
