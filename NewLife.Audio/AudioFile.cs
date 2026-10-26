@@ -256,6 +256,26 @@ public class AudioFile
                     return true;
                 }
 
+            case AudioContainerKind.Ogg:
+                {
+                    if (Info.Codec != AVTypes.Opus) return false;
+
+                    WriteAtomic(path, stream =>
+                    {
+                        using var source = File.OpenRead(Path);
+                        using var reader = new OggFileReader(source) { ValidateCrc = true };
+                        using var writer = new OggFileWriter(stream, reader.Format ?? Info.Format, AVTypes.Opus)
+                        {
+                            PreSkip = reader.PreSkip
+                        };
+
+                        if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
+                        while (reader.ReadFrame() is { } frame) writer.WriteFrame(frame.GetSpan());
+                        writer.Flush();
+                    });
+                    return true;
+                }
+
             default:
                 return false;
         }
