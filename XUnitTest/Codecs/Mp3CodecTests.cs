@@ -52,4 +52,52 @@ public class Mp3CodecTests
         var data = new Byte[] { 0x00, 0x01, 0x02, 0x03 };
         Assert.False(Mp3Codec.IsMp3Frame(data, 0));
     }
+
+    [Fact(DisplayName = "MP3帧头保留采样率索引判定无效不抛异常")]
+    public void ParseHeader_ReservedSampleRate_ReturnsNull()
+    {
+        // 0x9C 的采样率索引为 3（保留值），随机字节常命中该组合
+        var frame = new Byte[] { 0xFF, 0xFB, 0x9C, 0x00, 0x00, 0x00 };
+
+        Assert.Null(Mp3Codec.ParseFrameHeader(frame, 0));
+        Assert.False(Mp3Codec.IsMp3Frame(frame, 0));
+    }
+
+    [Fact(DisplayName = "MP3标准静音帧解码为PCM")]
+    public void Decode_SilentFrames_ReturnsPcm()
+    {
+        var codec = new Mp3Codec();
+        var data = BuildSilentFrames(4);
+
+        var pcm = codec.ToPcm(data, null);
+
+        // 4 帧 × 1152 样本 × 2 声道 × 2 字节
+        Assert.Equal(4 * 1152 * 2 * 2, pcm.Length);
+    }
+
+    [Fact(DisplayName = "MP3非音频数据解码返回空且不抛异常")]
+    public void Decode_Garbage_ReturnsEmpty()
+    {
+        var codec = new Mp3Codec();
+        var pcm = codec.ToPcm(new Byte[] { 0x01, 0x02, 0x03, 0x04, 0x05 }, null);
+
+        Assert.Equal(0, pcm.Length);
+    }
+
+    /// <summary>构造标准 MPEG1 Layer III 静音帧（128kbps/44.1kHz/立体声，每帧 417 字节）</summary>
+    private static Byte[] BuildSilentFrames(Int32 frames)
+    {
+        const Int32 frameSize = 417;
+        var data = new Byte[frameSize * frames];
+        for (var i = 0; i < frames; i++)
+        {
+            var offset = i * frameSize;
+            data[offset] = 0xFF;
+            data[offset + 1] = 0xFB;
+            data[offset + 2] = 0x90;
+            data[offset + 3] = 0x00;
+        }
+
+        return data;
+    }
 }

@@ -1,7 +1,6 @@
 using System.Net.Http;
 using System.Runtime.CompilerServices;
 using System.Text;
-using NewLife.Audio.Codecs;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Tts;
@@ -111,7 +110,7 @@ public class HttpTtsEngine : TtsEngineBase
             // MP3 必须整段解码，走一次性路径
             using var buffer = new MemoryStream();
             await stream.CopyToAsync(buffer, 81920, token).ConfigureAwait(false);
-            var pcm = DecodeMp3(buffer.ToArray(), format);
+            var pcm = TtsMp3.Decode(buffer.ToArray(), format);
             if (pcm.Length > 0) yield return new TtsChunk { Format = format, Data = pcm };
             yield break;
         }
@@ -165,50 +164,10 @@ public class HttpTtsEngine : TtsEngineBase
         if (body.IsNullOrEmpty()) return null;
 
         var rate = options?.Rate > 0 ? options.Rate : 1;
-        body = body.Replace("{text_json}", JsonEscape(text ?? ""));
+        body = body.Replace("{text_json}", TtsJson.Escape(text ?? ""));
         body = body.Replace("{text}", text ?? "");
         body = body.Replace("{voice}", options?.Voice ?? "");
         body = body.Replace("{speed}", rate.ToString("0.###"));
         return body;
-    }
-
-    private static String JsonEscape(String text)
-    {
-        var sb = new StringBuilder(text.Length + 8);
-        foreach (var ch in text)
-        {
-            switch (ch)
-            {
-                case '"': sb.Append("\\\""); break;
-                case '\\': sb.Append("\\\\"); break;
-                case '\n': sb.Append("\\n"); break;
-                case '\r': sb.Append("\\r"); break;
-                case '\t': sb.Append("\\t"); break;
-                default:
-                    if (ch < ' ') sb.Append("\\u").Append(((Int32)ch).ToString("x4"));
-                    else sb.Append(ch);
-                    break;
-            }
-        }
-
-        return sb.ToString();
-    }
-
-    private static Byte[] DecodeMp3(Byte[] data, AudioFormat format)
-    {
-        // ID3 标签会把帧同步字往后推，先扫到第一个有效帧
-        var offset = 0;
-        while (offset + 4 < data.Length && !Mp3Codec.IsMp3Frame(data, offset)) offset++;
-
-        var header = offset + 4 < data.Length ? Mp3Codec.ParseFrameHeader(data, offset) : null;
-        if (header != null)
-        {
-            if (header.SampleRate > 0) format.SampleRate = header.SampleRate;
-            format.Channels = header.ChannelMode == 3 ? 1 : 2;
-        }
-
-        var codec = new Mp3Codec();
-        var packet = codec.ToPcm(data, null);
-        return packet == null ? Array.Empty<Byte>() : packet.GetSpan().ToArray();
     }
 }
