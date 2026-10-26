@@ -41,7 +41,7 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 - **G.722** / **G.726** sub-band ADPCM
 - **IMA ADPCM** (DVI4)
 - **Opus** (pure managed CELT implementation)
-- **MP3** (Huffman decoding + inverse quantization + IMDCT + subband synthesis)
+- **MP3** (decode: Huffman + inverse quantization + IMDCT + subband synthesis; encode: polyphase analysis + MDCT + quantization + Huffman)
 - **AAC-LC** (ICS parsing + Huffman decoding + IMDCT + window overlap-add)
 - **FLAC** (Fixed LPC + Rice residual coding + MD5)
 - **Ogg Vorbis** (3 header packets encode/decode)

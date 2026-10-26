@@ -1,0 +1,187 @@
+using System;
+using NewLife.Audio;
+using NewLife.Audio.Codecs;
+using Xunit;
+
+namespace XUnitTest.Codecs;
+
+/// <summary>MP3 Layer III 编码器测试</summary>
+public class Mp3EncoderTests
+{
+    [Theory(DisplayName = "MP3 编码帧头与版本随采样率变化")]
+    [InlineData(44100, 0xFB, 44100)]
+    [InlineData(48000, 0xFB, 48000)]
+    [InlineData(32000, 0xFB, 32000)]
+    [InlineData(22050, 0xF3, 22050)]
+    [InlineData(16000, 0xF3, 16000)]
+    [InlineData(8000, 0xE3, 8000)]
+    public void Encode_ProducesExpectedHeader(Int32 sampleRate, Int32 secondByte, Int32 expectedRate)
+    {
+        var pcm = BuildTone(sampleRate, 1, sampleRate / 2, 1000, 0.5);
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 128 }).GetSpan().ToArray();
+
+        Assert.True(encoded.Length >= 4);
+        Assert.Equal(0xFF, encoded[0]);
+        Assert.Equal(secondByte, encoded[1]);
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+        Assert.Equal(expectedRate, header.SampleRate);
+        Assert.Equal(1, header.ChannelMode == 3 ? 1 : 2);
+    }
+
+    [Fact(DisplayName = "MP3 编码结果是完整的帧序列")]
+    public void Encode_ProducesFrameSequence()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 2, sampleRate, 1000, 0.5);
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 2, Bitrate = 128 }).GetSpan().ToArray();
+
+        var offset = 0;
+        var frames = 0;
+        while (offset + 4 <= encoded.Length)
+        {
+            var header = Mp3Codec.ParseFrameHeader(encoded, offset);
+            Assert.NotNull(header);
+            Assert.True(header.FrameSize > 0);
+            offset += header.FrameSize;
+            frames++;
+        }
+
+        Assert.Equal(0, offset - encoded.Length);
+        Assert.Equal(39, frames);
+        Assert.InRange(encoded.Length, 39 * 417, 39 * 418);
+    }
+
+    [Fact(DisplayName = "MP3 编码后解码波形与原始信号一致")]
+    public void EncodeDecode_RoundTrip()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 1, sampleRate, 1000, 0.3);
+        var codec = new Mp3Codec();
+        var options = new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 192 };
+
+        var encoded = codec.FromPcm(pcm, options).GetSpan().ToArray();
+        var decoded = codec.ToPcm(encoded, null).GetSpan().ToArray();
+
+        var source = ToInt16(pcm);
+        var actual = ToInt16(decoded);
+
+        var snr = BestSnr(source, actual);
+        Assert.True(snr > 10, $"往返信噪比过低：{snr:F1} dB");
+    }
+
+    [Fact(DisplayName = "MP3 编码兼容 Int32 比特率参数")]
+    public void Encode_AcceptsLegacyBitrate()
+    {
+        var pcm = BuildTone(44100, 1, 44100 / 4, 1000, 0.5);
+        var codec = new Mp3Codec();
+
+        var encoded = codec.FromPcm(pcm, 96).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+        Assert.Equal(96000, header.Bitrate);
+    }
+
+    [Fact(DisplayName = "MP3 编码静音得到全零谱线")]
+    public void Encode_Silence_ProducesSilence()
+    {
+        var sampleRate = 44100;
+        var pcm = new Byte[sampleRate];
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 128 }).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+
+        var decoded = codec.ToPcm(encoded, null).GetSpan().ToArray();
+        for (var i = 0; i < decoded.Length; i++)
+        {
+            Assert.Equal(0, decoded[i]);
+        }
+    }
+
+    [Fact(DisplayName = "MP3 编码对不足一帧的 PCM 补零成帧")]
+    public void Encode_PartialFrame_PadsZeros()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 1, 100, 1000, 0.5);
+        var codec = new Mp3Codec();
+        var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 128 }).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+        Assert.Equal(header.FrameSize, encoded.Length);
+    }
+
+    [Fact(DisplayName = "MP3 编码器拒绝非法采样率")]
+    public void Encode_InvalidSampleRate_Throws()
+    {
+        var codec = new Mp3Codec();
+        var pcm = new Byte[1024];
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = 44000, Channels = 1 }));
+    }
+
+    private static Byte[] BuildTone(Int32 sampleRate, Int32 channels, Int32 samples, Double frequency, Double amplitude)
+    {
+        var data = new Byte[samples * channels * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            var v = (Int16)(Math.Sin(2 * Math.PI * frequency * i / sampleRate) * amplitude * 32000);
+            for (var ch = 0; ch < channels; ch++)
+            {
+                var p = (i * channels + ch) * 2;
+                data[p] = (Byte)(v & 0xFF);
+                data[p + 1] = (Byte)((v >> 8) & 0xFF);
+            }
+        }
+
+        return data;
+    }
+
+    private static Int16[] ToInt16(Byte[] data)
+    {
+        var pcm = new Int16[data.Length / 2];
+        for (var i = 0; i < pcm.Length; i++) pcm[i] = (Int16)(data[i * 2] | data[i * 2 + 1] << 8);
+
+        return pcm;
+    }
+
+    /// <summary>在编解码器固有延迟范围内搜索最佳对齐，并拟合增益后的信噪比</summary>
+    private static Double BestSnr(Int16[] source, Int16[] actual)
+    {
+        var best = -999.0;
+        for (var shift = 0; shift < Math.Min(2000, actual.Length - 2000); shift++)
+        {
+            var sig = 0.0;
+            var dot = 0.0;
+            var pow = 0.0;
+            var count = Math.Min(source.Length, actual.Length - shift) - shift;
+            for (var i = 0; i < count; i++)
+            {
+                var x = (Double)source[i];
+                var y = (Double)actual[i + shift];
+                sig += x * x;
+                dot += x * y;
+                pow += y * y;
+            }
+            if (sig <= 0 || pow <= 0) continue;
+
+            var gain = dot / pow;
+            var error = 0.0;
+            for (var i = 0; i < count; i++)
+            {
+                var e = source[i] - gain * actual[i + shift];
+                error += e * e;
+            }
+            var snr = 10 * Math.Log10(sig / Math.Max(error, 1e-9));
+            if (snr > best) best = snr;
+        }
+
+        return best;
+    }
+}

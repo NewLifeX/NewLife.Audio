@@ -24,7 +24,7 @@
 
 [English](README.md) | 简体中文
 
-跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成（系统语音/HTTP/子进程）、容器格式读写（WAV/Ogg/MP4/FLAC）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
+跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成（系统语音/HTTP/子进程）、容器格式读写（WAV/Ogg/MP4/FLAC/MP3）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
 
 🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断、语音合成七大工具模块。
 
@@ -43,7 +43,7 @@ Nuget：NewLife.Audio
 - **G.722** / **G.726** 子带 ADPCM
 - **IMA ADPCM**（DVI4）
 - **Opus**（纯托管 CELT 实现）
-- **MP3**（Huffman 解码 + 反量化 + IMDCT + 子带合成）
+- **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman）
 - **AAC-LC**（ICS 解析 + Huffman 解码 + IMDCT + 窗函数重叠相加）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
 - **Ogg Vorbis**（3 个头部包编码/解码）

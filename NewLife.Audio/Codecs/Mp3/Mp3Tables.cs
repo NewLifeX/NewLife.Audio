@@ -66,6 +66,10 @@ internal static class Mp3Tables
         75038,
     ];
 
+    /// <summary>综合滤波窗的定点系数（257 个，等于 ISO 11172-3 窗系数的 65536 倍）</summary>
+    /// <remarks>编码器据此还原分析滤波窗，保持与解码器同一份窗定义</remarks>
+    public static Int32[] SynthWindow => EnWindow;
+
     /// <summary>按采样率查找长块缩放因子带宽度，找不到时返回 null</summary>
     /// <param name="sampleRate">采样率</param>
     /// <returns>22 个带的谱线宽度</returns>

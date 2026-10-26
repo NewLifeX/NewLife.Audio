@@ -18,6 +18,7 @@ public static class AudioContainerFactory
         {
             ".wav" => new WaveFileReader(stream),
             ".ogg" or ".opus" => new OggFileReader(stream),
+            ".mp3" => new Mp3FileReader(stream),
             ".mp4" or ".m4a" or ".mov" => new Mp4FileReader(stream),
             _ => CreateReader(stream, ext),
         };
@@ -45,6 +46,13 @@ public static class AudioContainerFactory
 
             if (magic[0] == 'f' && magic[1] == 'L' && magic[2] == 'a' && magic[3] == 'C')
                 return new FlacContainerReader(stream);
+
+            // ID3v2 标签或 MPEG 音频帧同步字（0xFF 0xEx 起）
+            if (magic[0] == 'I' && magic[1] == 'D' && magic[2] == '3')
+                return new Mp3FileReader(stream);
+
+            if (magic[0] == 0xFF && (magic[1] & 0xE0) == 0xE0 && (magic[1] & 0x06) == 0x02)
+                return new Mp3FileReader(stream);
 
             // MP4/M4A: bytes 4-7 = 'ftyp'
             if (count >= 8 && magic[4] == 'f' && magic[5] == 't' && magic[6] == 'y' && magic[7] == 'p')
