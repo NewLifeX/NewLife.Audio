@@ -100,7 +100,7 @@ One call chain for open → decode → edit → save:
 - `AudioFile.Open` auto-detects container/codec and exposes format, duration, tags and seekability
 - Lossless PCM editing: trim, concat, gain, normalize, resample
 - Metadata preservation, tag-only atomic rewrite, atomic save via temp file
-- Frame-level copy/remux for MP3/AAC/WAV when parameters match; explicit re-encode fallback
+- Frame-level copy/remux for MP3/AAC/WAV/Ogg Opus when parameters match; explicit re-encode fallback
 - Batch conversion with progress callbacks and cancellation
 - `StreamPcm` streams decoded 16-bit PCM chunks: frame-by-frame for WAV/AIFF/CAF/M4A, whole-file decode then chunking for MP3/FLAC/Ogg (memory scales with `chunkBytes`, not file size, for the streaming path)
 
