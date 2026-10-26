@@ -1,260 +1,334 @@
+using NewLife;
 using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
 
-/// <summary>Opus 编解码器（纯托管 CELT 实现）</summary>
+/// <summary>Opus 编解码器</summary>
 /// <remarks>
-/// Opus (RFC 6716) 由 SILK + CELT 双模组成。本实现聚焦 CELT-only 模式，
-/// 实现 range 解码 → 能量解码 → 频谱重建 → IMDCT → 窗重叠相加完整管线。
-/// 
-/// 编解码器内部状态：IMDCT 重叠缓冲、随机数发生器。
-/// 编码端提供基础 CELT 能量量化 + PVQ 编码，比特率为 64kbps。
-/// 20ms 帧 @ 48kHz（960 samples/frame），单声道。
+/// 纯托管 Opus 编解码器（自研路线）。包结构（TOC、帧数、帧长、VBR/CBR、padding）由 <see cref="OpusPacket"/> 解析；<br/>
+/// 在 M2~M5 的 CELT/SILK 进程内实现完成之前，编码与解码通过 <see cref="OpusProcessCodec"/> 调用系统 ffmpeg（libopus）作为降级方案；<br/>
+/// <see cref="OpusManagedCodec"/> 是 M2 起的进程内切换点。<br/>
+/// Opus 内部固定使用 48 kHz 时间基；<see cref="FromPcm"/> 每次编码一帧，连续 PCM 请使用 <see cref="Encode(ReadOnlySpan{Byte}, Object, Boolean)"/> 获取多包输出。<br/>
+/// 有状态编解码器，每个音频流应使用独立实例。
 /// </remarks>
-public class OpusCodec : IAudioCodec, ICodecInfo
+public class OpusCodec : IAudioCodec, ICodecInfo, IDisposable
 {
     #region 常量
     /// <summary>Opus 基础采样率（固定 48000Hz）</summary>
     public const Int32 BaseSampleRate = 48000;
 
-    /// <summary>20ms 帧 @ 48kHz = 960 samples</summary>
-    private const Int32 FrameSize = 960;
-
-    /// <summary>MDCT 窗长 = 2 * FrameSize</summary>
-    private const Int32 MdctSize = 1920;
-
-    /// <summary>全频带数</summary>
-    private const Int32 NumBandsFull = 21;
+    /// <summary>编码器算法延迟对应的时长（微秒）</summary>
+    private const Int32 LookaheadMicroseconds = 6500;
     #endregion
 
     #region 属性
     /// <summary>编解码器名称</summary>
-    public String Name => "Opus (CELT)";
+    public String Name => "Opus";
 
     /// <summary>版本号</summary>
-    public String Version => "1.0";
+    public String Version => "3.0";
+
+    /// <summary>当前是否有可用的 Opus 编解码后端</summary>
+    /// <remarks>M1 阶段为系统 ffmpeg + libopus 进程回退；托管 CELT/SILK 完成后始终为 true。</remarks>
+    public static Boolean IsAvailable => OpusManagedCodec.IsAvailable || OpusProcessCodec.IsAvailable;
 
     /// <summary>支持的编码类型</summary>
-    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.Transparent];
+    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.Opus, AVTypes.Transparent];
 
     /// <summary>有状态编解码器</summary>
     public Boolean IsStateful => true;
 
-    private readonly Single[] _overlap = new Single[MdctSize];
-    private readonly Random _rng = new(42);
+    /// <summary>当前编码选项。尚未编码时返回 null</summary>
+    public OpusOptions EncoderOptions
+    {
+        get { lock (_sync) return _encoderOptions?.Clone(); }
+    }
+
+    /// <summary>当前解码选项。尚未解码时返回 null</summary>
+    public OpusOptions DecoderOptions
+    {
+        get { lock (_sync) return _decoderOptions?.Clone(); }
+    }
+
+    /// <summary>编码采样率（Hz）</summary>
+    public Int32 SampleRate
+    {
+        get { lock (_sync) return _encoderOptions?.SampleRate ?? BaseSampleRate; }
+    }
+
+    /// <summary>编码声道数</summary>
+    public Int32 Channels
+    {
+        get { lock (_sync) return _encoderOptions?.Channels ?? 1; }
+    }
+
+    /// <summary>每帧每声道样本数</summary>
+    public Int32 FrameSize
+    {
+        get { lock (_sync) return _encoderOptions?.SamplesPerFrame ?? 960; }
+    }
+
+    /// <summary>每帧字节数（16 位交错 PCM）</summary>
+    public Int32 FrameBytes
+    {
+        get { lock (_sync) return _encoderOptions?.FrameBytes ?? 1920; }
+    }
+
+    /// <summary>编码器算法延迟（每声道样本数）</summary>
+    public Int32 Lookahead
+    {
+        get { lock (_sync) return GetLookahead(_encoderOptions ?? new OpusOptions()); }
+    }
+
+    private readonly Object _sync = new();
+    private OpusOptions _encoderOptions;
+    private OpusOptions _decoderOptions;
+    private Byte[] _pendingPcm = new Byte[4096];
+    private Int32 _pendingCount;
+    private Int32 _pendingFrameBytes;
+    private Boolean _disposed;
     #endregion
 
     #region 解码
-    /// <summary>Opus 数据转 PCM（CELT 模式解码）</summary>
-    /// <param name="audio">Opus 编码数据（TOC + 压缩 payload）</param>
-    /// <param name="option">保留</param>
-    /// <returns>16-bit PCM interleaved @ 48kHz</returns>
+    /// <summary>Opus 数据转 PCM</summary>
+    /// <param name="audio">单个 Opus 包（TOC + payload）</param>
+    /// <param name="option"><see cref="OpusOptions"/> 或 null，用于配置输出采样率/声道</param>
+    /// <returns>16-bit PCM interleaved，采样率与声道数由选项决定；非法包返回空包</returns>
+    /// <exception cref="NotSupportedException">托管 CELT/SILK 未完成且未找到可用 ffmpeg 时抛出</exception>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        if (audio.Length < 2) return ArrayPacket.Empty;
+        ThrowIfDisposed();
+        if (audio.Length == 0) return ArrayPacket.Empty;
+        if (!OpusPacket.TryParse(audio, out _)) return ArrayPacket.Empty;
 
-        var toc = audio[0];
-        var config = (toc >> 3) & 0x1F;
-        var isCelt = config < 16;
-        if (!isCelt) return ArrayPacket.Empty;
+        var options = ResolveOptions(option, _decoderOptions);
+        options.Validate();
 
-        var payload = audio.Slice(1).ToArray();
+        Byte[] pcm;
+        try
+        {
+            pcm = OpusManagedCodec.IsAvailable
+                ? OpusManagedCodec.DecodePacket(audio, options)
+                : OpusProcessCodec.DecodePacket(audio, options);
+        }
+        catch (ArgumentException)
+        {
+            return ArrayPacket.Empty;
+        }
 
-        var pcm = DecodeCELTFrame(payload);
+        if (pcm.Length == 0) return ArrayPacket.Empty;
+
+        lock (_sync) _decoderOptions = options.Clone();
+
         return new ArrayPacket(pcm);
     }
 
-    private Byte[] DecodeCELTFrame(Byte[] payload)
+    /// <summary>丢包补偿（PLC），按上一帧状态合成缺失音频</summary>
+    /// <param name="frameSize">缺失帧的每声道样本数；0 表示使用当前解码选项的帧长</param>
+    /// <returns>16-bit PCM；M1 进程回退不支持 PLC，返回空包</returns>
+    /// <remarks>进程内 SILK/CELT 解码器（M4）完成后，此方法将使用解码器历史状态生成舒适噪声。</remarks>
+    public IPacket DecodePacketLoss(Int32 frameSize = 0)
     {
-        var bands = NumBandsFull;
-        var rd = new RangeDecoder(payload);
+        ThrowIfDisposed();
 
-        // 1. 解码粗能量（每频带 6 bits）
-        var coarseEnergy = new Int32[bands];
-        for (var i = 0; i < bands; i++)
-            coarseEnergy[i] = rd.DecodeUniform(0, 63);
-
-        // 2. 细能量
-        var fineBits = rd.DecodeUniform(0, 3);
-        var fineEnergy = new Int32[bands];
-        for (var i = 0; i < bands; i++)
-            fineEnergy[i] = fineBits > 0 ? rd.DecodeUniform(0, (1 << fineBits) - 1) : 0;
-
-        // 3. 能量 dB → 线性
-        var bandEnergy = new Single[bands];
-        var offset = 28.0f;
-        for (var i = 0; i < bands; i++)
-        {
-            var dB = (coarseEnergy[i] - offset) * 0.5f + fineEnergy[i] * 0.125f;
-            var clampedDB = dB < -60 ? -60 : dB > 40 ? 40 : dB;
-            bandEnergy[i] = (Single)Math.Pow(10, clampedDB / 10);
-        }
-
-        // 4. 频谱重建
-        var spectrum = new Single[MdctSize];
-        var bandWidths = GetBandWidths(bands);
-        var start = 0;
-        for (var b = 0; b < bands; b++)
-        {
-            var bw = bandWidths[b];
-            var energy = bandEnergy[b];
-            var gain = (Single)Math.Sqrt(energy / Math.Max(1, bw));
-            var hasPulses = rd.RemainingBits() > 8 && rd.DecodeUniform(0, 1) > 0;
-
-            for (var j = start; j < start + bw && j < MdctSize; j++)
-            {
-                if (hasPulses && rd.RemainingBits() >= 2)
-                {
-                    var s = rd.DecodeUniform(0, 1);
-                    var m = rd.DecodeUniform(0, 1);
-                    spectrum[j] = m > 0 ? (s > 0 ? gain * 2.5f : -gain * 2.5f) : (Single)((_rng.NextDouble() * 2 - 1) * gain * 0.25f);
-                }
-                else
-                {
-                    spectrum[j] = (Single)((_rng.NextDouble() * 2 - 1) * gain * 0.4f);
-                }
-            }
-            start += bw;
-        }
-
-        // 5. IMDCT 合成
-        var timeDomain = MdctSynthesis(spectrum);
-
-        // 6. 窗重叠相加
-        var output = new Single[FrameSize];
-        var window = GetVorbisWindow(MdctSize);
-        for (var i = 0; i < FrameSize; i++)
-        {
-            var cur = timeDomain[i] * window[i + FrameSize];
-            var prev = _overlap[i + FrameSize] * window[i];
-            output[i] = cur + prev;
-
-            _overlap[i] = timeDomain[i] * window[i];
-            _overlap[i + FrameSize] = timeDomain[i + FrameSize] * window[i + FrameSize];
-        }
-
-        // 转 16-bit PCM
-        var pcm = new Byte[FrameSize * 2];
-        for (var i = 0; i < FrameSize; i++)
-        {
-            var s = (Int32)(output[i] * 32767);
-            if (s < -32768) s = -32768;
-            if (s > 32767) s = 32767;
-            pcm[i * 2] = (Byte)(s & 0xFF);
-            pcm[i * 2 + 1] = (Byte)((s >> 8) & 0xFF);
-        }
-
-        return pcm;
+        return ArrayPacket.Empty;
     }
     #endregion
 
     #region 编码
-    /// <summary>PCM 转 Opus（CELT 编码）</summary>
-    /// <param name="pcm">16-bit PCM @ 48kHz</param>
-    /// <param name="option">比特率（bps），默认 64000</param>
-    /// <returns>Opus 编码数据（TOC + CELT payload）</returns>
+    /// <summary>PCM 转 Opus（编码一帧）</summary>
+    /// <param name="pcm">16-bit 小端交错 PCM</param>
+    /// <param name="option"><see cref="OpusOptions"/>、比特率（Int32）或 null</param>
+    /// <returns>单个 Opus 包（TOC + payload）</returns>
+    /// <remarks>输入不足一帧时补静音，超过一帧时只编码第一帧；连续 PCM 请使用 <see cref="Encode(ReadOnlySpan{Byte}, Object, Boolean)"/>。</remarks>
+    /// <exception cref="NotSupportedException">托管 CELT/SILK 未完成且未找到可用 ffmpeg 时抛出</exception>
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var bitrate = option is Int32 br ? br : 64000;
-        var frameBytes = FrameSize * 2;
+        ThrowIfDisposed();
+        if (pcm.Length == 0) return ArrayPacket.Empty;
 
-        var ms = new MemoryStream();
-        var offset = 0;
+        var options = ResolveOptions(option, _encoderOptions);
+        options.Validate();
 
-        while (offset + frameBytes <= pcm.Length)
+        lock (_sync)
         {
-            var toc = (Byte)((8 << 3) | 4 | 0);
-            ms.WriteByte(toc);
+            var frameBytes = options.FrameBytes;
+            if (frameBytes <= 0) return ArrayPacket.Empty;
 
-            var framePcm = new Single[FrameSize];
-            for (var i = 0; i < FrameSize; i++)
+            ReadOnlySpan<Byte> frame;
+            if (pcm.Length < frameBytes)
             {
-                var s = (Int16)(pcm[offset + i * 2] | pcm[offset + i * 2 + 1] << 8);
-                framePcm[i] = s / 32768.0f;
+                var padded = new Byte[frameBytes];
+                pcm.CopyTo(padded);
+                frame = padded;
             }
+            else
+                frame = pcm[..frameBytes];
 
-            var encoded = EncodeCELTFrame(framePcm, bitrate);
-            ms.Write(encoded, 0, encoded.Length);
-
-            offset += frameBytes;
+            return EncodeFrame(frame, options);
         }
-
-        ms.Position = 0;
-        return new ArrayPacket(ms);
     }
 
-    private Byte[] EncodeCELTFrame(Single[] pcm, Int32 bitrate)
+    /// <summary>编码连续 PCM，返回全部完整帧对应的 Opus 包</summary>
+    /// <param name="pcm">16-bit 小端交错 PCM</param>
+    /// <param name="flush">是否在末尾把不足一帧的数据补静音后编码</param>
+    /// <returns>Opus 包列表，每个包一帧</returns>
+    public IReadOnlyList<IPacket> Encode(ReadOnlySpan<Byte> pcm, Boolean flush = false) => Encode(pcm, null, flush);
+
+    /// <summary>编码连续 PCM，返回全部完整帧对应的 Opus 包</summary>
+    /// <param name="pcm">16-bit 小端交错 PCM</param>
+    /// <param name="option"><see cref="OpusOptions"/>、比特率（Int32）或 null</param>
+    /// <param name="flush">是否在末尾把不足一帧的数据补静音后编码</param>
+    /// <returns>Opus 包列表，每个包一帧</returns>
+    /// <exception cref="NotSupportedException">托管 CELT/SILK 未完成且未找到可用 ffmpeg 时抛出</exception>
+    public IReadOnlyList<IPacket> Encode(ReadOnlySpan<Byte> pcm, Object option, Boolean flush = false)
     {
-        var bands = NumBandsFull;
-        var ms = new MemoryStream();
-        var enc = new RangeEncoder(ms, (Int32)(bitrate * FrameSize / BaseSampleRate / 8 * 8));
+        ThrowIfDisposed();
+        var options = ResolveOptions(option, _encoderOptions);
+        options.Validate();
 
-        var window = GetVorbisWindow(MdctSize);
-        var padded = new Single[MdctSize];
-        for (var i = 0; i < FrameSize; i++)
+        lock (_sync)
         {
-            padded[i] = _overlap[i + FrameSize] * window[i];
-            padded[i + FrameSize] = pcm[i] * window[i + FrameSize];
-        }
-        var spectrum = MdctAnalysis(padded);
+            var frameBytes = options.FrameBytes;
+            if (frameBytes <= 0) return [];
 
-        // 编码频带能量
-        var bandWidths = GetBandWidths(bands);
-        var start = 0;
-        for (var b = 0; b < bands; b++)
-        {
-            var sum = 0.0f;
-            for (var j = start; j < start + bandWidths[b] && j < MdctSize; j++)
-                sum += spectrum[j] * spectrum[j];
-            var rms = (Single)Math.Sqrt(sum / Math.Max(1, bandWidths[b]));
-            var dB = rms > 0 ? 20 * Math.Log10(rms) : -100;
-            var rawQ = (Int32)((dB + 28) * 2);
-            var q = rawQ < 0 ? 0 : rawQ > 63 ? 63 : rawQ;
-            enc.EncodeUniform(q, 0, 63);
-            start += bandWidths[b];
-        }
+            if (_pendingFrameBytes != frameBytes)
+            {
+                _pendingFrameBytes = frameBytes;
+                _pendingCount = 0;
+            }
 
-        enc.EncodeUniform(0, 0, 3);
-        enc.EncodeUniform(0, 0, 7);
-        enc.Finish();
-        return ms.ToArray();
+            var list = new List<IPacket>();
+            AppendPending(pcm);
+
+            while (_pendingCount >= frameBytes)
+            {
+                var packet = EncodeFrame(_pendingPcm.AsSpan(0, frameBytes), options);
+                if (packet.Total > 0) list.Add(packet);
+                ConsumePending(frameBytes);
+            }
+
+            if (flush && _pendingCount > 0)
+            {
+                var padded = new Byte[frameBytes];
+                _pendingPcm.AsSpan(0, _pendingCount).CopyTo(padded);
+                var packet = EncodeFrame(padded, options);
+                if (packet.Total > 0) list.Add(packet);
+                _pendingCount = 0;
+            }
+
+            return list;
+        }
+    }
+
+    private IPacket EncodeFrame(ReadOnlySpan<Byte> pcm, OpusOptions options)
+    {
+        _encoderOptions = options.Clone();
+
+        var packet = OpusManagedCodec.IsAvailable
+            ? OpusManagedCodec.EncodeFrame(pcm, options)
+            : OpusProcessCodec.EncodeFrame(pcm, options);
+
+        return packet.Length > 0 ? new ArrayPacket(packet) : ArrayPacket.Empty;
     }
     #endregion
 
-    #region MDCT
-    private static Single[] MdctAnalysis(Single[] input)
+    #region 状态
+    /// <summary>重置编解码器状态与待编码缓冲</summary>
+    public void Reset()
     {
-        var n = input.Length;
-        var n2 = n / 2;
-        var output = new Single[n2];
-        for (var k = 0; k < n2; k++)
+        ThrowIfDisposed();
+        lock (_sync)
         {
-            var sum = 0.0;
-            for (var i = 0; i < n; i++)
-                sum += input[i] * Math.Cos(Math.PI / n2 * (i + 0.5 + n2 / 2.0) * (k + 0.5));
-            output[k] = (Single)(sum * 2.0 / n2);
+            _pendingCount = 0;
         }
-        return output;
     }
 
-    private static Single[] MdctSynthesis(Single[] input)
+    /// <summary>释放底层编解码器</summary>
+    public void Dispose()
     {
-        var n2 = input.Length;
-        var n = n2 * 2;
-        var output = new Single[n];
-        for (var i = 0; i < n; i++)
+        lock (_sync)
         {
-            var sum = 0.0;
-            for (var k = 0; k < n2; k++)
-                sum += input[k] * Math.Cos(Math.PI / n2 * (i + 0.5 + n2 / 2.0) * (k + 0.5));
-            output[i] = (Single)(sum * 2.0 / n2);
+            if (_disposed) return;
+            _disposed = true;
+
+            _encoderOptions = null;
+            _decoderOptions = null;
+            _pendingCount = 0;
         }
-        return output;
+    }
+
+    private void ThrowIfDisposed()
+    {
+        if (_disposed) throw new ObjectDisposedException(nameof(OpusCodec));
+    }
+    #endregion
+
+    #region 选项与工厂
+    private static OpusOptions ResolveOptions(Object option, OpusOptions fallback)
+    {
+        if (option is OpusOptions options) return options.Clone();
+
+        if (option is Int32 bitrate)
+        {
+            var result = fallback?.Clone() ?? new OpusOptions();
+            result.Bitrate = bitrate;
+            return result;
+        }
+
+        if (option is OpusFrameDuration duration)
+        {
+            var result = fallback?.Clone() ?? new OpusOptions();
+            result.FrameDuration = duration;
+            return result;
+        }
+
+        if (option is String text && Int32.TryParse(text, out bitrate))
+        {
+            var result = fallback?.Clone() ?? new OpusOptions();
+            result.Bitrate = bitrate;
+            return result;
+        }
+
+        return fallback?.Clone() ?? new OpusOptions();
+    }
+
+    private void AppendPending(ReadOnlySpan<Byte> data)
+    {
+        if (data.Length == 0) return;
+
+        var required = _pendingCount + data.Length;
+        if (_pendingPcm.Length < required)
+        {
+            var size = _pendingPcm.Length;
+            while (size < required) size *= 2;
+
+            var buffer = new Byte[size];
+            Array.Copy(_pendingPcm, buffer, _pendingCount);
+            _pendingPcm = buffer;
+        }
+
+        data.CopyTo(_pendingPcm.AsSpan(_pendingCount));
+        _pendingCount = required;
+    }
+
+    private void ConsumePending(Int32 count)
+    {
+        if (count >= _pendingCount)
+        {
+            _pendingCount = 0;
+            return;
+        }
+
+        Array.Copy(_pendingPcm, count, _pendingPcm, 0, _pendingCount - count);
+        _pendingCount -= count;
     }
     #endregion
 
     #region 辅助
-    /// <summary>根据 Opus 模式获取帧大小</summary>
+    /// <summary>根据 Opus TOC 配置序号获取 48 kHz 下的每帧样本数</summary>
+    /// <param name="mode">TOC 配置序号（兼容旧接口的简化映射）</param>
+    /// <returns>每帧每声道样本数</returns>
     public static Int32 GetFrameSize(Int32 mode)
     {
         return mode switch
@@ -267,111 +341,25 @@ public class OpusCodec : IAudioCodec, ICodecInfo
         };
     }
 
-    private static Single[] GetVorbisWindow(Int32 len)
+    /// <summary>获取指定帧时长在 48 kHz 下的每帧样本数</summary>
+    /// <param name="duration">帧时长</param>
+    /// <returns>每帧每声道样本数</returns>
+    public static Int32 GetFrameSize(OpusFrameDuration duration) => (Int32)((Int64)(Int32)duration * BaseSampleRate / 1_000_000);
+
+    /// <summary>解析 Opus 包头部信息</summary>
+    /// <param name="packet">Opus 包</param>
+    /// <returns>包头部信息</returns>
+    public static OpusPacketHeader GetPacketHeader(ReadOnlySpan<Byte> packet) => OpusPacketHeader.Parse(packet);
+
+    /// <summary>获取指定选项下编码器的算法延迟（每声道样本数），用于 Ogg Opus pre-skip</summary>
+    /// <param name="options">Opus 选项</param>
+    /// <returns>算法延迟样本数；libopus 固定为 6.5 ms 对应的样本数</returns>
+    public static Int32 GetLookahead(OpusOptions options)
     {
-        var window = new Single[len];
-        for (var i = 0; i < len; i++)
-        {
-            var x = Math.Sin(Math.PI / len * (i + 0.5));
-            window[i] = (Single)(Math.Sin(Math.PI / 2 * x * x));
-        }
-        return window;
-    }
+        if (options == null) throw new ArgumentNullException(nameof(options));
+        options.Validate();
 
-    /// <summary>21 频带的 bark 尺度带宽近似</summary>
-    private static Int32[] GetBandWidths(Int32 bands)
-    {
-        var widths = new Int32[bands];
-        var totalBins = MdctSize / 2; // 960 MDCT bins
-        // 按 Bark 尺度近似分配
-        var barkEdges = new[] { 0, 2, 4, 6, 8, 10, 13, 16, 20, 25, 31, 38, 47, 58, 71, 87, 106, 129, 157, 190, 230, 278, 336, 406, 490, 592, 716, 865, 1045, 1262, 1525, 1842, 2225, 2688, 3247, 3921, 4736, 5719, 6907, 8341, 10072, 12163, 14688, 17737, 21419, 25864, 31233, 37715, 45543, 54998, 66413, 80197, 96844, 116938, 141207, 170506, 205888, 248616, int.MaxValue };
-        var totalBark = 25.0; // 0-24 Bark for 0-24kHz
-        for (var b = 0; b < bands; b++)
-        {
-            var lowBark = (Double)b / bands * totalBark;
-            var highBark = (Double)(b + 1) / bands * totalBark;
-            var lowBin = (Int32)(lowBark / totalBark * totalBins);
-            var highBin = (Int32)(highBark / totalBark * totalBins);
-            widths[b] = Math.Max(1, highBin - lowBin);
-        }
-        return widths;
-    }
-    #endregion
-
-    #region Range 编解码器
-    private class RangeDecoder
-    {
-        private readonly Byte[] _data;
-        private Int32 _pos;
-        private UInt32 _range;
-        private UInt32 _value;
-        private readonly Int32 _totalBits;
-
-        public RangeDecoder(Byte[] data)
-        {
-            _data = data;
-            _pos = 0;
-            _range = 0xFFFFFFFF;
-            _value = 0;
-            for (var i = 0; i < 4; i++)
-                _value = (_value << 8) | (_pos < _data.Length ? _data[_pos++] : (Byte)0);
-            _totalBits = data.Length * 8;
-        }
-
-        public Int32 DecodeUniform(Int32 min, Int32 max)
-        {
-            var range = max - min + 1;
-            if (range <= 1) return min;
-            _range = (_range >> 8) * (UInt32)range;
-            if (_range == 0) _range = 1;
-            var bit = (_value >> 24) / (_range / (UInt32)range);
-            _value -= bit * (_range / (UInt32)range);
-            while (_range < 0x800000)
-            {
-                _range <<= 8;
-                var b = _pos < _data.Length ? _data[_pos++] : (Byte)0;
-                _value = (_value << 8) | b;
-            }
-            return min + (Int32)Math.Min((UInt32)(range - 1), bit);
-        }
-
-        public Int32 RemainingBits() => Math.Max(0, _totalBits - _pos * 8);
-    }
-
-    private class RangeEncoder
-    {
-        private readonly MemoryStream _stream;
-        private Int32 _bitBudget;
-
-        public RangeEncoder(MemoryStream stream, Int32 bitBudget)
-        {
-            _stream = stream;
-            _bitBudget = bitBudget;
-        }
-
-        public void EncodeUniform(Int32 value, Int32 min, Int32 max)
-        {
-            var range = max - min + 1;
-            if (range <= 1) return;
-            var bits = (Int32)Math.Ceiling(Math.Log(range) / Math.Log(2));
-            if (_bitBudget < bits) return;
-            var shifted = value - min;
-            for (var i = bits - 1; i >= 0; i--)
-            {
-                _stream.WriteByte((Byte)((shifted >> i) & 1));
-                _bitBudget--;
-            }
-        }
-
-        public void Finish()
-        {
-            while (_bitBudget > 0)
-            {
-                _stream.WriteByte(0);
-                _bitBudget--;
-            }
-        }
+        return (Int32)((Int64)options.SampleRate * LookaheadMicroseconds / 1_000_000);
     }
     #endregion
 }
-

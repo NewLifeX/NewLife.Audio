@@ -1,4 +1,6 @@
+using NewLife;
 using NewLife.Buffers;
+using NewLife.Audio.Codecs;
 
 namespace NewLife.Audio.Writers;
 
@@ -10,20 +12,32 @@ namespace NewLife.Audio.Writers;
 /// </remarks>
 public sealed class OggOpusStreamWriter : AudioStreamWriter
 {
-    /// <summary>Opus 每帧采样数（20ms @48kHz）</summary>
+    /// <summary>Opus 每帧采样数（20ms @48kHz），仅用于无法解析 TOC 时的兜底</summary>
     private const Int32 SamplesPerFrame = 960;
 
-    /// <summary>解码器预跳采样数（80ms @48kHz），Opus 规范固定值</summary>
-    private const Int32 PreSkip = 3840;
+    /// <summary>解码器预跳采样数默认值。外部已编码流未知编码器延迟时取 0；本地编码时使用 <see cref="NewLife.Audio.Codecs.OpusCodec.GetLookahead(NewLife.Audio.Codecs.OpusOptions)"/></summary>
+    private const Int32 DefaultPreSkip = 0;
 
     /// <summary>OGG 流序列号（随机生成，标识一个逻辑流）</summary>
     private readonly UInt32 _serialNo;
 
+    /// <summary>声道数</summary>
+    private readonly Int32 _channels;
+
+    /// <summary>原始输入采样率（写入 OpusHead，仅作信息）</summary>
+    private readonly Int32 _sampleRate;
+
+    /// <summary>解码器预跳采样数</summary>
+    private readonly Int32 _preSkip;
+
     /// <summary>当前 OGG 页序号（从 0 递增）</summary>
     private UInt32 _pageSeq;
 
-    /// <summary>已完成的 Opus 包计数（用于计算 granule position）</summary>
+    /// <summary>已完成的 Opus 包计数</summary>
     private Int32 _packetCount;
+
+    /// <summary>累计已写入的每声道样本数（48 kHz 时间基）</summary>
+    private Int64 _totalSamples;
 
     /// <summary>是否已写入头页</summary>
     private Boolean _headerWritten;
@@ -39,11 +53,38 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
 
     /// <summary>初始化 OGG Opus 写入器</summary>
     /// <param name="vendor">厂商字符串，默认 "NewLife.Audio"</param>
-    public OggOpusStreamWriter(String vendor = "NewLife.Audio")
+    public OggOpusStreamWriter(String vendor = "NewLife.Audio") : this(vendor, 1, 48000, DefaultPreSkip) { }
+
+    /// <summary>初始化 OGG Opus 写入器</summary>
+    /// <param name="vendor">厂商字符串</param>
+    /// <param name="channels">声道数（1 或 2）</param>
+    /// <param name="sampleRate">原始输入采样率（写入 OpusHead，仅作信息）</param>
+    /// <param name="preSkip">解码器预跳采样数（48 kHz 时间基）。外部已编码流未知时取 0；本地编码时使用 <see cref="NewLife.Audio.Codecs.OpusCodec.GetLookahead(NewLife.Audio.Codecs.OpusOptions)"/></param>
+    public OggOpusStreamWriter(String vendor, Int32 channels, Int32 sampleRate = 48000, Int32 preSkip = DefaultPreSkip)
     {
+        if (channels is not (1 or 2)) throw new ArgumentOutOfRangeException(nameof(channels), L.T("Opus supports 1 or 2 channels."));
+        if (sampleRate is not (8000 or 12000 or 16000 or 24000 or 48000))
+            throw new ArgumentOutOfRangeException(nameof(sampleRate), L.T("Opus sample rate must be 8000, 12000, 16000, 24000, or 48000."));
+        if (preSkip < 0 || preSkip > 65535) throw new ArgumentOutOfRangeException(nameof(preSkip), L.T("Opus pre-skip must be between 0 and 65535."));
+
         _vendor = vendor;
+        _channels = channels;
+        _sampleRate = sampleRate;
+        _preSkip = preSkip;
         _serialNo = (UInt32)_rnd.Next();
     }
+
+    /// <summary>声道数</summary>
+    public Int32 Channels => _channels;
+
+    /// <summary>原始输入采样率</summary>
+    public Int32 SampleRate => _sampleRate;
+
+    /// <summary>解码器预跳采样数</summary>
+    public Int32 PreSkip => _preSkip;
+
+    /// <summary>已写入的 Opus 包数</summary>
+    public Int32 PacketCount => _packetCount;
 
     /// <summary>audio/ogg; codecs=opus</summary>
     public override String ContentType => "audio/ogg; codecs=opus";
@@ -77,13 +118,16 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
     public override async ValueTask WriteChunkAsync(Stream stream, ReadOnlyMemory<Byte> chunk, CancellationToken cancellationToken = default)
     {
         if (_completed) return;
+        if (chunk.Length == 0) return;
 
         if (!_headerWritten)
             await WriteHeaderAsync(stream, cancellationToken).ConfigureAwait(false);
 
         _packetCount++;
-        // granule position = pre_skip + 已完成包数 × 每帧采样数
-        var granule = PreSkip + (Int64)_packetCount * SamplesPerFrame;
+        // granule position = pre_skip + 累计样本数，样本数从 TOC 解析，兼容 2.5~60 ms 帧
+        var samples = OpusPacketHeader.TryParse(chunk.Span, out var header) ? header.TotalSamples : SamplesPerFrame;
+        _totalSamples += samples;
+        var granule = _preSkip + _totalSamples;
 
         var page = BuildOggPage(chunk, granulePosition: granule, headerType: 0x00);
         await stream.WriteAsync(page, cancellationToken).ConfigureAwait(false);
@@ -101,7 +145,7 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
             await WriteHeaderAsync(stream, cancellationToken).ConfigureAwait(false);
 
         // EOS 页：空负载，headerType = 0x04，granule 保持最后值
-        var granule = PreSkip + (Int64)_packetCount * SamplesPerFrame;
+        var granule = _preSkip + _totalSamples;
         var eosPage = BuildOggPage(ReadOnlyMemory<Byte>.Empty, granulePosition: granule, headerType: 0x04);
         await stream.WriteAsync(eosPage, cancellationToken).ConfigureAwait(false);
         await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
@@ -121,13 +165,11 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
     private Byte[] BuildOggPage(ReadOnlyMemory<Byte> payload, Int64 granulePosition, Byte headerType)
     {
         var payloadLen = payload.Length;
-        // 计算段表：每段最多 255 字节
+        // 计算段表：每段最多 255 字节；整包长度是 255 的整数倍时，末尾仍需要一个 0 长度段作为包结束标记。
+        // EOS 空页使用 0 个段（页面不含数据包），避免解码器把空包当成非法 Opus 包。
         var fullSegments = payloadLen / 255;
         var lastSegmentSize = payloadLen % 255;
-        var segmentCount = fullSegments + (lastSegmentSize > 0 ? 1 : 0);
-
-        // 边界情况：payload 为空时仍需 1 个段（长度为 0）
-        if (segmentCount == 0) segmentCount = 1;
+        var segmentCount = payloadLen == 0 && headerType == 0x04 ? 0 : fullSegments + 1;
 
         var headerSize = 27 + segmentCount; // 27 字节固定头 + 段表
         var page = new Byte[headerSize + payloadLen];
@@ -155,11 +197,8 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
         // 27+: segment table
         for (var i = 0; i < fullSegments; i++)
             writer.WriteByte(255);
-        if (lastSegmentSize > 0)
+        if (segmentCount > 0)
             writer.WriteByte((Byte)lastSegmentSize);
-        // 如果 payload 为空，段表写入一个长度为 0 的段
-        if (payloadLen == 0)
-            writer.WriteByte(0);
 
         // --- 拷贝负载 ---
         if (payloadLen > 0)
@@ -178,7 +217,7 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
     #region Opus 包构建
 
     /// <summary>构建 OpusHead 标识包（19 字节）</summary>
-    private static Byte[] BuildOpusHeadPacket()
+    private Byte[] BuildOpusHeadPacket()
     {
         var packet = new Byte[19];
         var writer = new SpanWriter(packet.AsSpan());
@@ -187,12 +226,12 @@ public sealed class OggOpusStreamWriter : AudioStreamWriter
         writer.Write(0x64616548u);       // "Head"
         // Version: 1
         writer.WriteByte(1);
-        // Channel count: 1（单声道）
-        writer.WriteByte(1);
-        // Pre-skip: 3840 (2 bytes LE)
-        writer.Write((Int16)PreSkip);
-        // Input sample rate: 48000 (4 bytes LE)
-        writer.Write(48000);
+        // Channel count
+        writer.WriteByte((Byte)_channels);
+        // Pre-skip
+        writer.Write((Int16)_preSkip);
+        // Input sample rate
+        writer.Write(_sampleRate);
         // Output gain: 0 (2 bytes LE)
         writer.Write((Int16)0);
         // Channel mapping family: 0
