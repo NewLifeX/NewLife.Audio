@@ -23,9 +23,9 @@
 |---|---|
 | `IAudioProcessor` | DSP 处理器统一接口：输入 32-bit 浮点样本 → 处理 → 输出 32-bit 浮点样本 |
 | `AudioPipeline` | 信号链管线：有序持有多个 `IAudioProcessor`，数据流式传递 |
-| `Resampler` | 重采样器：线性插值、Sinc 插值（加窗） |
-| `ChannelConverter` | 声道转换：单声道↔立体声↔多声道，自定义映射矩阵 |
-| `BitDepthConverter` | 位深/格式转换：8/16/24/32 int ↔ 32 float |
+| `Resampler` | 重采样器：线性插值（加窗 Sinc / 多相尚未实现，见 IMP-006）；`ResamplePcm` 静态助手用于整段 PCM |
+| `ChannelConverter` | 声道转换：`MonoToStereo` / `StereoToMono` 静态助手；作为 `IAudioProcessor` 时 `Read` 当前为直通（未做管线内转换） |
+| `BitDepthConverter` | 位深转换：8/16 位整数与 32 位浮点互转的静态助手；作为 `IAudioProcessor` 时 `Read` 当前为直通 |
 | `VolumeControl` | 音量控制：线性/对数增益，静音检测，峰值限幅 |
 | `AudioMixer` | 混音器：多通道加权混合，32-bit 累加后归一化 |
 | `FftAnalyzer` | FFT 分析：窗函数、幅度谱/功率谱、频率分辨率 |
@@ -154,10 +154,10 @@ public class AudioMixer : IAudioProcessor
 // 处理器链的流畅 API
 var pipeline = new AudioPipeline();
 pipeline
-    .AddProcessor(new BitDepthConverter())   // 16-bit → float32
-    .AddProcessor(new VolumeControl(0.8f))   // 80% 音量
-    .AddProcessor(new BiQuadFilter.LowPass(3000, 44100)) // 3kHz 低通
-    .AddProcessor(new Resampler(8000));      // 重采样到 8kHz
+    .AddProcessor(new VolumeControl(0.8f))                              // 80% 音量
+    .AddProcessor(new BiQuadFilter(BiQuadFilter.FilterType.LowPass, 3000)) // 3kHz 低通
+    .AddProcessor(new Resampler(8000));                                 // 重采样到 8kHz
+pipeline.Source = source;   // 上游数据源
 ```
 
 ---
@@ -169,7 +169,7 @@ pipeline
 | 内部统一 32-bit 浮点处理 | 避免整数溢出，支持负增益和效果叠加，业界通行的信号链内部格式 |
 | `IAudioProcessor.Source` 链式组合 | 借鉴业界信号链模式，每个处理器只有一个上游源，天然形成单向处理链 |
 | 处理器不关心具体传输层 | 处理器只从 `Source.Read()` 拉数据，不关心数据来自文件/网络/设备 |
-| WaveOut/WASAPI 等播放后端也实现 `IAudioProcessor` | 播放后端作为管线终点，统一 `Source → Processor1 → ... → Player` |
+| WaveOut/WASAPI 等播放后端不实现 `IAudioProcessor` | 播放器是**推模式**（`Write(Byte[])`），DSP 链是**拉模式**（`Read()`）；两者在管线终点由调用方衔接，避免把推/拉两种时序混在一个接口里 |
 | 混音器同步等待所有输入 | 避免异步时序复杂性。多源时间对齐由调用方保证 |
 | BiQuad 滤波器使用 Robert Bristow-Johnson 公式 | 系数计算标准、稳定，业界广泛使用该算法 |
 

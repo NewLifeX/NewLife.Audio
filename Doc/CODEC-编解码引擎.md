@@ -13,7 +13,7 @@
 | PCM 双向转换 | 提供统一接口 `IAudioCodec`，输入编码数据→输出 PCM，或输入 PCM→输出编码数据 |
 | 芯片音频头适配 | 自动识别和去除 IoT 芯片对音频数据的包装头（海思/大华/宇视等），解码后还原 |
 | 编解码器生命周期 | 管理编解码器实例的创建、复用和释放（有状态/无状态编解码器分别处理） |
-| 格式自动检测 | 根据数据特征自动推断音频编码格式，降低调用方心智负担 |
+| 格式与载荷识别 | 容器层按扩展名/魔术字节识别文件格式；RTP/GB28181 场景按 `AVTypes` 载荷类型路由。编解码器本身不做"盲猜编码" |
 
 ---
 
@@ -155,6 +155,12 @@ public class AudioCodecFactory
 
     /// <summary>添加芯片头</summary>
     public IPacket AddHI(IPacket data);
+
+    /// <summary>重置指定编码类型的有状态编解码器（开始新音频流时调用）</summary>
+    public void ResetCodec(AVTypes avType);
+
+    /// <summary>已注册的芯片头处理器</summary>
+    public IReadOnlyList<IAudioChipHeader> ChipHeaders { get; }
 }
 
 /// <summary>编解码器注册表</summary>

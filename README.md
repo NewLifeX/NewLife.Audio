@@ -62,7 +62,7 @@ Cross-platform audio device abstraction:
 Composable audio signal processing chain:
 - Resampling (linear interpolation)
 - Channel conversion (mono ↔ stereo)
-- Bit depth / sample format conversion (8/16/32-bit ↔ float)
+- Bit depth / sample format conversion (8/16-bit ↔ float)
 - Volume control & gain (linear / logarithmic)
 - Multi-source mixing with normalization
 - **FFT** spectrum analysis (Cooley-Tukey, Hann/Hamming/Blackman windows)

@@ -12,7 +12,7 @@
 | 设备发现 | 枚举系统音频输入/输出设备，获取名称、通道数、格式支持等元数据 |
 | 音频播放 | 将 PCM/编码数据推送到音频输出设备 |
 | 音频录制 | 从音频输入设备采集原始 PCM 数据 |
-| 驱动适配 | 封装 Windows(WaveOut/WASAPI/ASIO)、Linux(ALSA/PulseAudio)、macOS(CoreAudio) 原生API |
+| 驱动适配 | 目标平台：Windows（WaveOut/WASAPI/ASIO）、Linux（ALSA）、macOS（CoreAudio）、Android（AAudio）、iOS（AVAudioEngine）；**当前仅 Windows WaveOut/WaveIn（WinMM）为完整实现**，其余为骨架或未开始 |
 | 生命周期管理 | 播放/录制会话的启停、暂停、恢复、缓冲区管理 |
 
 ---
@@ -22,15 +22,15 @@
 | 组件 | 说明 |
 |---|---|
 | `AudioDeviceManager` | 设备管理器：驱动注册、设备枚举、默认设备选择、播放器/录制器创建 |
-| `AudioDriverFactory` | 驱动工厂：根据运行时平台自动选择最优驱动（Windows→WaveOut，其他→FallbackDriver） |
+| `AudioDriverFactory` | 驱动工厂：`Create()` 按编译符号选择（net461 → WaveOut，其余 → `FallbackDriver`）；`Create(name)` 可显式指定 waveout / wasapi / asio。**注意**：主库无 `net8.0-windows` 目标，故 .NET 8/10 默认走回退驱动（见[架构设计](架构设计.md) FIX-005） |
 | `IAudioPlayer` | 播放器接口：`Play()`/`Pause()`/`Stop()`/`Init(AudioFormat)` |
 | `IAudioRecorder` | 录音器接口：`StartRecording()`/`StopRecording()`/`DataAvailable` 事件 |
 | `IAudioDriver` | 音频驱动统一接口：枚举设备、创建播放器/录制器 |
 | `AudioFormat` | 音频格式描述：采样率、位深、声道数、编码类型 |
-| `WaveOutNativeDriver` | Windows WaveOut API 驱动实现 |
-| `WasapiDriver` | Windows WASAPI 驱动实现 |
-| `AsioDriver` | Windows ASIO 驱动实现 |
-| `LoopbackRecorder` | 系统音频回路录制（WASAPI Loopback） |
+| `WaveOutNativeDriver` | Windows WaveOut API 驱动实现（WaveOut 播放 + WaveIn 录制，真实 P/Invoke） |
+| `WasapiDriver` | **骨架**：播放/录制器方法体为空，设备枚举返回两条硬编码条目（未走 `IMMDeviceEnumerator`） |
+| `AsioDriver` | **骨架**：仅做注册表检测，无任何原生调用 |
+| `LoopbackRecorder` | 系统音频回路录制：当前为后台线程 + 正弦波模拟，真实 WASAPI Loopback 未实现 |
 | `AudioDeviceInfo` | 音频设备元数据：名称、ID、输入/输出、支持格式 |
 
 ---
@@ -165,9 +165,9 @@ public interface IAudioDriver
 | 驱动适配器模式 | 不同平台/API 差异巨大，适配器模式隔离变化，核心接口保持稳定 |
 | 同步 `Write()` + 异步事件 `DataAvailable` | 播放是调用方主动推送（同步写），录制是被动接收（事件回调），符合各自语义 |
 | `AudioFormat` 包含 `AVTypes` | 支持编码音频直接播放（如 G.711 设备输出），不只是原始 PCM |
-| 驱动按平台条件编译 + 运行时选择 | `net461`/Windows 加载 WaveOut/WASAPI/ASIO；其他平台使用 `FallbackDriver` 回退 |
+| 驱动按编译符号选择（待改） | 当前用 `#if NETFRAMEWORK \|\| WINDOWS` 选择，主库无 `net8.0-windows` 目标，导致 .NET 8/10 落到 `FallbackDriver`；计划改为运行时平台判断（FIX-005） |
 | 优先平台原生 API | 不用第三方跨平台抽象库（增加原生依赖），直接调用 OS API，零依赖 |
-| Linux/macOS 原生驱动暂缓 | ALSA/PulseAudio/CoreAudio 需求低频，当前以回退驱动覆盖，待需求明确后补充 |
+| 跨平台原生驱动进入路线图 | 原"Linux/macOS 暂缓"的结论已调整：五平台（含 Android/iOS）设备 I/O 纳入阶段一/二，见[架构设计](架构设计.md) 路线图 |
 | 驱动命名（v1.2 破坏性） | `IAudioBackend`/`AudioBackendFactory` 与三个 Backend 实现直接改名为 Driver，不保留 Obsolete 别名；旧调用方需替换类型名，API 兼容门禁会报告这些删除 |
 
 ---

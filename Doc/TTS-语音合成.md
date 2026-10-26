@@ -123,10 +123,10 @@ await tts.SaveAsync("请注意", "alert.wav",
 |---|---|---|
 | WAV (PCM) | `WavStreamWriter` / `WaveFileWriter` 完整，可回填长度 | ✅ 支持 |
 | 裸 PCM | 16 位小端 | ✅ 支持（流式/自定义协议） |
-| MP3 编码 | 现有 `Mp3Codec.FromPcm` 是简化实现，帧长与 Huffman 不符合标准，标准解码器无法互通 | ❌ 不暴露 |
+| MP3 编码 | `Mp3Layer3Encoder` 已能产出标准码流并可被标准解码器播放，但音质仅 15.4 dB（见功能清单 IMP-001），不适合分发 | ❌ 暂不暴露（等音质修复） |
 | AAC 编码 | 纯托管 AAC-LC 编码器已可用（ADTS/raw），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Opus 编码 | `OpusCodec` 自研 M1：包解析/范围编解码器就绪，托管 CELT/SILK 未完成；当前通过系统 ffmpeg 降级，可与标准解码器互操作 | 🟡 编解码降级可用，托管实现进行中，TTS 输出待接入 |
-| FLAC 编码 | 现有实现帧头/子帧不完整，解码器仅支持 Verbatim 子帧 | ❌ 不暴露 |
+| FLAC 编码 | `FlacCodec` 已是完整纯托管实现（Fixed/LPC 子帧、Rice 残差、MS 立体声、MD5），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Ogg Opus 封装 | `OggOpusStreamWriter` 支持标准 Ogg Opus 头、页与 granule；可封装**已编码**的 Opus 包 | ✅ 支持 |
 
 > **MP3 输入**：在线服务返回的 MP3 由内置 Layer III 解码器（`Mp3Layer3Decoder`，纯托管、零外部依赖）解码为 16 位 PCM，覆盖 MPEG-1/2/2.5、长短块与联合立体声；MP3 输出仍不在本轮范围。
@@ -134,8 +134,8 @@ await tts.SaveAsync("请注意", "alert.wav",
 后续路线（需单独立项）：
 
 1. **网络流式首选 Opus**：`OpusCodec` 已接入自研包解析与范围编解码器，托管 CELT/SILK 完成前通过系统 ffmpeg 降级；PCM 按源采样率编码后接 `OggOpusStreamWriter`，输出 `audio/ogg; codecs=opus`。
-2. **文件分发需要 MP3**：Windows Media Foundation（内置）或可选原生 LAME。
-3. **无损 FLAC**：重写为可互操作的纯托管编码器（固定预测 + Rice + 正确帧头/CRC）。
+2. **文件分发需要 MP3**：先修复托管 Layer III 编码器的音质（IMP-001），再接入 TTS 输出；备选 Windows Media Foundation 或原生 LAME。
+3. **无损 FLAC**：`FlacCodec` 纯托管编码已完成并可互操作，接入 TTS 输出即可（`TtsFormat` 增加 FLAC 分支）。
 
 `TtsFormat` 与 `SaveAsync(stream, format)` 已为后续格式留好位置，加格式不改变极简 API。
 
@@ -407,6 +407,8 @@ var text = TtsText.Default.Normalize("设备型号 A2 温度 35 度");
 | Windows | `SystemSpeechEngine` | .NET Framework 开箱可用；.NET Core/.NET 5+ 应用需引用 `System.Speech` NuGet 包 |
 | macOS | `MacSayTtsEngine` | 系统自带 `/usr/bin/say`；流式为“整段生成后分块” |
 | Linux | `EspeakTtsEngine` | 需安装 `espeak-ng`；`--stdout` 输出 WAV，真流式 |
+| Android | 待接入（TTS-22） | 计划走系统 `TextToSpeech`，随平台 TFM 提供；当前仅云端 / HTTP / 可选包可用 |
+| iOS | 待接入（TTS-22） | 计划走系统 `AVSpeechSynthesizer`；当前仅云端 / HTTP / 可选包可用 |
 | 非直出引擎 | `HttpTtsEngine` / `ProcessTtsEngine` | `SayAsync` 走 PCM 播放回退；非 Windows 无可用 PCM 播放驱动时请用 `SaveAsync`/`StreamAsync` |
 | 公共云引擎 | `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine` | 纯托管 + HTTPS，需要外网与有效凭证；同样走 PCM 播放回退 |
 | 免密钥在线引擎 | `BaiduTranslateTtsEngine` | 纯托管 + HTTPS，无需凭证；非官方接口 |

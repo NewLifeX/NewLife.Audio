@@ -11,9 +11,8 @@
 
 | 职责 | 说明 |
 |---|---|
-| RTP 封包与解包 | 按 RFC 3550 将音频帧封装为 RTP 包，或从 RTP 包中解析音频帧 |
+| RTP 封包与解包 | 按 RFC 3550 将音频帧封装为 RTP 包，或从 RTP 包中解析音频帧；AAC 走 RFC 3640 的 AU Header 分片 |
 | 流媒体客户端 | RTSP/HTTP 流拉取，支持连接、播放、断开等生命周期 |
-| 流媒体服务端 | RTSP/HTTP 流推送，向多客户端广播音频 |
 | WebSocket 实时传输 | 基于 WebSocket 的低延迟双向音频管道，服务 Web 端对讲场景 |
 | 抖动缓冲 | 网络接收端缓冲管理，平滑网络抖动，保证连续播放 |
 
@@ -26,12 +25,11 @@
 | `RtpPacket` | RTP 包数据结构：头部字段（V/P/X/CC/M/PT/SN/TS/SSRC/CSRC） + 载荷 |
 | `RtpPacketizer` | RTP 封包器：音频帧 → 一个或多个 RTP 包（分片） |
 | `RtpDepacketizer` | RTP 解包器：RTP 包 → 音频帧（组包） |
+| `AacRtpPacketizer` / `AacRtpDepacketizer` | AAC 的 RFC 3640（AAC-hbr + AU Header）分片与重组 |
 | `RtpSession` | RTP 会话管理：SSRC、序列号、时间戳递增 |
-| `RtspClient` | RTSP 客户端：DESCRIBE/SETUP/PLAY/TEARDOWN 协议交互 |
-| `RtspServer` | RTSP 服务端：接受客户端连接，推送音频流 |
-| `IAudioStreamSource` | 音频流源接口：提供编码音频帧 + 格式信息 |
-| `IAudioStreamSink` | 音频流目标接口：消费编码音频帧 |
-| `JitterBuffer` | 抖动缓冲：可配置延迟窗口，排序、去重、丢包补偿 |
+| `RtspClient` | RTSP 客户端：OPTIONS/DESCRIBE/SETUP/PLAY/TEARDOWN 协议交互（仅客户端，无服务端） |
+| `JitterBuffer` | 抖动缓冲：可配置延迟窗口，排序、去重、丢包统计 |
+| `HttpAudioStreamSource` | Icecast/SHOUTcast 风格 HTTP 音频流拉取 |
 | `WebSocketAudioPipe` | WebSocket 音频管道：封装音频帧为 WebSocket 消息，双向传输 |
 
 ---
@@ -96,69 +94,80 @@ flowchart LR
 
 ```csharp
 /// <summary>RTP 包</summary>
-public class RtpPacket
+public struct RtpPacket
 {
     // 固定头部
-    public Byte Version { get; set; }        // 2
-    public Boolean Padding { get; set; }
-    public Boolean Extension { get; set; }
-    public Byte CsrcCount { get; set; }
-    public Boolean Marker { get; set; }
-    public Byte PayloadType { get; set; }     // 0=PCMU, 8=PCMA, 96=Opus, 97=AAC...
-    public UInt16 SequenceNumber { get; set; }
-    public UInt32 Timestamp { get; set; }
-    public UInt32 Ssrc { get; set; }
-    public UInt32[] CsrcList { get; set; }
+    public Byte Version;              // 2
+    public Boolean Padding;
+    public Boolean Extension;
+    public Byte CsrcCount;
+    public Boolean Marker;
+    public Byte PayloadType;          // 0=PCMU, 8=PCMA, 96=Opus, 97=AAC...
+    public UInt16 SequenceNumber;
+    public UInt32 Timestamp;
+    public UInt32 Ssrc;
+    public UInt32[] CsrcList;
 
     // 载荷
-    public Packet Payload { get; set; }
+    public Byte[] Payload;
 
     /// <summary>序列化为网络字节序</summary>
-    public Packet ToPacket();
+    public Byte[] ToBytes();
 
     /// <summary>从网络字节序反序列化</summary>
-    public static RtpPacket FromPacket(Packet data);
+    public static RtpPacket FromBytes(Byte[] data);
 }
 ```
 
-### 4.2 流传输接口
+### 4.2 抖动缓冲
 
 ```csharp
-/// <summary>音频流源</summary>
-public interface IAudioStreamSource
+/// <summary>抖动缓冲。排序、去重、丢包统计</summary>
+public class JitterBuffer
 {
-    WaveFormat Format { get; }
-    AVTypes CodecType { get; }
-    event EventHandler<Packet> FrameAvailable;
-}
+    public JitterBuffer(Int32 maxDelayMs = 60, Int32 packetIntervalMs = 20);
 
-/// <summary>音频流目标</summary>
-public interface IAudioStreamSink
-{
-    void OnFrame(Packet encodedFrame);
+    /// <summary>缓冲区大小（包数）</summary>
+    public Int32 BufferSize { get; }
+
+    /// <summary>当前延迟（毫秒）</summary>
+    public Double CurrentDelayMs { get; }
+
+    /// <summary>丢包率</summary>
+    public Double LossRate { get; }
+
+    /// <summary>写入一个 RTP 包</summary>
+    public void Write(UInt16 sequenceNumber, Byte[] payload, UInt32 timestamp);
+
+    /// <summary>按序取出一个包；暂无可用包时返回 false</summary>
+    public Boolean Read(out Byte[] payload);
+
+    public void Reset();
 }
 ```
 
 ### 4.3 RTSP 客户端
 
 ```csharp
-/// <summary>RTSP 客户端</summary>
+/// <summary>RTSP 客户端（拉流）</summary>
 public class RtspClient : IDisposable
 {
-    /// <summary>连接到 RTSP 服务端</summary>
-    public Task ConnectAsync(String url);
+    public RtspClient(String url);
 
-    /// <summary>开始接收音频流</summary>
-    public Task PlayAsync();
+    public AudioFormat AudioFormat { get; }
+    public AVTypes CodecType { get; }
+    public Boolean IsConnected { get; }
 
-    /// <summary>暂停</summary>
-    public Task PauseAsync();
+    public Task ConnectAsync(CancellationToken ct = default);
+    public Task<String> OptionsAsync(CancellationToken ct = default);
+    public Task<String> DescribeAsync(CancellationToken ct = default);
+    public Task<Boolean> SetupAsync(String transport = "RTP/AVP/TCP;interleaved=0-1", CancellationToken ct = default);
+    public Task<Boolean> PlayAsync(String range = "npt=0-", CancellationToken ct = default);
+    public Task<Boolean> PauseAsync(CancellationToken ct = default);
+    public Task TeardownAsync(CancellationToken ct = default);
 
-    /// <summary>断开</summary>
-    public Task TeardownAsync();
-
-    /// <summary>接收到音频帧事件</summary>
-    public event EventHandler<Packet> AudioFrameReceived;
+    /// <summary>接收到音频帧（编码后负载）</summary>
+    public event EventHandler<IPacket> AudioFrameReceived;
 }
 ```
 
@@ -173,7 +182,7 @@ public class RtspClient : IDisposable
 | WebSocket 使用 NewLife.Http 的 WebSocket 支持 | 复用 `WebSocketSession` / `WebSocketClient` |
 | 抖动缓冲可配置 | 实时对讲（20-60ms 缓冲）vs 单向广播（200-500ms 缓冲），场景差异大 |
 | RTCP 简化为基本接收报告 | 完整 RTCP 协议复杂，初期仅需丢包率和抖动统计 |
-| 远端实施优先级 | RTP 封包 > RTSP 客户端 > WebSocket > HTTP 流 > RTSP 服务端 |
+| 远端实施优先级 | RTP 封包 > RTSP 客户端 > WebSocket > HTTP 流 |
 
 ---
 

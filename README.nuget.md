@@ -58,11 +58,13 @@ Cross-platform audio device abstraction:
 - Audio capture & loopback recording
 - Multi-device concurrent management via `AudioDeviceManager`
 
+> ⚠️ Only the Windows WaveOut/WaveIn (WinMM) backend is fully implemented today; WASAPI/ASIO are skeletons and the Linux/macOS/Android/iOS backends are on the roadmap (see `Doc/架构设计.md`).
+
 ### 🎛️ DSP Pipeline (DSP)
 Composable audio signal processing chain:
 - Resampling (linear interpolation)
 - Channel conversion (mono ↔ stereo)
-- Bit depth / sample format conversion (8/16/32-bit ↔ float)
+- Bit depth / sample format conversion (8/16-bit ↔ float)
 - Volume control & gain (linear / logarithmic)
 - Multi-source mixing with normalization
 - **FFT** spectrum analysis (Cooley-Tukey, Hann/Hamming/Blackman windows)
