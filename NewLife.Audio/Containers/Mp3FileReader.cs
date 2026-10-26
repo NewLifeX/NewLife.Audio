@@ -49,6 +49,12 @@ public class Mp3FileReader : IAudioContainerReader
 
     /// <summary>信息帧记录的文件字节数，未知为 0</summary>
     public Int64 VbrStreamBytes { get; private set; }
+
+    /// <summary>编码器延迟（样本数，来自 LAME 兼容标签），未标注为 0</summary>
+    public Int32 EncoderDelay { get; private set; }
+
+    /// <summary>尾部填充（样本数，来自 LAME 兼容标签），未标注为 0</summary>
+    public Int32 EncoderPadding { get; private set; }
     #endregion
 
     #region 构造
@@ -293,6 +299,14 @@ public class Mp3FileReader : IAudioContainerReader
         if ((flags & 2) != 0 && pos + 4 <= data.Length)
         {
             VbrStreamBytes = (Int64)((UInt32)data[pos] << 24 | (UInt32)data[pos + 1] << 16 | (UInt32)data[pos + 2] << 8 | data[pos + 3]);
+        }
+
+        // LAME 兼容标签中的 gapless 裁剪信息
+        var gapless = Mp3GaplessInfo.TryParse(data, offset, out _);
+        if (gapless != null)
+        {
+            EncoderDelay = gapless.EncoderDelay;
+            EncoderPadding = gapless.EncoderPadding;
         }
     }
 

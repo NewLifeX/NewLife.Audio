@@ -27,8 +27,10 @@ internal static class Mp3XingHeader
     /// <param name="frameSizes">各音频帧字节数，用于生成 TOC 与总字节数</param>
     /// <param name="isVbr">是否为 VBR 码流（true 写 Xing，false 写 Info）</param>
     /// <param name="quality">VBR 质量标记 0~100，写入 QUALITY 字段</param>
+    /// <param name="encoderDelay">编码器延迟样本数（写入 LAME 标签，供 gapless 裁剪）</param>
+    /// <param name="encoderPadding">尾部填充样本数（写入 LAME 标签，供 gapless 裁剪）</param>
     /// <returns>信息帧字节数组</returns>
-    public static Byte[] Build(Int32 sampleRate, Int32 channels, Int32 frameCount, IReadOnlyList<Int32> frameSizes, Boolean isVbr, Int32 quality)
+    public static Byte[] Build(Int32 sampleRate, Int32 channels, Int32 frameCount, IReadOnlyList<Int32> frameSizes, Boolean isVbr, Int32 quality, Int32 encoderDelay = 0, Int32 encoderPadding = 0)
     {
         var (version, rateIndex) = sampleRate switch
         {
@@ -45,11 +47,12 @@ internal static class Mp3XingHeader
             ? (channels == 1 ? 17 : 32)
             : (channels == 1 ? 9 : 17);
 
-        // 选一个能容纳信息帧的最小标准码率，避免播放器因帧太短而解析失败
+        // 选一个能容纳信息帧（含 LAME 延迟/填充标签）的最小标准码率，避免播放器因帧太短而解析失败
         var bitrateIndex = 1;
+        var required = 4 + sideInfoBytes + 160;
         for (var i = 1; i < 15; i++)
         {
-            if (coef * bitrates[i] * 1000 / sampleRate >= OverheadBytes + sideInfoBytes + 8)
+            if (coef * bitrates[i] * 1000 / sampleRate >= required)
             {
                 bitrateIndex = i;
                 break;
@@ -105,6 +108,17 @@ internal static class Mp3XingHeader
         }
 
         WriteInt32(frame, ref pos, quality);
+
+        // LAME 兼容标签：写入编码器延迟与尾部填充，供播放器做 gapless 裁剪
+        var lamePos = pos;
+        var lameTag = "LAME3.100";
+        for (var i = 0; i < lameTag.Length; i++) frame[lamePos + i] = (Byte)lameTag[i];
+        frame[lamePos + 9] = 0x03;    // 标签版本 + VBR 方式
+        frame[lamePos + 21] = (Byte)((encoderDelay >> 4) & 0xFF);
+        frame[lamePos + 22] = (Byte)(((encoderDelay & 0x0F) << 4) | ((encoderPadding >> 8) & 0x0F));
+        frame[lamePos + 23] = (Byte)(encoderPadding & 0xFF);
+        var musicPos = lamePos + 28;
+        WriteInt32(frame, ref musicPos, (Int32)Math.Min(totalAudio, Int32.MaxValue));
 
         return frame;
     }

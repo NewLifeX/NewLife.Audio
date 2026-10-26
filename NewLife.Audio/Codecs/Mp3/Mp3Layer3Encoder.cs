@@ -113,6 +113,10 @@ internal sealed class Mp3Layer3Encoder
     /// <summary>当前帧的主数据比特需求，来自最近一次 <see cref="PrepareFrame"/></summary>
     public Int32 DemandBits => _demandBits;
 
+    /// <summary>编码器算法延迟（样本数），解码结果开头需要跳过的样本数</summary>
+    /// <remarks>多相滤波器组延迟 481 样本 + MDCT 重叠 576 样本，实测与码率无关。</remarks>
+    public Int32 EncoderDelay => 481 + 576;
+
     /// <summary>最近一次 <see cref="EncodePrepared"/> 的主数据是否超出帧容量（已被截断）</summary>
     public Boolean LastFrameTruncated { get; private set; }
 

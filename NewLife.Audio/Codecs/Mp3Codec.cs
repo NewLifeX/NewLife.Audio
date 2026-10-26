@@ -97,6 +97,35 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         return new ArrayPacket(decoder.Decode(audio, out _, out _));
     }
 
+    /// <summary>MP3 数据转 PCM，并按信息帧中的延迟/填充做 gapless 裁剪</summary>
+    /// <param name="audio">MP3 编码数据</param>
+    /// <param name="sampleRate">输出采样率</param>
+    /// <param name="channels">输出声道数</param>
+    /// <returns>16 位小端交错 PCM，长度等于原始样本数（信息帧标注可用时）</returns>
+    /// <remarks>
+    /// 码流首个信息帧（Xing/Info）若带 LAME 兼容标签，则跳过编码器延迟与尾部填充，
+    /// 使连续多段解码后可以直接拼接播放，不出现缝隙或重复样本。缺少标签时退化为普通解码。
+    /// </remarks>
+    public Byte[] ToPcmGapless(ReadOnlySpan<Byte> audio, out Int32 sampleRate, out Int32 channels)
+    {
+        var decoder = new Mp3Layer3Decoder();
+        var pcm = decoder.Decode(audio, out sampleRate, out channels);
+
+        var info = Mp3GaplessInfo.TryParse(audio, out var infoSamples);
+        if (info == null) return pcm;
+
+        var frameBytes = channels * 2;
+        var skipHead = (infoSamples + info.EncoderDelay) * frameBytes;
+        var skipTail = info.EncoderPadding * frameBytes;
+        var length = pcm.Length - skipHead - skipTail;
+        if (length <= 0 || length > pcm.Length) return pcm;
+
+        var result = new Byte[length];
+        Array.Copy(pcm, skipHead, result, 0, length);
+
+        return result;
+    }
+
     /// <summary>PCM 转 MP3（MPEG Layer III 编码，支持 CBR/VBR/ABR）</summary>
     /// <param name="pcm">16 位小端交错 PCM</param>
     /// <param name="option"><see cref="Mp3EncoderOptions"/> 编码参数；也可直接传 Int32 比特率（kbps），其余参数取默认值（44.1kHz 单声道）</param>
@@ -122,8 +151,17 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         var frameBuf = new Byte[encoder.MaxFrameBytes];
 
         var vbr = options.Mode != Mp3RateMode.Cbr;
-        var sizes = vbr ? new List<Int32>() : null;
+        var writeInfo = vbr || options.WriteInfoFrame;
+        var sizes = writeInfo ? new List<Int32>() : null;
         var ms = new MemoryStream(data.Length + 1024);
+
+        // 末尾补零让帧数覆盖「原始样本 + 编码器延迟」，gapless 尾部填充才不为负
+        var delay = writeInfo ? encoder.EncoderDelay : 0;
+        if (delay > 0)
+        {
+            var extra = delay * options.Channels * 2;
+            Array.Resize(ref data, data.Length + extra);
+        }
 
         // ABR 的每帧目标比特数与累计漂移
         var targetBits = (Double)options.Bitrate * 1000 * encoder.FrameSamples / options.SampleRate;
@@ -154,11 +192,15 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
             sizes?.Add(len);
         }
 
-        if (!vbr || sizes == null || sizes.Count == 0) return new ArrayPacket(ms.ToArray());
+        if (!writeInfo || sizes == null || sizes.Count == 0) return new ArrayPacket(ms.ToArray());
 
-        // 前置 Xing/Info 信息帧
+        // 前置 Xing/Info 信息帧，附带 gapless 裁剪信息
         var quality = options.Mode == Mp3RateMode.Vbr ? Clamp(options.VbrQuality, 0, 9) * 10 : 100;
-        var magic = Mp3XingHeader.Build(options.SampleRate, options.Channels, sizes.Count, sizes, true, quality);
+        var totalSamples = data.Length / 2 / options.Channels - delay;
+        var padding = sizes.Count * encoder.FrameSamples - totalSamples - delay;
+        if (padding < 0) padding = 0;
+
+        var magic = Mp3XingHeader.Build(options.SampleRate, options.Channels, sizes.Count, sizes, vbr, quality, delay, padding);
         var output = new MemoryStream(magic.Length + (Int32)ms.Length);
         output.Write(magic, 0, magic.Length);
         ms.Position = 0;

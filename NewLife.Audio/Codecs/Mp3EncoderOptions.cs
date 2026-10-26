@@ -19,6 +19,9 @@ public class Mp3EncoderOptions
     /// <summary>码率模式，默认 CBR</summary>
     public Mp3RateMode Mode { get; set; } = Mp3RateMode.Cbr;
 
+    /// <summary>CBR 下是否也写入 Info 信息帧（携带 gapless 裁剪信息），默认 false</summary>
+    public Boolean WriteInfoFrame { get; set; }
+
     /// <summary>VBR 质量档位，0 最高质量、9 最小体积，默认 2</summary>
     /// <remarks>仅在 <see cref="Mode"/> 为 <see cref="Mp3RateMode.Vbr"/> 时生效</remarks>
     public Int32 VbrQuality { get; set; } = 2;
