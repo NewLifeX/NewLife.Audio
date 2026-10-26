@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "Không thể khởi tạo ứng dụng khách âm thanh WASAPI: {0}"
 "The ASIO backend is not implemented.": "Phần phụ trợ ASIO chưa được triển khai."
 "The requested audio format is not supported: {0}": "Định dạng âm thanh được yêu cầu không được hỗ trợ: {0}"
+"The stream does not support seeking.": "Luồng không hỗ trợ tìm kiếm."
+"The stream does not support reading.": "Luồng không hỗ trợ đọc."
+"The stream does not support writing.": "Luồng không hỗ trợ ghi."

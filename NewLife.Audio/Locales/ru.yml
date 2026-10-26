@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "Не удалось инициализировать аудиоклиент WASAPI: {0}"
 "The ASIO backend is not implemented.": "Серверная часть ASIO не реализована."
 "The requested audio format is not supported: {0}": "Запрошенный аудиоформат не поддерживается: {0}"
+"The stream does not support seeking.": "Поток не поддерживает позиционирование."
+"The stream does not support reading.": "Поток не поддерживает чтение."
+"The stream does not support writing.": "Поток не поддерживает запись."

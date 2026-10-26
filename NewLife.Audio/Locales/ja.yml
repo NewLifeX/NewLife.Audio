@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "WASAPI オーディオ クライアントの初期化に失敗しました: {0}"
 "The ASIO backend is not implemented.": "ASIO バックエンドは実装されていません。"
 "The requested audio format is not supported: {0}": "サポートされていないオーディオ形式です: {0}"
+"The stream does not support seeking.": "ストリームはシークをサポートしていません。"
+"The stream does not support reading.": "ストリームは読み取りをサポートしていません。"
+"The stream does not support writing.": "ストリームは書き込みをサポートしていません。"

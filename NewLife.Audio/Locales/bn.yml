@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "WASAPI অডিও ক্লায়েন্ট শুরু করা যায়নি: {0}"
 "The ASIO backend is not implemented.": "ASIO ব্যাকএন্ড বাস্তবায়িত হয়নি।"
 "The requested audio format is not supported: {0}": "অনুরোধ করা অডিও ফরম্যাট সমর্থিত নয়: {0}"
+"The stream does not support seeking.": "স্ট্রিম সন্ধান সমর্থন করে না।"
+"The stream does not support reading.": "স্ট্রিম পড়া সমর্থন করে না।"
+"The stream does not support writing.": "স্ট্রিম লেখা সমর্থন করে না।"

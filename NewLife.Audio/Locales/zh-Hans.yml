@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "初始化 WASAPI 音频客户端失败：{0}"
 "The ASIO backend is not implemented.": "ASIO 后端尚未实现。"
 "The requested audio format is not supported: {0}": "不支持的音频格式：{0}。"
+"The stream does not support seeking.": "流不支持定位。"
+"The stream does not support reading.": "流不支持读取。"
+"The stream does not support writing.": "流不支持写入。"

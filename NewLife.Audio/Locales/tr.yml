@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "WASAPI ses istemcisi başlatılamadı: {0}"
 "The ASIO backend is not implemented.": "ASIO arka ucu uygulanmadı."
 "The requested audio format is not supported: {0}": "İstenen ses biçimi desteklenmiyor: {0}"
+"The stream does not support seeking.": "Akış konumlandırmayı desteklemiyor."
+"The stream does not support reading.": "Akış okumayı desteklemiyor."
+"The stream does not support writing.": "Akış yazmayı desteklemiyor."

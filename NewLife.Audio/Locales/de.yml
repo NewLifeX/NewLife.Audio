@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "Der WASAPI-Audioclient konnte nicht initialisiert werden: {0}"
 "The ASIO backend is not implemented.": "Das ASIO-Backend ist nicht implementiert."
 "The requested audio format is not supported: {0}": "Das angeforderte Audioformat wird nicht unterstützt: {0}"
+"The stream does not support seeking.": "Der Stream unterstützt keine Positionierung."
+"The stream does not support reading.": "Der Stream unterstützt kein Lesen."
+"The stream does not support writing.": "Der Stream unterstützt kein Schreiben."

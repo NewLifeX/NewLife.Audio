@@ -27,3 +27,6 @@
 "Failed to initialize the WASAPI audio client: {0}": "Kunne ikke initialisere WASAPI-lydklienten: {0}"
 "The ASIO backend is not implemented.": "ASIO-backenden er ikke implementeret."
 "The requested audio format is not supported: {0}": "Det ønskede lydformat understøttes ikke: {0}"
+"The stream does not support seeking.": "Strømmen understøtter ikke søgning."
+"The stream does not support reading.": "Strømmen understøtter ikke læsning."
+"The stream does not support writing.": "Strømmen understøtter ikke skrivning."

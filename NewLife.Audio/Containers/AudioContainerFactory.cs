@@ -90,6 +90,7 @@ public static class AudioContainerFactory
             ".ogg" or ".opus" => new OggFileWriter(stream, format, AVTypes.Opus),
             ".mp3" => new Mp3FileWriter(stream, format),
             ".mp4" or ".m4a" => new Mp4FileWriter(stream, format),
+            ".flac" => new FlacFileWriter(stream, format),
             _ => throw new NotSupportedException(L.T("Unsupported container format: {0}.", formatHint)),
         };
     }
