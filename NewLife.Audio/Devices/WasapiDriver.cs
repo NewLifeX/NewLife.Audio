@@ -22,6 +22,9 @@ public class WasapiDriver : IAudioDriver
     /// <summary>驱动名称</summary>
     public String Name => "Windows WASAPI";
 
+    /// <summary>是否启用事件回调低延迟模式（默认 true；不可用时自动退回轮询）</summary>
+    public Boolean LowLatency { get; set; } = true;
+
     /// <summary>枚举音频设备（输出 + 输入）</summary>
     /// <returns>设备列表；非 Windows 或没有活动端点时返回空列表</returns>
     public IReadOnlyList<AudioDeviceInfo> EnumerateDevices()
@@ -49,7 +52,7 @@ public class WasapiDriver : IAudioDriver
     {
         if (!IsPlatformSupported) throw new PlatformNotSupportedException(L.T("No audio backend is available."));
 
-        return new WasapiPlayer();
+        return new WasapiPlayer { LowLatency = LowLatency };
     }
 
     /// <summary>创建录制器</summary>
@@ -59,7 +62,7 @@ public class WasapiDriver : IAudioDriver
     {
         if (!IsPlatformSupported) throw new PlatformNotSupportedException(L.T("No audio backend is available."));
 
-        return new WasapiRecorder(false);
+        return new WasapiRecorder(false) { LowLatency = LowLatency };
     }
 
     /// <summary>创建系统声音回采录制器</summary>
@@ -186,10 +189,43 @@ internal static class WasapiInterop
     public const UInt32 DEVICE_STATE_ACTIVE = 0x00000001;
     public const Int32 SHAREMODE_SHARED = 0;
     public const UInt32 STREAMFLAGS_LOOPBACK = 0x00020000;
+    public const UInt32 STREAMFLAGS_EVENTCALLBACK = 0x00040000;
     public const UInt32 BUFFERFLAGS_SILENT = 0x00000002;
     public const UInt32 STGM_READ = 0;
     public const UInt32 CLSCTX_ALL = 23;
     public const Int64 REFTIMES_PER_SEC = 10_000_000;
+
+    /// <summary>设备被拔出/禁用/切换后的 HRESULT</summary>
+    public const Int32 AUDCLNT_E_DEVICE_INVALIDATED = unchecked((Int32)0x88890004);
+
+    #region 事件回调（kernel32）
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern IntPtr CreateEventW(IntPtr attributes, Boolean manualReset, Boolean initialState, String name);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern Boolean CloseHandle(IntPtr handle);
+
+    [DllImport("kernel32.dll", SetLastError = true)]
+    private static extern UInt32 WaitForSingleObject(IntPtr handle, UInt32 milliseconds);
+
+    /// <summary>创建自动重置事件句柄</summary>
+    /// <returns>事件句柄，失败返回 <see cref="IntPtr.Zero"/></returns>
+    public static IntPtr CreateAutoResetEvent() => CreateEventW(IntPtr.Zero, false, false, null);
+
+    /// <summary>等待事件，超时返回 false</summary>
+    /// <param name="handle">事件句柄</param>
+    /// <param name="milliseconds">超时毫秒数</param>
+    /// <returns>被唤醒返回 true</returns>
+    public static Boolean WaitEvent(IntPtr handle, UInt32 milliseconds) =>
+        handle != IntPtr.Zero && WaitForSingleObject(handle, milliseconds) == 0;
+
+    /// <summary>关闭事件句柄</summary>
+    /// <param name="handle">事件句柄</param>
+    public static void CloseEvent(IntPtr handle)
+    {
+        if (handle != IntPtr.Zero) CloseHandle(handle);
+    }
+    #endregion
 
     public static readonly Guid CLSID_MMDeviceEnumerator = new("BCDE0395-E52F-467C-8E3D-C4579291692E");
     public static readonly Guid IID_IAudioClient = new("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
@@ -774,6 +810,15 @@ internal sealed class WasapiPlayer : IAudioPlayer
     private volatile Boolean _running;
     private volatile Boolean _playing;
     private Boolean _disposed;
+    private Int32 _blockAlign;
+    private UInt32 _bufferFrames;
+    private Byte[] _scratch = [];
+
+    /// <summary>是否启用事件回调低延迟模式（默认 true；不可用时自动退回轮询）</summary>
+    public Boolean LowLatency { get; set; } = true;
+
+    /// <summary>设备失效后的重连次数</summary>
+    public Int32 ReconnectCount { get; private set; }
 
     /// <summary>待播放字节数</summary>
     public Int32 BufferedBytes
@@ -877,42 +922,93 @@ internal sealed class WasapiPlayer : IAudioPlayer
         IMMDeviceEnumerator enumerator = null;
         IAudioClient client = null;
         IAudioRenderClient render = null;
+        var eventHandle = IntPtr.Zero;
         var started = false;
 
         try
         {
             enumerator = WasapiInterop.CreateEnumerator();
-            client = WasapiInterop.ActivateClient(enumerator, false, _deviceId);
-
             var requested = WasapiAudioFormat.FromAudio(_format);
-            var deviceFormat = WasapiInterop.ChooseFormat(client, requested);
 
-            var ptr = deviceFormat.AllocRaw();
-            try
+            // 会话打开（含事件回调句柄），设备丢失时按此重开
+            Boolean Open()
             {
-                var hr = client.Initialize(WasapiInterop.SHAREMODE_SHARED, 0, WasapiInterop.REFTIMES_PER_SEC / 10, 0, ptr, IntPtr.Zero);
-                if (hr != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr));
+                client = WasapiInterop.ActivateClient(enumerator, false, _deviceId);
+                var deviceFormat = WasapiInterop.ChooseFormat(client, requested);
+
+                var flags = 0u;
+                if (LowLatency)
+                {
+                    eventHandle = WasapiInterop.CreateAutoResetEvent();
+                    if (eventHandle != IntPtr.Zero) flags = WasapiInterop.STREAMFLAGS_EVENTCALLBACK;
+                }
+
+                // 事件回调下缓冲取 20 ms，轮询模式保持 100 ms
+                var duration = WasapiInterop.REFTIMES_PER_SEC * (eventHandle != IntPtr.Zero ? 2 : 10) / 100;
+
+                var ptr = deviceFormat.AllocRaw();
+                try
+                {
+                    var hr = client.Initialize(WasapiInterop.SHAREMODE_SHARED, flags, duration, 0, ptr, IntPtr.Zero);
+                    if (hr != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr));
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(ptr);
+                }
+
+                if (eventHandle != IntPtr.Zero && client.SetEventHandle(eventHandle) != 0)
+                {
+                    // 事件回调不可用时退回轮询
+                    WasapiInterop.CloseEvent(eventHandle);
+                    eventHandle = IntPtr.Zero;
+                }
+
+                var hr2 = client.GetBufferSize(out var bufferFrames);
+                if (hr2 != 0 || bufferFrames == 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
+
+                var iid = WasapiInterop.IID_IAudioRenderClient;
+                hr2 = client.GetService(ref iid, out var service);
+                render = service as IAudioRenderClient;
+                if (hr2 != 0 || render == null) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
+
+                lock (_sync)
+                {
+                    _converter = new WasapiPcmConverter(requested, deviceFormat);
+                    _blockAlign = deviceFormat.BlockAlign;
+                    _bufferFrames = bufferFrames;
+                    _scratch = new Byte[(Int32)bufferFrames * deviceFormat.BlockAlign];
+                }
+
+                started = false;
+
+                return true;
             }
-            finally
+
+            void Close()
             {
-                Marshal.FreeHGlobal(ptr);
+                if (started && client != null)
+                {
+                    try
+                    {
+                        client.Stop();
+                    }
+                    catch
+                    {
+                        // 设备已失效时 Stop 可能失败，忽略
+                    }
+                    started = false;
+                }
+
+                WasapiInterop.Release(render);
+                WasapiInterop.Release(client);
+                WasapiInterop.CloseEvent(eventHandle);
+                render = null;
+                client = null;
+                eventHandle = IntPtr.Zero;
             }
 
-            var hr2 = client.GetBufferSize(out var bufferFrames);
-            if (hr2 != 0 || bufferFrames == 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
-
-            var iid = WasapiInterop.IID_IAudioRenderClient;
-            hr2 = client.GetService(ref iid, out var service);
-            render = service as IAudioRenderClient;
-            if (hr2 != 0 || render == null) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
-
-            lock (_sync)
-            {
-                _converter = new WasapiPcmConverter(requested, deviceFormat);
-            }
-
-            var blockAlign = deviceFormat.BlockAlign;
-            var scratch = new Byte[(Int32)bufferFrames * blockAlign];
+            Open();
 
             _ready.Set();
 
@@ -925,7 +1021,8 @@ internal sealed class WasapiPlayer : IAudioPlayer
                         client.Stop();
                         started = false;
                     }
-                    Thread.Sleep(5);
+                    if (eventHandle != IntPtr.Zero) WasapiInterop.WaitEvent(eventHandle, 5);
+                    else Thread.Sleep(5);
                     continue;
                 }
 
@@ -936,11 +1033,36 @@ internal sealed class WasapiPlayer : IAudioPlayer
                     started = true;
                 }
 
-                Pump(render, client, bufferFrames, blockAlign, scratch);
-                Thread.Sleep(5);
+                var hr = Pump(render, client, _bufferFrames, _blockAlign, _scratch);
+                if (hr == WasapiInterop.AUDCLNT_E_DEVICE_INVALIDATED)
+                {
+                    // 设备拔出/禁用/切换默认设备：释放旧端点并在新默认设备上重开
+                    ReconnectCount++;
+                    XTrace.Log.InfoPrefixed("WasapiPlayer: ", "Device invalidated, reconnecting (#{0})", ReconnectCount);
+
+                    Close();
+                    Thread.Sleep(100);
+                    if (!_running) break;
+
+                    try
+                    {
+                        Open();
+                    }
+                    catch (Exception ex)
+                    {
+                        XTrace.Log.InfoPrefixed("WasapiPlayer: ", "Reconnect failed: {0}", ex.Message);
+                        Thread.Sleep(500);
+                        if (!_running) break;
+                        Open();
+                    }
+                    continue;
+                }
+
+                if (eventHandle != IntPtr.Zero) WasapiInterop.WaitEvent(eventHandle, 20);
+                else Thread.Sleep(5);
             }
 
-            if (started) client.Stop();
+            if (started && client != null) client.Stop();
         }
         catch (Exception ex)
         {
@@ -952,30 +1074,35 @@ internal sealed class WasapiPlayer : IAudioPlayer
         {
             WasapiInterop.Release(render);
             WasapiInterop.Release(client);
+            WasapiInterop.CloseEvent(eventHandle);
             WasapiInterop.Release(enumerator);
             _ready.Set();
         }
     }
 
-    private void Pump(IAudioRenderClient render, IAudioClient client, UInt32 bufferFrames, Int32 blockAlign, Byte[] scratch)
+    /// <summary>填充一帧数据，返回 HRESULT（设备失效时返回 AUDCLNT_E_DEVICE_INVALIDATED）</summary>
+    private Int32 Pump(IAudioRenderClient render, IAudioClient client, UInt32 bufferFrames, Int32 blockAlign, Byte[] scratch)
     {
-        if (client.GetCurrentPadding(out var padding) != 0) return;
+        var hr = client.GetCurrentPadding(out var padding);
+        if (hr != 0) return hr;
 
         var free = (Int32)bufferFrames - (Int32)padding;
-        if (free <= 0) return;
+        if (free <= 0) return 0;
 
         var bytes = free * blockAlign;
         if (bytes > scratch.Length) bytes = scratch.Length / blockAlign * blockAlign;
-        if (bytes <= 0) return;
+        if (bytes <= 0) return 0;
 
-        if (render.GetBuffer((UInt32)free, out var ptr) != 0 || ptr == IntPtr.Zero) return;
+        hr = render.GetBuffer((UInt32)free, out var ptr);
+        if (hr != 0 || ptr == IntPtr.Zero) return hr;
 
         Int32 read;
         lock (_sync) read = _queue.Dequeue(scratch, 0, bytes);
         if (read < bytes) Array.Clear(scratch, read, bytes - read);
 
         Marshal.Copy(scratch, 0, ptr, bytes);
-        render.ReleaseBuffer((UInt32)(bytes / blockAlign), read > 0 ? 0u : WasapiInterop.BUFFERFLAGS_SILENT);
+
+        return render.ReleaseBuffer((UInt32)(bytes / blockAlign), read > 0 ? 0u : WasapiInterop.BUFFERFLAGS_SILENT);
     }
 
     private void ThrowIfDisposed()
@@ -995,8 +1122,16 @@ internal sealed class WasapiRecorder : IAudioRecorder, IDisposable
     private Exception _initError;
     private volatile Boolean _running;
     private Boolean _disposed;
+    private WasapiPcmConverter _converter;
+    private Int32 _blockAlign;
 
     public WasapiRecorder(Boolean loopback) => _loopback = loopback;
+
+    /// <summary>是否启用事件回调低延迟模式（默认 true；loopback 与不可用时退回轮询）</summary>
+    public Boolean LowLatency { get; set; } = true;
+
+    /// <summary>设备失效后的重连次数</summary>
+    public Int32 ReconnectCount { get; private set; }
 
     /// <summary>数据可用事件</summary>
     public event EventHandler<Byte[]> DataAvailable;
@@ -1077,57 +1212,111 @@ internal sealed class WasapiRecorder : IAudioRecorder, IDisposable
         IMMDeviceEnumerator enumerator = null;
         IAudioClient client = null;
         IAudioCaptureClient capture = null;
+        var eventHandle = IntPtr.Zero;
         var started = false;
 
         try
         {
             enumerator = WasapiInterop.CreateEnumerator();
-
-            // loopback 使用渲染端点的混音格式
-            client = WasapiInterop.ActivateClient(enumerator, !_loopback, _deviceId);
             var requested = WasapiAudioFormat.FromAudio(_format);
-            var deviceFormat = WasapiInterop.ChooseFormat(client, requested, _loopback);
 
-            var flags = _loopback ? WasapiInterop.STREAMFLAGS_LOOPBACK : 0u;
-            var ptr = deviceFormat.AllocRaw();
-            try
+            // 会话打开（非 loopback 时启用事件回调），设备丢失时按此重开
+            void Open()
             {
-                var hr = client.Initialize(WasapiInterop.SHAREMODE_SHARED, flags, WasapiInterop.REFTIMES_PER_SEC / 10, 0, ptr, IntPtr.Zero);
-                if (hr != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr));
+                // loopback 使用渲染端点的混音格式
+                client = WasapiInterop.ActivateClient(enumerator, !_loopback, _deviceId);
+                var deviceFormat = WasapiInterop.ChooseFormat(client, requested, _loopback);
+
+                var flags = _loopback ? WasapiInterop.STREAMFLAGS_LOOPBACK : 0u;
+                if (LowLatency && !_loopback)
+                {
+                    eventHandle = WasapiInterop.CreateAutoResetEvent();
+                    if (eventHandle != IntPtr.Zero) flags |= WasapiInterop.STREAMFLAGS_EVENTCALLBACK;
+                }
+
+                var duration = WasapiInterop.REFTIMES_PER_SEC * (eventHandle != IntPtr.Zero ? 2 : 10) / 100;
+                var ptr = deviceFormat.AllocRaw();
+                try
+                {
+                    var hr = client.Initialize(WasapiInterop.SHAREMODE_SHARED, flags, duration, 0, ptr, IntPtr.Zero);
+                    if (hr != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr));
+                }
+                finally
+                {
+                    Marshal.FreeHGlobal(ptr);
+                }
+
+                if (eventHandle != IntPtr.Zero && client.SetEventHandle(eventHandle) != 0)
+                {
+                    WasapiInterop.CloseEvent(eventHandle);
+                    eventHandle = IntPtr.Zero;
+                }
+
+                var hr2 = client.GetBufferSize(out _);
+                if (hr2 != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
+
+                var iid = WasapiInterop.IID_IAudioCaptureClient;
+                hr2 = client.GetService(ref iid, out var service);
+                capture = service as IAudioCaptureClient;
+                if (hr2 != 0 || capture == null) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
+
+                _converter = new WasapiPcmConverter(deviceFormat, requested);
+                _blockAlign = deviceFormat.BlockAlign;
+
+                hr2 = client.Start();
+                if (hr2 != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
+                started = true;
             }
-            finally
+
+            void Close()
             {
-                Marshal.FreeHGlobal(ptr);
+                if (started && client != null)
+                {
+                    try
+                    {
+                        client.Stop();
+                    }
+                    catch
+                    {
+                        // 设备已失效时 Stop 可能失败，忽略
+                    }
+                    started = false;
+                }
+
+                WasapiInterop.Release(capture);
+                WasapiInterop.Release(client);
+                WasapiInterop.CloseEvent(eventHandle);
+                capture = null;
+                client = null;
+                eventHandle = IntPtr.Zero;
             }
 
-            var hr2 = client.GetBufferSize(out _);
-            if (hr2 != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
-
-            var iid = WasapiInterop.IID_IAudioCaptureClient;
-            hr2 = client.GetService(ref iid, out var service);
-            capture = service as IAudioCaptureClient;
-            if (hr2 != 0 || capture == null) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
-
-            var converter = new WasapiPcmConverter(deviceFormat, requested);
-            var blockAlign = deviceFormat.BlockAlign;
-
-            hr2 = client.Start();
-            if (hr2 != 0) throw new InvalidOperationException(L.T("Failed to initialize the WASAPI audio client: {0}", hr2));
-            started = true;
+            Open();
 
             _ready.Set();
 
             while (_running)
             {
-                if (capture.GetNextPacketSize(out var framesInNext) != 0) break;
+                if (eventHandle != IntPtr.Zero) WasapiInterop.WaitEvent(eventHandle, 20);
+
+                var deviceLost = false;
+                if (capture.GetNextPacketSize(out var framesInNext) != 0)
+                {
+                    deviceLost = true;
+                    framesInNext = 0;
+                }
 
                 while (framesInNext > 0 && _running)
                 {
-                    if (capture.GetBuffer(out var data, out var frames, out var packetFlags, out _, out _) != 0) break;
+                    if (capture.GetBuffer(out var data, out var frames, out var packetFlags, out _, out _) != 0)
+                    {
+                        deviceLost = true;
+                        break;
+                    }
 
                     try
                     {
-                        var bytes = (Int32)frames * blockAlign;
+                        var bytes = (Int32)frames * _blockAlign;
                         if (bytes > 0)
                         {
                             var raw = new Byte[bytes];
@@ -1136,7 +1325,7 @@ internal sealed class WasapiRecorder : IAudioRecorder, IDisposable
                             else
                                 Marshal.Copy(data, raw, 0, bytes);
 
-                            var pcm = converter.Convert(raw);
+                            var pcm = _converter.Convert(raw);
                             if (pcm.Length > 0)
                             {
                                 try
@@ -1155,10 +1344,38 @@ internal sealed class WasapiRecorder : IAudioRecorder, IDisposable
                         capture.ReleaseBuffer(frames);
                     }
 
-                    if (capture.GetNextPacketSize(out framesInNext) != 0) break;
+                    if (capture.GetNextPacketSize(out framesInNext) != 0)
+                    {
+                        deviceLost = true;
+                        break;
+                    }
                 }
 
-                Thread.Sleep(3);
+                if (deviceLost && _running)
+                {
+                    // 设备拔出/禁用/切换：在新默认设备上重开
+                    ReconnectCount++;
+                    XTrace.Log.InfoPrefixed("WasapiRecorder: ", "Device invalidated, reconnecting (#{0})", ReconnectCount);
+
+                    Close();
+                    Thread.Sleep(100);
+                    if (!_running) break;
+
+                    try
+                    {
+                        Open();
+                    }
+                    catch (Exception ex)
+                    {
+                        XTrace.Log.InfoPrefixed("WasapiRecorder: ", "Reconnect failed: {0}", ex.Message);
+                        Thread.Sleep(500);
+                        if (!_running) break;
+                        Open();
+                    }
+                    continue;
+                }
+
+                if (eventHandle == IntPtr.Zero) Thread.Sleep(3);
             }
         }
         catch (Exception ex)
@@ -1172,6 +1389,7 @@ internal sealed class WasapiRecorder : IAudioRecorder, IDisposable
             if (started && client != null) client.Stop();
             WasapiInterop.Release(capture);
             WasapiInterop.Release(client);
+            WasapiInterop.CloseEvent(eventHandle);
             WasapiInterop.Release(enumerator);
             _ready.Set();
         }
@@ -1289,4 +1507,5 @@ internal struct PROPVARIANT
     public IntPtr data2;
 }
 #endregion
+
 

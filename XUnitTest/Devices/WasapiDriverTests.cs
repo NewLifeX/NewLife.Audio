@@ -90,8 +90,30 @@ public class WasapiDriverTests
         Assert.True(player.BufferedBytes >= 0);
     }
 
-    [Fact(DisplayName = "WASAPI录制器在无采集端点时明确抛异常")]
-    public void WasapiRecorder_StartStop()
+    [Theory(DisplayName = "WASAPI播放器事件回调与轮询两种模式均可播放")]
+    [InlineData(true)]
+    [InlineData(false)]
+    public void WasapiPlayer_LowLatencyModes(Boolean lowLatency)
+    {
+        if (!WasapiDriver.IsPlatformSupported) return;
+
+        var driver = new WasapiDriver { LowLatency = lowLatency };
+        if (driver.GetDefaultOutputDevice() == null) return;
+
+        var format = new AudioFormat { SampleRate = 48000, Channels = 2, BitsPerSample = 16 };
+        using var player = driver.CreatePlayer();
+        player.Init(format);
+
+        var buffer = new Byte[format.SampleRate / 10 * format.Channels * 2];
+        player.Write(buffer);
+        player.Play();
+        Thread.Sleep(120);
+        player.Stop();
+
+        Assert.True(player.BufferedBytes >= 0);
+    }
+
+    [Fact(DisplayName = "WASAPI录制器在无采集端点时明确抛异常")]    public void WasapiRecorder_StartStop()
     {
         var driver = new WasapiDriver();
         using var recorder = driver.CreateRecorder();
