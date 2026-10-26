@@ -139,6 +139,9 @@ public class Mp4FileReader : IAudioContainerReader
                 case "trak":
                     ParseTrak(ref r, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
+                case "udta":
+                    Mp4Metadata.TryParseUdta(subSpan, Metadata);
+                    break;
             }
         }
     }

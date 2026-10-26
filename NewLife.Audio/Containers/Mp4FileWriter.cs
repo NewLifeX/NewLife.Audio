@@ -148,7 +148,38 @@ public class Mp4FileWriter : IAudioContainerWriter
         var trak = BuildTrak(mdatOffset);
         WriteBox(ms, "trak", trak);
 
+        // udta（含 ilst 标签）
+        var udta = BuildUdta();
+        if (udta != null) WriteBox(ms, "udta", udta);
+
         return ms.ToArray();
+    }
+
+    /// <summary>构建 udta 盒体（meta + ilst），无标签时返回 null</summary>
+    private Byte[] BuildUdta()
+    {
+        var ilst = Mp4Metadata.BuildIlst(_metadata);
+        if (ilst == null) return null;
+
+        // meta 是 full box：4 字节 version/flags + hdlr + ilst
+        using var meta = new MemoryStream();
+        meta.Write(new Byte[4], 0, 4);
+
+        using (var hdlr = new MemoryStream())
+        {
+            hdlr.Write(new Byte[4], 0, 4);             // version/flags
+            WriteUInt32BEToStream(hdlr, 0);             // pre_defined
+            hdlr.Write([(Byte)'m', (Byte)'d', (Byte)'i', (Byte)'r'], 0, 4);   // handler_type
+            WriteUInt32BEToStream(hdlr, 0);             // reserved
+            WriteUInt32BEToStream(hdlr, 0);
+            WriteUInt32BEToStream(hdlr, 0);
+            hdlr.WriteByte(0);                          // name（空字符串）
+            WriteBox(meta, "hdlr", hdlr.ToArray());
+        }
+
+        WriteBox(meta, "ilst", ilst);
+
+        return Mp4Metadata.BuildBox("meta", meta.ToArray());
     }
 
     private Byte[] BuildMvhd()

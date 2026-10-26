@@ -73,8 +73,60 @@ public class Mp4FileReaderWriterTests
         Assert.True(reader.TotalFrames > 0);
     }
 
-    [Fact(DisplayName = "MP4读取器读取帧返回数据")]
-    public void Reader_ReadFrame_ReturnsData()
+    [Fact(DisplayName = "MP4 标签写入后可读回")]
+    public void Writer_Metadata_RoundTrip()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 2, BitsPerSample = 16, Encoding = AVTypes.AAC, SamplesPerFrame = 1024 };
+        var cover = new Byte[] { 0xFF, 0xD8, 0xFF, 0xE0, 1, 2, 3, 4 };
+
+        using var ms = new MemoryStream();
+        using (var writer = new Mp4FileWriter(ms, format))
+        {
+            writer.WriteMetadata(new AudioMetadata
+            {
+                Title = "标题",
+                Artist = "作者",
+                Album = "专辑",
+                Genre = "流派",
+                Comment = "注释",
+                Year = 2024,
+                TrackNumber = 9,
+                CoverImage = cover,
+            });
+            writer.WriteFrame(new Byte[200]);
+            writer.Flush();
+        }
+
+        ms.Position = 0;
+        using var reader = new Mp4FileReader(ms);
+
+        Assert.Equal("标题", reader.Metadata.Title);
+        Assert.Equal("作者", reader.Metadata.Artist);
+        Assert.Equal("专辑", reader.Metadata.Album);
+        Assert.Equal("流派", reader.Metadata.Genre);
+        Assert.Equal("注释", reader.Metadata.Comment);
+        Assert.Equal(2024, reader.Metadata.Year);
+        Assert.Equal(9, reader.Metadata.TrackNumber);
+        Assert.Equal(cover, reader.Metadata.CoverImage);
+    }
+
+    [Fact(DisplayName = "MP4 无标签时 udta 不写入")]
+    public void Writer_NoMetadata_NoUdta()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 2, BitsPerSample = 16, Encoding = AVTypes.AAC, SamplesPerFrame = 1024 };
+        using var ms = new MemoryStream();
+        using (var writer = new Mp4FileWriter(ms, format))
+        {
+            writer.WriteFrame(new Byte[200]);
+            writer.Flush();
+        }
+
+        ms.Position = 0;
+        using var reader = new Mp4FileReader(ms);
+        Assert.Null(reader.Metadata.Title);
+    }
+
+    [Fact(DisplayName = "MP4读取器读取帧返回数据")]    public void Reader_ReadFrame_ReturnsData()
     {
         var format = new AudioFormat { SampleRate = 44100, Channels = 2, BitsPerSample = 16, Encoding = AVTypes.AAC, SamplesPerFrame = 1024 };
         using var ms = new MemoryStream();
