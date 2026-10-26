@@ -213,5 +213,7 @@ public class SherpaTtsCatalogTests
         Assert.Equal("zh-CN", voices[3].Culture);
         Assert.Equal("Female", voices[3].Gender);
         Assert.Equal("Male", voices[58].Gender);
+        Assert.Equal("3", voices[3].Id);
+        Assert.Equal("58", voices[58].Id);
     }
 }

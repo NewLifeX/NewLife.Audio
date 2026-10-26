@@ -27,6 +27,48 @@ public abstract class CloudTtsEngine : TtsEngineBase
     /// <param name="name">引擎名</param>
     protected CloudTtsEngine(String name) : base(name) { }
 
+    /// <summary>内置音色目录快照</summary>
+    /// <remarks>
+    /// 云服务的音色由服务端维护且时常变化，引擎只内置一份常用快照（含默认音色，供 <see cref="TtsVoiceCatalog"/> 挑选）。
+    /// 需要完整或最新列表时整体替换本属性，或向 <see cref="TtsVoiceCatalog"/> 追加静态描述。
+    /// </remarks>
+    public IList<TtsVoice> Voices { get; set; } = [];
+
+    /// <summary>枚举内置音色</summary>
+    /// <returns>音色列表，未配置时返回空列表</returns>
+    public override IReadOnlyList<TtsVoice> GetVoices()
+    {
+        var voices = Voices;
+        if (voices == null || voices.Count <= 0) return Array.Empty<TtsVoice>();
+        if (voices is IReadOnlyList<TtsVoice> list) return list;
+
+        var copy = new List<TtsVoice>(voices.Count);
+        foreach (var voice in voices)
+        {
+            if (voice != null) copy.Add(voice);
+        }
+
+        return copy;
+    }
+
+    /// <summary>创建音色描述</summary>
+    /// <param name="id">引擎原生音色标识，直接传入请求参数</param>
+    /// <param name="name">音色名称</param>
+    /// <param name="culture">区域，如 zh-CN；只支持特定语种时可只写 zh、en</param>
+    /// <param name="gender">性别，Female 或 Male</param>
+    /// <param name="isDefault">是否引擎默认音色</param>
+    /// <param name="scenarios">适用场景，留空表示通用</param>
+    /// <returns>音色描述</returns>
+    protected static TtsVoice CreateVoice(String id, String name, String culture, String gender, Boolean isDefault, params TtsScenario[] scenarios) => new()
+    {
+        Id = id,
+        Name = name,
+        Culture = culture,
+        Gender = gender,
+        IsDefault = isDefault,
+        Scenarios = scenarios == null || scenarios.Length <= 0 ? [] : new List<TtsScenario>(scenarios),
+    };
+
     /// <summary>取当前 HttpClient</summary>
     /// <returns>注入的实例或内置共享实例</returns>
     protected HttpClient GetClient() => Client ?? _shared;

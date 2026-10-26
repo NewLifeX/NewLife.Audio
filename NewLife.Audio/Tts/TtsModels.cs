@@ -51,17 +51,57 @@ public sealed class TtsChunk
     public Byte[] Data { get; set; }
 }
 
+/// <summary>语音使用场景</summary>
+/// <remarks>用于跨引擎挑选音色：同一段播报逻辑在告警、通知、长文本与对话场景下需要不同的声音气质。</remarks>
+public enum TtsScenario
+{
+    /// <summary>通用，不限定场景</summary>
+    General = 0,
+
+    /// <summary>告警播报，要求吐字清楚、辨识度高</summary>
+    Alert = 1,
+
+    /// <summary>通知提示，多为简短消息</summary>
+    Notification = 2,
+
+    /// <summary>长文本朗读，强调自然耐听</summary>
+    Narration = 3,
+
+    /// <summary>对话交互，强调亲和力</summary>
+    Conversation = 4,
+}
+
 /// <summary>可用音色</summary>
+/// <remarks>
+/// 一份描述跨引擎通用：<see cref="Id"/> 是引擎原生音色标识，直接赋给 <see cref="TtsOptions.Voice"/>；
+/// <see cref="Culture"/> 描述语言（可只写语种，如 <c>en</c>）；<see cref="Scenarios"/> 描述适用场景。
+/// 跨引擎汇总与挑选由 <see cref="TtsVoiceCatalog"/> 完成。
+/// </remarks>
 public sealed class TtsVoice
 {
-    /// <summary>音色名称</summary>
+    private String _id;
+
+    /// <summary>音色名称，用于展示与日志</summary>
     public String Name { get; set; }
 
-    /// <summary>区域，如 zh-CN、en-US</summary>
+    /// <summary>引擎原生音色标识。为空时回落到 <see cref="Name"/></summary>
+    public String Id
+    {
+        get => _id.IsNullOrEmpty() ? Name : _id;
+        set => _id = value;
+    }
+
+    /// <summary>区域，如 zh-CN、en-US；只支持特定语种时可只写 zh、en</summary>
     public String Culture { get; set; }
 
-    /// <summary>性别</summary>
+    /// <summary>性别，如 Female、Male；未知时为空</summary>
     public String Gender { get; set; }
+
+    /// <summary>适用场景。为空表示通用</summary>
+    public IList<TtsScenario> Scenarios { get; set; } = [];
+
+    /// <summary>是否为引擎默认音色。每个引擎最多一个</summary>
+    public Boolean IsDefault { get; set; }
 
     /// <summary>返回便于日志阅读的描述</summary>
     /// <returns>名称与区域</returns>

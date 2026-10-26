@@ -63,7 +63,7 @@ public class BaiduTtsEngine : CloudTtsEngine
     public Int32 Pitch { get; set; } = 5;
 
     /// <summary>初始化百度合成引擎</summary>
-    public BaiduTtsEngine() : base("baidu") { }
+    public BaiduTtsEngine() : base("baidu") => Voices = CreateBuiltinVoices();
 
     /// <summary>是否可用。需要 access_token，或 API Key/Secret Key 对</summary>
     public override Boolean IsAvailable => !Token.IsNullOrEmpty() || (!ApiKey.IsNullOrEmpty() && !SecretKey.IsNullOrEmpty());
@@ -199,4 +199,13 @@ public class BaiduTtsEngine : CloudTtsEngine
             return body;
         }
     }
+
+    // 常用音色快照（按百度语音合成发音人编号），完整列表见服务文档
+    private static List<TtsVoice> CreateBuiltinVoices() =>
+    [
+        CreateVoice("0", "度小美", "zh-CN", "Female", true),
+        CreateVoice("1", "度小宇", "zh-CN", "Male", false),
+        CreateVoice("3", "度逍遥", "zh-CN", "Male", false, TtsScenario.Narration),
+        CreateVoice("4", "度丫丫", "zh-CN", "Female", false),
+    ];
 }

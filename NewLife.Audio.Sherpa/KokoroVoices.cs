@@ -34,7 +34,7 @@ public static class KokoroVoices
     public static Boolean IsEnglish(Int32 sid) => sid is >= 0 and <= 2;
 
     /// <summary>枚举全部音色</summary>
-    /// <returns>音色列表，含名称、区域与性别</returns>
+    /// <returns>音色列表，含名称、标识、区域与性别</returns>
     public static IReadOnlyList<TtsVoice> ToVoices()
     {
         var list = new List<TtsVoice>(_names.Length);
@@ -43,6 +43,7 @@ public static class KokoroVoices
             list.Add(new TtsVoice
             {
                 Name = _names[i],
+                Id = i.ToString(),
                 Culture = Culture(_names[i]),
                 Gender = _names[i].StartsWith("zm_", StringComparison.Ordinal) ? "Male" : "Female",
             });

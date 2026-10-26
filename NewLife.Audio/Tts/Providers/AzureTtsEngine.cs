@@ -50,7 +50,8 @@ public class AzureTtsEngine : CloudTtsEngine
     public String UserAgent { get; set; } = "NewLife.Audio";
 
     /// <summary>初始化 Azure 合成引擎</summary>
-    public AzureTtsEngine() : base("azure") { }
+    public AzureTtsEngine() : base("azure") => Voices = CreateBuiltinVoices();
+
 
     /// <summary>是否可用。需要订阅密钥或授权令牌</summary>
     public override Boolean IsAvailable => !SubscriptionKey.IsNullOrEmpty() || !Token.IsNullOrEmpty();
@@ -166,4 +167,17 @@ public class AzureTtsEngine : CloudTtsEngine
             .Replace("\"", "&quot;")
             .Replace("'", "&apos;");
     }
+
+    // 常用音色快照（2026-10 按微软官方语言支持页校对），完整列表见语音服务文档
+    private static List<TtsVoice> CreateBuiltinVoices() =>
+    [
+        CreateVoice("zh-CN-XiaoxiaoNeural", "晓晓", "zh-CN", "Female", true),
+        CreateVoice("zh-CN-XiaoyanNeural", "晓颜", "zh-CN", "Female", false),
+        CreateVoice("zh-CN-XiaozhenNeural", "晓甄", "zh-CN", "Female", false, TtsScenario.Narration),
+        CreateVoice("zh-CN-YunfengNeural", "云枫", "zh-CN", "Male", false),
+        CreateVoice("zh-CN-YunhaoNeural", "云皓", "zh-CN", "Male", false, TtsScenario.Notification),
+        CreateVoice("zh-CN-YunxiaNeural", "云夏", "zh-CN", "Male", false),
+        CreateVoice("zh-CN-YunyeNeural", "云野", "zh-CN", "Male", false, TtsScenario.Narration),
+        CreateVoice("zh-CN-YunzeNeural", "云泽", "zh-CN", "Male", false, TtsScenario.Narration),
+    ];
 }

@@ -60,7 +60,7 @@ public class TencentTtsEngine : CloudTtsEngine
     public Int32 PrimaryLanguage { get; set; } = 1;
 
     /// <summary>初始化腾讯云合成引擎</summary>
-    public TencentTtsEngine() : base("tencent") { }
+    public TencentTtsEngine() : base("tencent") => Voices = CreateBuiltinVoices();
 
     /// <summary>是否可用。需要密钥对</summary>
     public override Boolean IsAvailable => !SecretId.IsNullOrEmpty() && !SecretKey.IsNullOrEmpty();
@@ -226,4 +226,17 @@ public class TencentTtsEngine : CloudTtsEngine
 
         return sb.ToString();
     }
+
+    // 常用音色快照（2026-10 按腾讯云语音合成音色列表校对），完整列表见服务文档
+    private static List<TtsVoice> CreateBuiltinVoices() =>
+    [
+        CreateVoice("101001", "智瑜", "zh-CN", "Female", true, TtsScenario.Alert, TtsScenario.Notification),
+        CreateVoice("101004", "智云", "zh-CN", "Male", false),
+        CreateVoice("101011", "智燕", "zh-CN", "Female", false, TtsScenario.Narration),
+        CreateVoice("101013", "智辉", "zh-CN", "Male", false, TtsScenario.Narration),
+        CreateVoice("101016", "智甜", "zh-CN", "Female", false),
+        CreateVoice("101019", "智彤", "zh-HK", "Female", false),
+        CreateVoice("101055", "智付", "zh-CN", "Female", false, TtsScenario.Conversation),
+        CreateVoice("101050", "WeJack", "en", "Male", false),
+    ];
 }

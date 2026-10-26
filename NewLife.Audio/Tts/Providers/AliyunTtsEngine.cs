@@ -67,7 +67,8 @@ public class AliyunTtsEngine : CloudTtsEngine
     public Int32 PitchRate { get; set; }
 
     /// <summary>初始化阿里云合成引擎</summary>
-    public AliyunTtsEngine() : base("aliyun") { }
+    public AliyunTtsEngine() : base("aliyun") => Voices = CreateBuiltinVoices();
+
 
     /// <summary>是否可用。需要 AppKey，以及 Token 或 AccessKey 对</summary>
     public override Boolean IsAvailable => !AppKey.IsNullOrEmpty() &&
@@ -241,4 +242,18 @@ public class AliyunTtsEngine : CloudTtsEngine
             return body;
         }
     }
+
+    // 常用音色快照（2026-10 按阿里云语音合成音色列表校对），完整列表见服务文档
+    private static List<TtsVoice> CreateBuiltinVoices() =>
+    [
+        CreateVoice("xiaoyun", "小云", "zh-CN", "Female", true),
+        CreateVoice("xiaogang", "小刚", "zh-CN", "Male", false),
+        CreateVoice("ruoxi", "若兮", "zh-CN", "Female", false, TtsScenario.Narration),
+        CreateVoice("siqi", "思琪", "zh-CN", "Female", false, TtsScenario.Narration),
+        CreateVoice("sijia", "思佳", "zh-CN", "Female", false, TtsScenario.Notification),
+        CreateVoice("aimei", "艾美", "zh-CN", "Female", false, TtsScenario.Conversation),
+        CreateVoice("sitong", "思彤", "zh-CN", "Female", false),
+        CreateVoice("shanshan", "姗姗", "zh-HK", "Female", false),
+        CreateVoice("emily", "Emily", "en-GB", "Female", false),
+    ];
 }
