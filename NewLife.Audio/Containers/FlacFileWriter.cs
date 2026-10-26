@@ -206,33 +206,10 @@ public class FlacFileWriter : IAudioContainerWriter
 
     private void WriteVorbisComment()
     {
-        var comments = new List<String>();
-        var meta = Metadata;
-        if (meta != null)
-        {
-            AddComment(comments, "TITLE", meta.Title);
-            AddComment(comments, "ARTIST", meta.Artist);
-            AddComment(comments, "ALBUM", meta.Album);
-            AddComment(comments, "GENRE", meta.Genre);
-            if (meta.TrackNumber > 0) comments.Add("TRACKNUMBER=" + meta.TrackNumber);
-            if (meta.Year > 0) comments.Add("DATE=" + meta.Year);
-            AddComment(comments, "COMMENT", meta.Comment);
-        }
+        var body = FlacMetadataBlocks.BuildVorbisComment(Metadata, VendorString);
 
-        var vendor = Encoding.UTF8.GetBytes(VendorString);
-        var body = new List<Byte>();
-        WriteLE32(body, vendor.Length);
-        body.AddRange(vendor);
-        WriteLE32(body, comments.Count);
-        foreach (var comment in comments)
-        {
-            var bytes = Encoding.UTF8.GetBytes(comment);
-            WriteLE32(body, bytes.Length);
-            body.AddRange(bytes);
-        }
-
-        WriteBlockHeader(BlockTypeVorbisComment, body.Count, false);
-        _stream.Write(body.ToArray(), 0, body.Count);
+        WriteBlockHeader(BlockTypeVorbisComment, body.Length, false);
+        _stream.Write(body, 0, body.Length);
     }
 
     private void WritePadding(Int32 bytes)

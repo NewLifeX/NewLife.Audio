@@ -41,6 +41,9 @@ public class AudioWriteOptions
 
     /// <summary>元数据（写入支持标签的容器）</summary>
     public AudioMetadata Metadata { get; set; }
+
+    /// <summary>未显式指定 <see cref="Metadata"/> 时，是否沿用源文件标签，默认 true</summary>
+    public Boolean PreserveMetadata { get; set; } = true;
 }
 
 /// <summary>音频文件门面。自动识别容器与编码，一条链完成"打开 → 解码 → 处理 → 保存"</summary>
@@ -129,8 +132,79 @@ public class AudioFile
 
     /// <summary>解码当前文件并另存为</summary>
     /// <param name="path">目标路径（按扩展名选择容器）</param>
-    /// <param name="options">写入选项</param>
-    public void SaveAs(String path, AudioWriteOptions options = null) => WritePcm(path, ReadPcm(), options);
+    /// <param name="options">写入选项；未指定 <see cref="AudioWriteOptions.Metadata"/> 时默认沿用源文件标签</param>
+    /// <remarks>目标容器不支持标签（如 WAV）时标签被忽略；源文件无标签时按无标签写入。</remarks>
+    public void SaveAs(String path, AudioWriteOptions options = null)
+    {
+        options ??= new AudioWriteOptions();
+        if (options.Metadata == null && options.PreserveMetadata) options.Metadata = ReadMetadata();
+
+        WritePcm(path, ReadPcm(), options);
+    }
+
+    /// <summary>读取当前文件的标签（不解码音频）</summary>
+    /// <returns>元数据；容器无标签或解析失败时返回 null</returns>
+    public AudioMetadata ReadMetadata()
+    {
+        using var stream = File.OpenRead(Path);
+        switch (Info.Container)
+        {
+            case AudioContainerKind.Mp3:
+                {
+                    using var reader = new Mp3FileReader(stream);
+                    return HasTags(reader.Metadata) ? reader.Metadata : null;
+                }
+            case AudioContainerKind.Flac:
+                {
+                    using var reader = new FlacContainerReader(stream);
+                    return HasTags(reader.Metadata) ? reader.Metadata : null;
+                }
+            case AudioContainerKind.Ogg:
+                {
+                    using var reader = new OggFileReader(stream);
+                    return HasTags(reader.Metadata) ? reader.Metadata : null;
+                }
+            default:
+                return null;
+        }
+    }
+
+    /// <summary>只改标签不重编码（MP3/FLAC）</summary>
+    /// <param name="path">目标文件路径</param>
+    /// <param name="metadata">新标签</param>
+    /// <exception cref="NotSupportedException">容器不支持仅改标签</exception>
+    /// <remarks>MP3 重建前置 ID3v2 标签并丢弃尾部 ID3v1，FLAC 替换 VORBIS_COMMENT 块；音频帧原样保留。
+    /// 写入采用临时文件 + 原子替换，失败时目标文件保持原状。</remarks>
+    public static void UpdateMetadata(String path, AudioMetadata metadata)
+    {
+        if (path == null) throw new ArgumentNullException(nameof(path));
+
+        var info = AudioProbe.Probe(path);
+        var data = File.ReadAllBytes(path);
+        Byte[] output;
+        switch (info.Container)
+        {
+            case AudioContainerKind.Mp3:
+                {
+                    var start = Mp3Id3Tag.Skip(data);
+                    var end = data.Length;
+                    if (end - start >= Mp3Id3Tag.V1Size && data[end - Mp3Id3Tag.V1Size] == 'T' && data[end - Mp3Id3Tag.V1Size + 1] == 'A' && data[end - Mp3Id3Tag.V1Size + 2] == 'G') end -= Mp3Id3Tag.V1Size;
+
+                    var tag = metadata == null ? [] : Mp3Id3Tag.Write(metadata, 2048);
+                    output = new Byte[tag.Length + end - start];
+                    Array.Copy(tag, 0, output, 0, tag.Length);
+                    Array.Copy(data, start, output, tag.Length, end - start);
+                    break;
+                }
+            case AudioContainerKind.Flac:
+                output = FlacMetadataBlocks.RewriteTag(data, metadata) ?? throw new InvalidOperationException("Invalid FLAC stream: " + path);
+                break;
+            default:
+                throw new NotSupportedException(L.T("Container {0} does not support tag-only update.", info.Container));
+        }
+
+        WriteAllBytesAtomic(path, output);
+    }
     #endregion
 
     #region 写入
@@ -139,6 +213,7 @@ public class AudioFile
     /// <param name="audio">PCM 音频</param>
     /// <param name="options">写入选项</param>
     /// <exception cref="NotSupportedException">扩展名对应的容器没有可用编码路径</exception>
+    /// <remarks>先写同目录临时文件，成功后再原子替换目标文件，避免中途失败留下损坏的半成品。</remarks>
     public static void WritePcm(String path, AudioPcm audio, AudioWriteOptions options = null)
     {
         if (path == null) throw new ArgumentNullException(nameof(path));
@@ -149,38 +224,40 @@ public class AudioFile
         var format = audio.Format ?? throw new ArgumentException("Audio format is required.", nameof(audio));
         var extension = System.IO.Path.GetExtension(path)?.ToLowerInvariant();
 
-        using var stream = File.Create(path);
-        switch (extension)
+        WriteAtomic(path, stream =>
         {
-            case ".wav":
-                {
-                    using var writer = new WaveFileWriter(stream, format);
-                    writer.WriteFrame(audio.Data);
-                    writer.Flush();
-                    break;
-                }
+            switch (extension)
+            {
+                case ".wav":
+                    {
+                        using var writer = new WaveFileWriter(stream, format);
+                        writer.WriteFrame(audio.Data);
+                        writer.Flush();
+                        break;
+                    }
 
-            case ".flac":
-                {
-                    using var writer = new FlacFileWriter(stream, format, new FlacWriterOptions { CompressionLevel = options.FlacCompressionLevel });
-                    if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
-                    writer.WriteFrame(audio.Data);
-                    writer.Flush();
-                    break;
-                }
+                case ".flac":
+                    {
+                        using var writer = new FlacFileWriter(stream, format, new FlacWriterOptions { CompressionLevel = options.FlacCompressionLevel });
+                        if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
+                        writer.WriteFrame(audio.Data);
+                        writer.Flush();
+                        break;
+                    }
 
-            case ".mp3":
-                {
-                    using var writer = new Mp3FileWriter(stream, format, options.Mp3BitrateKbps);
-                    if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
-                    writer.WritePcm(audio.Data);
-                    writer.Flush();
-                    break;
-                }
+                case ".mp3":
+                    {
+                        using var writer = new Mp3FileWriter(stream, format, options.Mp3BitrateKbps);
+                        if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
+                        writer.WritePcm(audio.Data);
+                        writer.Flush();
+                        break;
+                    }
 
-            default:
-                throw new NotSupportedException(L.T("Unsupported container format: {0}.", extension));
-        }
+                default:
+                    throw new NotSupportedException(L.T("Unsupported container format: {0}.", extension));
+            }
+        });
     }
 
     /// <summary>把 PCM 写入文件</summary>
@@ -429,6 +506,92 @@ public class AudioFile
     {
         var bytes = data.ToArray();
         stream.Write(bytes, 0, bytes.Length);
+    }
+
+    /// <summary>写同目录临时文件后原子替换目标文件</summary>
+    private static void WriteAtomic(String path, Action<Stream> write)
+    {
+        var full = System.IO.Path.GetFullPath(path);
+        var directory = System.IO.Path.GetDirectoryName(full);
+        var name = System.IO.Path.GetFileName(full);
+        var temp = System.IO.Path.Combine(directory ?? ".", "." + name + "." + Guid.NewGuid().ToString("N") + ".tmp");
+
+        try
+        {
+            using (var stream = File.Create(temp)) write(stream);
+            ReplaceFile(temp, full);
+        }
+        catch
+        {
+            TryDeleteFile(temp);
+            throw;
+        }
+    }
+
+    /// <summary>原子写入整块字节</summary>
+    private static void WriteAllBytesAtomic(String path, Byte[] data)
+    {
+        var full = System.IO.Path.GetFullPath(path);
+        var directory = System.IO.Path.GetDirectoryName(full);
+        var name = System.IO.Path.GetFileName(full);
+        var temp = System.IO.Path.Combine(directory ?? ".", "." + name + "." + Guid.NewGuid().ToString("N") + ".tmp");
+
+        try
+        {
+            File.WriteAllBytes(temp, data);
+            ReplaceFile(temp, full);
+        }
+        catch
+        {
+            TryDeleteFile(temp);
+            throw;
+        }
+    }
+
+    private static void ReplaceFile(String temp, String target)
+    {
+        if (!File.Exists(target))
+        {
+            File.Move(temp, target);
+            return;
+        }
+
+        // 已有目标文件时用 Replace 保证原子性（同卷 NTFS 上是单次元数据操作）
+        try
+        {
+            File.Replace(temp, target, null);
+        }
+        catch (PlatformNotSupportedException)
+        {
+            File.Delete(target);
+            File.Move(temp, target);
+        }
+    }
+
+    private static void TryDeleteFile(String path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch
+        {
+            // 清理失败不影响原始异常
+        }
+    }
+
+    private static Boolean HasTags(AudioMetadata metadata)
+    {
+        if (metadata == null) return false;
+
+        return !metadata.Title.IsNullOrEmpty()
+            || !metadata.Artist.IsNullOrEmpty()
+            || !metadata.Album.IsNullOrEmpty()
+            || !metadata.Genre.IsNullOrEmpty()
+            || !metadata.Comment.IsNullOrEmpty()
+            || metadata.TrackNumber > 0
+            || metadata.Year > 0
+            || metadata.CoverImage is { Length: > 0 };
     }
     #endregion
 }

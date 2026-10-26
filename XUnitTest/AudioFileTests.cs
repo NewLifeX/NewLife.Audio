@@ -171,6 +171,179 @@ public class AudioFileTests
         Assert.Throws<NotSupportedException>(() => AudioFile.ReadPcm(ms, null));
     }
 
+    [Fact(DisplayName = "元数据读取：WAV 无标签返回空")]
+    public void ReadMetadata_Wav_ReturnsNull()
+    {
+        var pcm = BuildSine(Format, 0.1, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            Assert.Null(AudioFile.Open(path).ReadMetadata());
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "另存为默认沿用源文件标签")]
+    public void SaveAs_PreservesMetadata()
+    {
+        var pcm = BuildSine(Format, 0.2, 0.5);
+        var source = TempPath(".mp3");
+        var target = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(source, Format, pcm, new AudioWriteOptions
+            {
+                Metadata = new AudioMetadata { Title = "标题", Artist = "作者", Album = "专辑", TrackNumber = 3, Year = 2024 },
+            });
+
+            var metadata = AudioFile.Open(source).ReadMetadata();
+            Assert.NotNull(metadata);
+            Assert.Equal("标题", metadata.Title);
+
+            AudioFile.Open(source).SaveAs(target);
+
+            var copied = AudioFile.Open(target).ReadMetadata();
+            Assert.NotNull(copied);
+            Assert.Equal("标题", copied.Title);
+            Assert.Equal("作者", copied.Artist);
+            Assert.Equal("专辑", copied.Album);
+            Assert.Equal(3, copied.TrackNumber);
+            Assert.Equal(2024, copied.Year);
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
+    [Fact(DisplayName = "另存为可显式放弃源标签")]
+    public void SaveAs_CanDropMetadata()
+    {
+        var pcm = BuildSine(Format, 0.2, 0.5);
+        var source = TempPath(".mp3");
+        var target = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(source, Format, pcm, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "旧标题" } });
+
+            AudioFile.Open(source).SaveAs(target, new AudioWriteOptions { PreserveMetadata = false });
+
+            Assert.Null(AudioFile.Open(target).ReadMetadata());
+        }
+        finally
+        {
+            TryDelete(source);
+            TryDelete(target);
+        }
+    }
+
+    [Fact(DisplayName = "MP3 仅改标签：音频数据不变")]
+    public void UpdateMetadata_Mp3_KeepsAudio()
+    {
+        var pcm = BuildSine(new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 }, 0.3, 0.5);
+        var path = TempPath(".mp3");
+        try
+        {
+            AudioFile.WritePcm(path, new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 }, pcm, new AudioWriteOptions
+            {
+                Metadata = new AudioMetadata { Title = "旧标题", Artist = "旧作者" },
+            });
+
+            var before = AudioFile.ReadPcm(path).Data;
+
+            AudioFile.UpdateMetadata(path, new AudioMetadata { Title = "新标题", Artist = "新作者", Genre = "测试" });
+
+            var metadata = AudioFile.Open(path).ReadMetadata();
+            Assert.NotNull(metadata);
+            Assert.Equal("新标题", metadata.Title);
+            Assert.Equal("新作者", metadata.Artist);
+            Assert.Equal("测试", metadata.Genre);
+
+            var after = AudioFile.ReadPcm(path).Data;
+            Assert.Equal(before, after);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "FLAC 仅改标签：音频数据不变")]
+    public void UpdateMetadata_Flac_KeepsAudio()
+    {
+        var pcm = BuildSine(Format, 0.3, 0.5);
+        var path = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "旧标题" } });
+
+            var before = AudioFile.ReadPcm(path).Data;
+
+            AudioFile.UpdateMetadata(path, new AudioMetadata { Title = "新标题", Album = "新专辑" });
+
+            var metadata = AudioFile.Open(path).ReadMetadata();
+            Assert.NotNull(metadata);
+            Assert.Equal("新标题", metadata.Title);
+            Assert.Equal("新专辑", metadata.Album);
+
+            var after = AudioFile.ReadPcm(path).Data;
+            Assert.Equal(before, after);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "仅改标签对不支持的容器明确报错")]
+    public void UpdateMetadata_Unsupported_Throws()
+    {
+        var pcm = BuildSine(Format, 0.1, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            Assert.Throws<NotSupportedException>(() => AudioFile.UpdateMetadata(path, new AudioMetadata { Title = "标题" }));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "写入失败时目标文件保持原状")]
+    public void WritePcm_Unsupported_KeepsExistingFile()
+    {
+        var pcm = BuildSine(Format, 0.1, 0.5);
+        var path = TempPath(".wav");
+        var unsupported = TempPath(".xyz");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+            var before = File.ReadAllBytes(path);
+
+            File.Copy(path, unsupported, true);
+            var unsupportedBefore = File.ReadAllBytes(unsupported);
+
+            Assert.Throws<NotSupportedException>(() => AudioFile.WritePcm(unsupported, Format, pcm));
+
+            Assert.Equal(unsupportedBefore, File.ReadAllBytes(unsupported));
+            Assert.Equal(before, File.ReadAllBytes(path));
+        }
+        finally
+        {
+            TryDelete(path);
+            TryDelete(unsupported);
+        }
+    }
+
     #region 辅助
     private static String TempPath(String extension) => Path.Combine(Path.GetTempPath(), "nlaudio_" + Guid.NewGuid().ToString("N") + extension);
 
