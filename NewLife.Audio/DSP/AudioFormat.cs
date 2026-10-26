@@ -15,11 +15,23 @@ public class AudioFormat
     /// <summary>编码类型</summary>
     public AVTypes Encoding { get; set; } = AVTypes.LPCM;
 
-    /// <summary>是否为 IEEE 浮点采样（32 位 float）</summary>
+    /// <summary>是否为 IEEE 浮点采样（32/64 位 float）</summary>
     public Boolean IsFloat { get; set; }
 
     /// <summary>采样格式（由 <see cref="BitsPerSample"/> 与 <see cref="IsFloat"/> 推导）</summary>
     public SampleFormat SampleFormat => PcmConverter.FromBits(BitsPerSample, IsFloat);
+
+    /// <summary>是否为平面布局（各声道分开存放）。false 表示交错布局</summary>
+    public Boolean IsPlanar { get; set; }
+
+    /// <summary>有效位数（容器位深中实际使用的位数）。0 表示等于 <see cref="BitsPerSample"/></summary>
+    public Int32 ValidBitsPerSample { get; set; }
+
+    /// <summary>声道掩码（如 WAVEFORMATEXTENSIBLE 的 dwChannelMask）。0 表示未指定</summary>
+    public Int32 ChannelMask { get; set; }
+
+    /// <summary>实际有效位数。未指定或超出容器位深时回退到 <see cref="BitsPerSample"/></summary>
+    public Int32 EffectiveValidBitsPerSample => ValidBitsPerSample > 0 && ValidBitsPerSample <= BitsPerSample ? ValidBitsPerSample : BitsPerSample;
 
     /// <summary>每帧样本数</summary>
     public Int32 SamplesPerFrame { get; set; } = 160;
@@ -49,6 +61,9 @@ public class AudioFormat
         BitsPerSample = BitsPerSample,
         Encoding = Encoding,
         IsFloat = IsFloat,
+        IsPlanar = IsPlanar,
+        ValidBitsPerSample = ValidBitsPerSample,
+        ChannelMask = ChannelMask,
         SamplesPerFrame = SamplesPerFrame,
     };
 }
