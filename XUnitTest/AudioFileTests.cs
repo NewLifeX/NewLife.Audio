@@ -125,6 +125,27 @@ public class AudioFileTests
         }
     }
 
+    [Fact(DisplayName = "WAV 声道掩码经门面读取后保留")]
+    public void ReadPcm_WavWithMask_KeepsChannelMask()
+    {
+        var path = TempPath(".wav");
+        try
+        {
+            var format = new AudioFormat { SampleRate = 48000, Channels = 4, BitsPerSample = 16, ChannelMask = 0x33 };
+            AudioFile.WritePcm(path, format, new Byte[4 * 2 * 960]);
+
+            var audio = AudioFile.ReadPcm(path);
+
+            Assert.Equal(4, audio.Format.Channels);
+            Assert.Equal(16, audio.Format.BitsPerSample);
+            Assert.Equal(0x33, audio.Format.ChannelMask);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
     [Fact(DisplayName = "24位WAV读取降为16位")]
     public void ReadPcm_24BitWav_Downconverts()
     {

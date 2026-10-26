@@ -22,7 +22,7 @@
 | 组件 | 说明 |
 |---|---|
 | `AudioFormat` | 音频格式描述：采样率、声道、位深、`SampleFormat`、平面/交错、有效位与声道掩码 |
-| `AudioFrame` | 公共音频帧：格式 + 时间戳 + PCM 缓冲 + 所有权标记，可与 `AudioPcm` 互转 |
+| `AudioFrame` | 公共音频帧：格式 + 时间戳 + PCM 缓冲 + 所有权标记 + `Offset`/`Count` 借用视图，可与 `AudioPcm` 互转；`Rent` 从数组池取缓冲，`Dispose` 归还 |
 | `IAudioProcessor` | DSP 处理器统一接口：输入 32-bit 浮点样本 → 处理 → 输出 32-bit 浮点样本 |
 | `AudioPipeline` | 信号链管线：有序持有多个 `IAudioProcessor`，数据流式传递 |
 | `Resampler` | 重采样器：`ResamplerQuality.Linear` 与 `Sinc`（Blackman 窗，核半长 16，即 32 抽头）两档；Sinc 档支持抗混叠降采样、流式跨块连续与群延迟上报；`ResamplePcm` 静态助手用于整段 PCM |

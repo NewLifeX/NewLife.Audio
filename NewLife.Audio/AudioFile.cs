@@ -460,6 +460,7 @@ public class AudioFile
                 Channels = format.Channels,
                 BitsPerSample = 16,
                 SamplesPerFrame = format.SamplesPerFrame,
+                ChannelMask = format.ChannelMask,
             },
             Codec = format.Encoding,
             Data = output.ToArray(),
