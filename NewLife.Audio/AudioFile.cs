@@ -153,6 +153,41 @@ public class AudioFile
         };
     }
 
+    /// <summary>流式解码当前文件为 16 位 PCM 分块</summary>
+    /// <param name="chunkBytes">每块的目标字节数，小于 1024 时按 1024 处理</param>
+    /// <returns>按文件顺序产出的 PCM 分块，枚举时才打开文件</returns>
+    /// <remarks>
+    /// WAV/RF64、AIFF、CAF、MP4(AAC) 逐帧解码，内存占用与分块大小同阶，适合长文件；
+    /// MP3、FLAC、Ogg、ADTS 依赖整段解码器，退化为“整段解码后分块”，内存占用与 <see cref="ReadPcm()"/> 相同。
+    /// </remarks>
+    public IEnumerable<AudioPcm> StreamPcm(Int32 chunkBytes = 64 * 1024) => StreamFilePcm(Path, Info, chunkBytes);
+
+    /// <summary>流式解码数据流为 16 位 PCM 分块</summary>
+    /// <param name="stream">数据流，必须可定位；枚举完成后读取器会释放该流</param>
+    /// <param name="info">探测信息；为空时自动探测</param>
+    /// <param name="chunkBytes">每块的目标字节数，小于 1024 时按 1024 处理</param>
+    /// <returns>按数据流顺序产出的 PCM 分块</returns>
+    /// <exception cref="NotSupportedException">数据流不可定位，或容器/编码暂不支持解码</exception>
+    public static IEnumerable<AudioPcm> StreamPcm(Stream stream, AudioStreamInfo info = null, Int32 chunkBytes = 64 * 1024)
+    {
+        if (stream == null) throw new ArgumentNullException(nameof(stream));
+        if (!stream.CanSeek) throw new NotSupportedException(L.T("The stream does not support seeking."));
+
+        info ??= AudioProbe.Probe(stream);
+        stream.Seek(0, SeekOrigin.Begin);
+        if (chunkBytes < 1024) chunkBytes = 1024;
+
+        return info.Container switch
+        {
+            AudioContainerKind.Wav or AudioContainerKind.Rf64 => StreamWavePcm(stream, chunkBytes),
+            AudioContainerKind.Aiff => StreamReaderPcm(() => new AiffFileReader(stream), chunkBytes),
+            AudioContainerKind.Caf => StreamReaderPcm(() => new CafFileReader(stream), chunkBytes),
+            AudioContainerKind.Mp4 => StreamMp4Pcm(stream, info, chunkBytes),
+            AudioContainerKind.Flac or AudioContainerKind.Mp3 or AudioContainerKind.Adts or AudioContainerKind.Ogg => StreamBulkPcm(stream, info, chunkBytes),
+            _ => throw new NotSupportedException(L.T("Unsupported container format: {0}.", info.Container)),
+        };
+    }
+
     /// <summary>解码当前文件并另存为</summary>
     /// <param name="path">目标路径（按扩展名选择容器）</param>
     /// <param name="options">写入选项；未指定 <see cref="AudioWriteOptions.Metadata"/> 时默认沿用源文件标签</param>
@@ -630,6 +665,105 @@ public class AudioFile
         Channels = info.Format?.Channels > 0 ? info.Format.Channels : 1,
         BitsPerSample = bitsPerSample,
         SamplesPerFrame = info.Format?.SamplesPerFrame > 0 ? info.Format.SamplesPerFrame : 0,
+    };
+
+    private static IEnumerable<AudioPcm> StreamFilePcm(String path, AudioStreamInfo info, Int32 chunkBytes)
+    {
+        using var stream = File.OpenRead(path);
+        foreach (var chunk in StreamPcm(stream, info, chunkBytes)) yield return chunk;
+    }
+
+    private static IEnumerable<AudioPcm> StreamWavePcm(Stream stream, Int32 chunkBytes)
+    {
+        using var reader = new WaveFileReader(stream);
+        var format = reader.Format;
+        if (format.Encoding is not (AVTypes.LPCM or AVTypes.PCM_AUDIO or AVTypes.G711A or AVTypes.G711U))
+            throw new NotSupportedException(L.T("Unsupported container format: {0}.", format.Encoding));
+
+        var output = BuildPcm16Format(format.SampleRate, format.Channels, format.SamplesPerFrame);
+        using var buffer = new MemoryStream(chunkBytes * 2);
+        while (reader.ReadFrame() is { } frame)
+        {
+            if (!ConvertWaveFrame(frame.GetSpan(), format, buffer))
+                throw new NotSupportedException(L.T("The requested audio format is not supported: {0}.", format.BitsPerSample));
+
+            if (buffer.Length >= chunkBytes)
+            {
+                yield return BuildChunk(output, AVTypes.LPCM, buffer);
+                buffer.SetLength(0);
+            }
+        }
+
+        if (buffer.Length > 0) yield return BuildChunk(output, AVTypes.LPCM, buffer);
+    }
+
+    private static IEnumerable<AudioPcm> StreamReaderPcm(Func<IAudioContainerReader> factory, Int32 chunkBytes)
+    {
+        using var reader = factory();
+        var format = reader.Format?.Clone() ?? BuildPcm16Format(16000, 1, 1);
+
+        using var buffer = new MemoryStream(chunkBytes * 2);
+        while (reader.ReadFrame() is { } frame)
+        {
+            WriteSpan(buffer, frame.GetSpan());
+            if (buffer.Length >= chunkBytes)
+            {
+                yield return BuildChunk(format, reader.CodecType, buffer);
+                buffer.SetLength(0);
+            }
+        }
+
+        if (buffer.Length > 0) yield return BuildChunk(format, reader.CodecType, buffer);
+    }
+
+    private static IEnumerable<AudioPcm> StreamMp4Pcm(Stream stream, AudioStreamInfo info, Int32 chunkBytes)
+    {
+        using var reader = new Mp4FileReader(stream);
+        var codec = new AacCodec();
+        var output = BuildFormat(info, 16);
+
+        using var buffer = new MemoryStream(chunkBytes * 2);
+        while (reader.ReadFrame() is { } frame)
+        {
+            WriteSpan(buffer, codec.ToPcm(frame.GetSpan(), reader.AacConfig).GetSpan());
+            if (buffer.Length >= chunkBytes)
+            {
+                yield return BuildChunk(output, AVTypes.AAC, buffer);
+                buffer.SetLength(0);
+            }
+        }
+
+        if (buffer.Length > 0) yield return BuildChunk(output, AVTypes.AAC, buffer);
+    }
+
+    private static IEnumerable<AudioPcm> StreamBulkPcm(Stream stream, AudioStreamInfo info, Int32 chunkBytes)
+    {
+        var audio = ReadPcm(stream, info);
+        var format = audio.Format;
+        var data = audio.Data ?? [];
+        for (var offset = 0; offset < data.Length; offset += chunkBytes)
+        {
+            var length = Math.Min(chunkBytes, data.Length - offset);
+            var chunk = new Byte[length];
+            Buffer.BlockCopy(data, offset, chunk, 0, length);
+
+            yield return new AudioPcm { Format = format?.Clone(), Codec = audio.Codec, Data = chunk };
+        }
+    }
+
+    private static AudioFormat BuildPcm16Format(Int32 sampleRate, Int32 channels, Int32 samplesPerFrame) => new()
+    {
+        SampleRate = sampleRate,
+        Channels = channels,
+        BitsPerSample = 16,
+        SamplesPerFrame = samplesPerFrame,
+    };
+
+    private static AudioPcm BuildChunk(AudioFormat format, AVTypes codec, MemoryStream buffer) => new()
+    {
+        Format = format?.Clone(),
+        Codec = codec,
+        Data = buffer.ToArray(),
     };
 
     private static Byte[] ReadAll(Stream stream)

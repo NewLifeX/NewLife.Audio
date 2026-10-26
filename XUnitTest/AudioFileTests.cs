@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NewLife.Audio;
+using NewLife.Audio.Codecs;
 using NewLife.Audio.Containers;
 using NewLife.Audio.DSP;
 using Xunit;
@@ -496,6 +499,195 @@ public class AudioFileTests
             TryDelete(target);
         }
     }
+
+    #region 流式解码
+    [Fact(DisplayName = "WAV 流式解码与整段解码一致")]
+    public void StreamPcm_Wav_MatchesReadPcm()
+    {
+        var pcm = BuildSine(Format, 0.5, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            var chunks = AudioFile.Open(path).StreamPcm(4096).ToList();
+
+            Assert.True(chunks.Count > 1);
+            Assert.All(chunks, c => Assert.True(c.Data.Length > 0));
+            Assert.All(chunks, c => Assert.True(c.Data.Length <= 4096 + 4096));
+            Assert.All(chunks, c => Assert.Equal(16000, c.Format.SampleRate));
+            Assert.All(chunks, c => Assert.Equal(16, c.Format.BitsPerSample));
+            Assert.Equal(pcm, Concat(chunks));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "分块参数过小时按最小块处理")]
+    public void StreamPcm_ChunkBytesClamped()
+    {
+        var pcm = BuildSine(Format, 0.5, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            var chunks = AudioFile.Open(path).StreamPcm(16).ToList();
+
+            Assert.Equal(pcm, Concat(chunks));
+            Assert.All(chunks, c => Assert.True(c.Data.Length <= 1024 + 4096));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "AIFF 流式解码与整段解码一致")]
+    public void StreamPcm_Aiff_MatchesReadPcm()
+    {
+        var pcm = BuildSine(Format, 0.3, 0.6);
+        var path = TempPath(".aiff");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            var bulk = AudioFile.ReadPcm(path);
+            var chunks = AudioFile.Open(path).StreamPcm(4096).ToList();
+
+            Assert.Equal(bulk.Data, Concat(chunks));
+            Assert.Equal(16000, chunks[0].Format.SampleRate);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "M4A 流式解码与整段解码一致")]
+    public void StreamPcm_M4a_MatchesReadPcm()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16, Encoding = AVTypes.AAC, SamplesPerFrame = 1024 };
+        var codec = new AacCodec();
+        var options = new AacEncoderOptions { SampleRate = 44100, Channels = 1, Bitrate = 64000 };
+        var source = BuildSine(new AudioFormat { SampleRate = 44100, Channels = 1 }, 0.2, 0.5);
+        var path = TempPath(".m4a");
+        try
+        {
+            using (var fs = File.Create(path))
+            using (var writer = new Mp4FileWriter(fs, format))
+            {
+                for (var offset = 0; offset + 4096 <= source.Length; offset += 4096)
+                {
+                    var block = new Byte[4096];
+                    Buffer.BlockCopy(source, offset, block, 0, block.Length);
+
+                    var adts = codec.FromPcm(block, options).GetSpan().ToArray();
+                    var header = AacCodec.ParseAdtsHeader(adts, 0);
+                    Assert.NotNull(header);
+                    var headerSize = header.ProtectionAbsent ? 7 : 9;
+                    writer.WriteFrame(adts[headerSize..(Int32)header.FrameLength]);
+                }
+            }
+
+            var bulk = AudioFile.ReadPcm(path);
+            var chunks = AudioFile.Open(path).StreamPcm(4096).ToList();
+
+            Assert.True(chunks.Count > 0);
+            Assert.Equal(bulk.Data, Concat(chunks));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "FLAC 流式解码退化为整段解码后分块")]
+    public void StreamPcm_Flac_MatchesReadPcm()
+    {
+        var pcm = BuildSine(Format, 0.3, 0.6);
+        var path = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            var bulk = AudioFile.ReadPcm(path);
+            var chunks = AudioFile.Open(path).StreamPcm(4096).ToList();
+
+            Assert.True(chunks.Count > 1);
+            Assert.Equal(bulk.Data, Concat(chunks));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "空音频文件流式解码不产出分块")]
+    public void StreamPcm_EmptyWav_YieldsNothing()
+    {
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, []);
+
+            Assert.Empty(AudioFile.Open(path).StreamPcm(4096));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "流式解码未知数据明确报不支持")]
+    public void StreamPcm_Unknown_Throws()
+    {
+        using var ms = new MemoryStream(new Byte[512]);
+
+        Assert.Throws<NotSupportedException>(() => AudioFile.StreamPcm(ms));
+    }
+
+    [Fact(DisplayName = "流式解码不可定位流明确报不支持")]
+    public void StreamPcm_NonSeekable_Throws()
+    {
+        using var stream = new NonSeekableStream(new MemoryStream(BuildWav(16, 1, 16000, 64)));
+
+        Assert.Throws<NotSupportedException>(() => AudioFile.StreamPcm(stream));
+    }
+
+    private static Byte[] Concat(IEnumerable<AudioPcm> chunks)
+    {
+        using var ms = new MemoryStream();
+        foreach (var chunk in chunks)
+        {
+            if (chunk?.Data != null) ms.Write(chunk.Data, 0, chunk.Data.Length);
+        }
+
+        return ms.ToArray();
+    }
+
+    private sealed class NonSeekableStream(Stream inner) : Stream
+    {
+        public override Boolean CanRead => true;
+        public override Boolean CanSeek => false;
+        public override Boolean CanWrite => false;
+        public override Int64 Length => throw new NotSupportedException();
+        public override Int64 Position { get => throw new NotSupportedException(); set => throw new NotSupportedException(); }
+        public override void Flush() { }
+        public override Int64 Seek(Int64 offset, SeekOrigin origin) => throw new NotSupportedException();
+        public override void SetLength(Int64 value) => throw new NotSupportedException();
+        public override void Write(Byte[] buffer, Int32 offset, Int32 count) => throw new NotSupportedException();
+        public override Int32 Read(Byte[] buffer, Int32 offset, Int32 count) => inner.Read(buffer, offset, count);
+
+        protected override void Dispose(Boolean disposing)
+        {
+            if (disposing) inner.Dispose();
+            base.Dispose(disposing);
+        }
+    }
+    #endregion
 
     #region 辅助
     private static String TempPath(String extension) => Path.Combine(Path.GetTempPath(), "nlaudio_" + Guid.NewGuid().ToString("N") + extension);
