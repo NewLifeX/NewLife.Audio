@@ -100,6 +100,8 @@ Turn text into sound with three lines of code:
 - **Save to file** — WAV / raw PCM, chosen by file extension
 - **Stream out** — PCM chunks for HTTP/WebSocket generate-as-you-send
 - **Pluggable engines** — system speech, `HttpTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
+- **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
+- **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate, disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
 
 ## Installation
