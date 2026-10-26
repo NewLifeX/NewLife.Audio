@@ -121,11 +121,11 @@
                         </StackPanel>
                         <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right">
                             <Button Content="▸ 开始测试" Command="{Binding VadStartTestCommand}" Margin="0,0,8,0"
-                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBoolConverter}}" />
+                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBool}}" />
                             <Button Content="■ 停止" Command="{Binding VadStopCommand}" Margin="0,0,8,0"
                                     IsEnabled="{Binding VadIsRunning}" />
                             <Button Content="清空" Command="{Binding VadClearCommand}"
-                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBoolConverter}}" />
+                                    IsEnabled="{Binding VadIsRunning, Converter={StaticResource InvertBool}}" />
                         </StackPanel>
                     </Grid>
                 </Border>
