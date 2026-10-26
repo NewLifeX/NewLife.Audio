@@ -75,6 +75,23 @@ public class AudioCodecFactoryTests
         Assert.Equal(pcm.Length / 2, result.Total);
     }
 
+    [Fact(DisplayName = "工厂ToPcm路由Opus→PCM成功")]
+    public void ToPcm_Opus_ReturnsPcm()
+    {
+        if (!NewLife.Audio.Codecs.OpusProcessCodec.IsAvailable) return;
+
+        var codec = new NewLife.Audio.Codecs.OpusCodec();
+        var encoded = codec.FromPcm(new Byte[960 * 2], 64000);
+
+        var result = _factory.ToPcm(AVTypes.Opus, encoded);
+        Assert.NotNull(result);
+        Assert.Equal(1920, result.Total);
+
+        // 兼容历史 AVTypes.Transparent 注册
+        var compat = _factory.ToPcm(AVTypes.Transparent, encoded);
+        Assert.Equal(1920, compat.Total);
+    }
+
     [Fact(DisplayName = "工厂AAC按流创建独立实例，可编码并解码")]
     public void Aac_IsFactoryRegistered_AndEncodes()
     {

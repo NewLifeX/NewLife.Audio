@@ -30,6 +30,17 @@ public class CodecRegistryTests
         Assert.NotSame(codec1, codec2);
     }
 
+    [Fact(DisplayName = "注册表IsFactory区分工厂与单例注册")]
+    public void IsFactory_ReflectsRegistrationMode()
+    {
+        _registry.Register(AVTypes.G711A, new G711ACodec());
+        _registry.RegisterFactory(AVTypes.Opus, () => new OpusCodec());
+
+        Assert.False(_registry.IsFactory(AVTypes.G711A));
+        Assert.True(_registry.IsFactory(AVTypes.Opus));
+        Assert.False(_registry.IsFactory(AVTypes.MP3));
+    }
+
     [Fact(DisplayName = "注册表未注册类型GetCodec抛异常")]
     public void GetCodec_UnregisteredType_ThrowsNotSupported()
     {
