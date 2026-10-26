@@ -7,7 +7,7 @@ using NewLife.Data;
 namespace NewLife.Audio;
 
 /// <summary>解码后的 PCM 音频</summary>
-public class AudioPcm
+public partial class AudioPcm
 {
     /// <summary>音频格式（16 位小端交错）</summary>
     public AudioFormat Format { get; set; }
@@ -595,4 +595,5 @@ public class AudioFile
     }
     #endregion
 }
+
 
