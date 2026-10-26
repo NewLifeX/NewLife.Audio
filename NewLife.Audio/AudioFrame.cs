@@ -1,3 +1,4 @@
+using System.Buffers;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio;
@@ -14,8 +15,10 @@ namespace NewLife.Audio;
 /// Console.WriteLine($"{frame.Format.SampleRate}Hz {frame.Duration.TotalMilliseconds}ms");
 /// </code>
 /// </example>
-public sealed class AudioFrame
+public sealed class AudioFrame : IDisposable
 {
+    private Byte[] _rented;
+
     /// <summary>音频格式</summary>
     public AudioFormat Format { get; set; }
 
@@ -115,6 +118,39 @@ public sealed class AudioFrame
         if (pcm == null) throw new ArgumentNullException(nameof(pcm));
 
         return new AudioFrame(pcm.Format?.Clone(), timestamp, pcm.Data, true);
+    }
+
+    /// <summary>是否借用自共享数组池。为 true 时必须调用 <see cref="Dispose"/> 归还</summary>
+    public Boolean IsPooled => _rented != null;
+
+    /// <summary>从共享数组池租用缓冲创建帧</summary>
+    /// <param name="format">音频格式</param>
+    /// <param name="count">需要的字节数</param>
+    /// <param name="timestamp">帧时间戳</param>
+    /// <returns>租用帧，用完必须 <see cref="Dispose"/> 归还；<see cref="Data"/> 实际容量可能大于 <paramref name="count"/></returns>
+    public static AudioFrame Rent(AudioFormat format, Int32 count, TimeSpan timestamp = default)
+    {
+        if (format == null) throw new ArgumentNullException(nameof(format));
+        if (count < 0) throw new ArgumentOutOfRangeException(nameof(count));
+
+        var buffer = count > 0 ? ArrayPool<Byte>.Shared.Rent(count) : [];
+        var frame = new AudioFrame(format, timestamp, buffer, 0, count, true) { _rented = count > 0 ? buffer : null };
+
+        return frame;
+    }
+
+    /// <summary>归还租用的缓冲。借用帧与整段帧不持有池内缓冲，调用无副作用且可重复调用</summary>
+    public void Dispose()
+    {
+        var rented = _rented;
+        _rented = null;
+        if (rented == null) return;
+
+        Data = [];
+        Offset = 0;
+        Count = 0;
+
+        ArrayPool<Byte>.Shared.Return(rented);
     }
 
     /// <summary>转换为 PCM 视图</summary>
