@@ -126,6 +126,48 @@ public class Mp3EncoderTests
         Assert.Throws<ArgumentOutOfRangeException>(() => codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = 44000, Channels = 1 }));
     }
 
+    [Fact(DisplayName = "MP3 编码客观质量不低于当前基线")]
+    public void Encode_QualityBaseline()
+    {
+        const Int32 rate = 44100;
+
+        // 基线取自 IMP-001 登记时的实测值（正弦约 15 dB、白噪约 0 dB）；
+        // 分析滤波缺陷修复后应把门槛抬到正弦 ≥ 40 dB、白噪 ≥ 25 dB。
+        var sine = BuildTone(rate, 1, rate, 1000, 0.3);
+        var sineSnr = MeasureSnr(sine, rate, 320);
+        Assert.True(sineSnr > 10, $"1 kHz 正弦 SNR 低于基线：{sineSnr:F1} dB");
+
+        var noise = BuildNoise(rate, 1, rate, 0.3);
+        var noiseSnr = MeasureSnr(noise, rate, 320);
+        Assert.True(noiseSnr > -5, $"白噪 SNR 低于基线：{noiseSnr:F1} dB");
+    }
+
+    private static Double MeasureSnr(Byte[] pcm, Int32 sampleRate, Int32 bitrate)
+    {
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = bitrate });
+        var decoded = new Mp3Codec().ToPcm(encoded.GetSpan().ToArray(), null).GetSpan().ToArray();
+
+        return BestSnr(ToInt16(pcm), ToInt16(decoded));
+    }
+
+    private static Byte[] BuildNoise(Int32 sampleRate, Int32 channels, Int32 samples, Double amplitude)
+    {
+        var random = new Random(20261026);
+        var data = new Byte[samples * channels * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            var v = (Int16)((random.NextDouble() * 2 - 1) * amplitude * 32000);
+            for (var ch = 0; ch < channels; ch++)
+            {
+                var p = (i * channels + ch) * 2;
+                data[p] = (Byte)(v & 0xFF);
+                data[p + 1] = (Byte)((v >> 8) & 0xFF);
+            }
+        }
+
+        return data;
+    }
+
     private static Byte[] BuildTone(Int32 sampleRate, Int32 channels, Int32 samples, Double frequency, Double amplitude)
     {
         var data = new Byte[samples * channels * 2];
