@@ -1,0 +1,36 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>netstandard2.0</TargetFramework>
+    <LangVersion>latest</LangVersion>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <GenerateDocumentationFile>True</GenerateDocumentationFile>
+    <OutputPath>..\Bin\Sherpa</OutputPath>
+    <SignAssembly>True</SignAssembly>
+    <AssemblyOriginatorKeyFile>..\Doc\newlife.snk</AssemblyOriginatorKeyFile>
+    <VersionPrefix>1.0</VersionPrefix>
+    <VersionSuffix>$([System.DateTime]::Now.ToString(`yyyy.MMdd`))</VersionSuffix>
+    <Version>$(VersionPrefix).$(VersionSuffix)</Version>
+    <AssemblyTitle>NewLife Audio Sherpa TTS</AssemblyTitle>
+    <Description>Optional sherpa-onnx offline neural TTS adapter for NewLife.Audio: VITS / Matcha / Kokoro models, resident engine, streaming PCM.</Description>
+    <PackageId>NewLife.Audio.Sherpa</PackageId>
+    <Authors>新生命开发团队</Authors>
+    <Company>新生命开发团队</Company>
+    <Copyright>©2002-2026 新生命开发团队</Copyright>
+    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageTags>音频;TTS;语音合成;sherpa-onnx;VITS;Matcha;Kokoro;NewLife;$(AssemblyName)</PackageTags>
+    <PackageProjectUrl>https://newlifex.com/iot</PackageProjectUrl>
+    <RepositoryUrl>https://github.com/NewLifeX/NewLife.Audio</RepositoryUrl>
+    <RepositoryType>git</RepositoryType>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <!-- 常驻离线 TTS：一套 API 覆盖 VITS / Matcha / Kokoro，可设线程数、支持逐块回调 -->
+    <PackageReference Include="org.k2fsa.sherpa.onnx" Version="2.0.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\NewLife.Audio\NewLife.Audio.csproj" />
+  </ItemGroup>
+
+</Project>

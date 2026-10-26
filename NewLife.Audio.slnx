@@ -14,6 +14,8 @@
   <Project Path="AotSmoke/AotSmoke.csproj" />
   <Project Path="AudioStudio/AudioStudio.csproj" />
   <Project Path="NewLife.Audio/NewLife.Audio.csproj" />
+  <Project Path="NewLife.Audio.Sherpa/NewLife.Audio.Sherpa.csproj" />
   <Project Path="Test/Test.csproj" />
   <Project Path="XUnitTest/XUnitTest.csproj" />
+  <Project Path="XUnitTest.Sherpa/XUnitTest.Sherpa.csproj" />
 </Solution>

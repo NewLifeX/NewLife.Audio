@@ -36,6 +36,28 @@ jobs:
     - name: Build
       run: dotnet build NewLife.Audio.slnx -c Release
 
+  # sherpa-onnx 可选适配包：原生运行时较重，单独两平台校验目录扫描、音色表与引擎契约；
+  # 真实合成需要本地模型（TTS_MODELS），CI 中自动跳过。
+  test-sherpa:
+    name: sherpa tests (${{ matrix.os }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    steps:
+    - uses: actions/checkout@v4
+    - name: Setup dotNET
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: 10.x
+        cache: true
+        cache-dependency-path: '**/*.csproj'
+    - name: Test
+      run: dotnet test XUnitTest.Sherpa/XUnitTest.Sherpa.csproj -c Release
+
   # 包消费级验证：打包后用临时项目仅以 PackageReference 引用，验证三 TFM、词表与编解码可用
   pack:
     name: pack consumer check
