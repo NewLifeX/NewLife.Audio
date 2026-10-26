@@ -138,7 +138,7 @@ residue 使用 type 2、begin=0、end=按质量截止频率对齐 32、partition
 - 正弦素材：q0 约 20~21 dB、q5 约 31~32 dB、q10 约 44~48 dB。
 - 6 声道（分区大小不能被声道数整除）自解码约 32 dB，覆盖 residue type 2 的连续交错布局。
 - NVorbis 互操作测试覆盖单/立体声、q5/q10；门面输出长度、采样率、声道数与 granule 一致。
-- AOT 冒烟包含真实 Vorbis 编解码往返，19/19 通过。
+- AOT 冒烟包含真实 Vorbis 编解码往返，20/20 通过。
 
 ### 7.3 测试命令
 
