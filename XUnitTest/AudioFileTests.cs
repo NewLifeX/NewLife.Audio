@@ -1,0 +1,298 @@
+using System;
+using System.IO;
+using NewLife.Audio;
+using NewLife.Audio.Containers;
+using NewLife.Audio.DSP;
+using Xunit;
+
+namespace XUnitTest;
+
+/// <summary>音频文件门面测试：解码链、写入链与格式转换</summary>
+public class AudioFileTests
+{
+    private static readonly AudioFormat Format = new() { SampleRate = 16000, Channels = 1, BitsPerSample = 16 };
+
+    [Fact(DisplayName = "WAV写入后经门面读取数据一致")]
+    public void Wav_RoundTrip()
+    {
+        var pcm = BuildSine(Format, 0.5, 0.5);
+        var path = TempPath(".wav");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm);
+
+            var info = AudioFile.Detect(path);
+            Assert.Equal(AudioContainerKind.Wav, info.Container);
+
+            var audio = AudioFile.ReadPcm(path);
+            Assert.Equal(16000, audio.Format.SampleRate);
+            Assert.Equal(1, audio.Format.Channels);
+            Assert.Equal(pcm.Length, audio.Data.Length);
+            Assert.Equal(pcm, audio.Data);
+            Assert.True(audio.Duration > 0.45);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "FLAC写入后经门面读取信噪比达标")]
+    public void Flac_RoundTrip()
+    {
+        var pcm = BuildSine(Format, 0.5, 0.7);
+        var path = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(path, new AudioPcm { Format = Format, Data = pcm }, new AudioWriteOptions
+            {
+                Metadata = new AudioMetadata { Title = "门面测试" },
+            });
+
+            var info = AudioFile.Detect(path);
+            Assert.Equal(AudioContainerKind.Flac, info.Container);
+            Assert.Equal("门面测试", info.Metadata.Title);
+
+            var audio = AudioFile.ReadPcm(path);
+            Assert.True(Snr(pcm, audio.Data) > 60);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "MP3写入后经门面读取可还原波形")]
+    public void Mp3_RoundTrip()
+    {
+        var pcm = BuildSine(Format, 0.5, 1.0);
+        var path = TempPath(".mp3");
+        try
+        {
+            AudioFile.WritePcm(path, Format, pcm, new AudioWriteOptions { Mp3BitrateKbps = 128 });
+
+            var info = AudioFile.Detect(path);
+            Assert.Equal(AudioContainerKind.Mp3, info.Container);
+
+            var audio = AudioFile.ReadPcm(path);
+            Assert.Equal(AVTypes.MP3, audio.Codec);
+            Assert.True(Snr(pcm, audio.Data) > 10);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "SaveAs按扩展名转换容器")]
+    public void SaveAs_ConvertsContainer()
+    {
+        var pcm = BuildSine(Format, 0.5, 0.6);
+        var wav = TempPath(".wav");
+        var flac = TempPath(".flac");
+        try
+        {
+            AudioFile.WritePcm(wav, Format, pcm);
+
+            var file = AudioFile.Open(wav);
+            file.SaveAs(flac, new AudioWriteOptions { Metadata = new AudioMetadata { Title = "转换" } });
+
+            var converted = AudioFile.ReadPcm(flac);
+            Assert.True(Snr(pcm, converted.Data) > 60);
+            Assert.Equal("转换", AudioFile.Detect(flac).Metadata.Title);
+        }
+        finally
+        {
+            TryDelete(wav);
+            TryDelete(flac);
+        }
+    }
+
+    [Fact(DisplayName = "不支持的目标扩展名明确报错")]
+    public void WritePcm_UnsupportedExtension_Throws()
+    {
+        var path = TempPath(".ogg");
+        try
+        {
+            Assert.Throws<NotSupportedException>(() => AudioFile.WritePcm(path, Format, new Byte[320]));
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "24位WAV读取降为16位")]
+    public void ReadPcm_24BitWav_Downconverts()
+    {
+        var path = TempPath(".wav");
+        try
+        {
+            var wav = BuildWav(24, 2, 16000, 100);
+            File.WriteAllBytes(path, wav);
+
+            var info = AudioFile.Detect(path);
+            Assert.Equal(24, info.Format.BitsPerSample);
+
+            var audio = AudioFile.ReadPcm(path);
+            Assert.Equal(16, audio.Format.BitsPerSample);
+            Assert.Equal(400, audio.Data.Length);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "32位浮点WAV读取降为16位")]
+    public void ReadPcm_FloatWav_Downconverts()
+    {
+        var path = TempPath(".wav");
+        try
+        {
+            var wav = BuildFloatWav(48000, 1, 64);
+            File.WriteAllBytes(path, wav);
+
+            var audio = AudioFile.ReadPcm(path);
+            Assert.Equal(128, audio.Data.Length);
+            Assert.Equal(48000, audio.Format.SampleRate);
+        }
+        finally
+        {
+            TryDelete(path);
+        }
+    }
+
+    [Fact(DisplayName = "未知数据解码明确报不支持")]
+    public void ReadPcm_Unknown_Throws()
+    {
+        using var ms = new MemoryStream(new Byte[] { 9, 8, 7, 6, 5, 4, 3, 2, 1, 0, 1, 2 });
+
+        Assert.Throws<NotSupportedException>(() => AudioFile.ReadPcm(ms, null));
+    }
+
+    #region 辅助
+    private static String TempPath(String extension) => Path.Combine(Path.GetTempPath(), "nlaudio_" + Guid.NewGuid().ToString("N") + extension);
+
+    private static void TryDelete(String path)
+    {
+        try
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+        catch
+        {
+            // 临时文件清理失败不影响测试结论
+        }
+    }
+
+    private static Byte[] BuildSine(AudioFormat format, Double seconds, Double amplitude)
+    {
+        var samples = (Int32)(format.SampleRate * seconds);
+        var data = new Byte[samples * format.Channels * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            var v = (Int16)(Math.Sin(2 * Math.PI * 440 * i / format.SampleRate) * amplitude * 32767);
+            for (var ch = 0; ch < format.Channels; ch++)
+            {
+                var offset = (i * format.Channels + ch) * 2;
+                data[offset] = (Byte)(v & 0xFF);
+                data[offset + 1] = (Byte)((v >> 8) & 0xFF);
+            }
+        }
+
+        return data;
+    }
+
+    private static Double Snr(Byte[] source, Byte[] actual)
+    {
+        // 编码器/解码器存在固定延迟，搜索最佳整数对齐后再算信噪比
+        var best = -999.0;
+        for (var shift = 0; shift < 2000; shift++)
+        {
+            var count = Math.Min(source.Length, actual.Length - shift * 2) / 2;
+            if (count < 2000) break;
+
+            double signal = 0;
+            double error = 0;
+            for (var i = 0; i < count; i++)
+            {
+                double s = (Int16)(source[i * 2] | source[i * 2 + 1] << 8);
+                double d = (Int16)(actual[(i + shift) * 2] | actual[(i + shift) * 2 + 1] << 8) - s;
+                signal += s * s;
+                error += d * d;
+            }
+
+            var snr = 10 * Math.Log10(signal / Math.Max(error, 1e-9));
+            if (snr > best) best = snr;
+        }
+
+        return best;
+    }
+
+    private static Byte[] BuildWav(Int32 bits, Int32 channels, Int32 rate, Int32 samples)
+    {
+        var blockAlign = channels * bits / 8;
+        var data = new Byte[samples * blockAlign];
+        var body = new MemoryStream();
+
+        var fmt = new Byte[16];
+        BitConverter.GetBytes((UInt16)1).CopyTo(fmt, 0);
+        BitConverter.GetBytes((Int16)channels).CopyTo(fmt, 2);
+        BitConverter.GetBytes(rate).CopyTo(fmt, 4);
+        BitConverter.GetBytes(rate * blockAlign).CopyTo(fmt, 8);
+        BitConverter.GetBytes((Int16)blockAlign).CopyTo(fmt, 12);
+        BitConverter.GetBytes((Int16)bits).CopyTo(fmt, 14);
+
+        WriteChunk(body, "fmt ", fmt);
+        WriteChunk(body, "data", data);
+
+        var content = body.ToArray();
+        var wav = new Byte[12 + content.Length];
+        System.Text.Encoding.ASCII.GetBytes("RIFF").CopyTo(wav, 0);
+        BitConverter.GetBytes(content.Length + 4).CopyTo(wav, 4);
+        System.Text.Encoding.ASCII.GetBytes("WAVE").CopyTo(wav, 8);
+        content.CopyTo(wav, 12);
+
+        return wav;
+    }
+
+    private static Byte[] BuildFloatWav(Int32 rate, Int32 channels, Int32 samples)
+    {
+        var blockAlign = channels * 4;
+        var data = new Byte[samples * blockAlign];
+        var body = new MemoryStream();
+
+        var fmt = new Byte[16];
+        BitConverter.GetBytes((UInt16)3).CopyTo(fmt, 0);
+        BitConverter.GetBytes((Int16)channels).CopyTo(fmt, 2);
+        BitConverter.GetBytes(rate).CopyTo(fmt, 4);
+        BitConverter.GetBytes(rate * blockAlign).CopyTo(fmt, 8);
+        BitConverter.GetBytes((Int16)blockAlign).CopyTo(fmt, 12);
+        BitConverter.GetBytes((Int16)32).CopyTo(fmt, 14);
+
+        WriteChunk(body, "fmt ", fmt);
+        WriteChunk(body, "data", data);
+
+        var content = body.ToArray();
+        var wav = new Byte[12 + content.Length];
+        System.Text.Encoding.ASCII.GetBytes("RIFF").CopyTo(wav, 0);
+        BitConverter.GetBytes(content.Length + 4).CopyTo(wav, 4);
+        System.Text.Encoding.ASCII.GetBytes("WAVE").CopyTo(wav, 8);
+        content.CopyTo(wav, 12);
+
+        return wav;
+    }
+
+    private static void WriteChunk(Stream stream, String id, Byte[] payload)
+    {
+        var header = new Byte[8];
+        System.Text.Encoding.ASCII.GetBytes(id).CopyTo(header, 0);
+        BitConverter.GetBytes(payload.Length).CopyTo(header, 4);
+
+        stream.Write(header, 0, header.Length);
+        stream.Write(payload, 0, payload.Length);
+        if ((payload.Length & 1) != 0) stream.WriteByte(0);
+    }
+    #endregion
+}
