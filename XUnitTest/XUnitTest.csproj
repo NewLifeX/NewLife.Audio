@@ -13,6 +13,7 @@
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\mp3\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\vorbis\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\aacplus\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
