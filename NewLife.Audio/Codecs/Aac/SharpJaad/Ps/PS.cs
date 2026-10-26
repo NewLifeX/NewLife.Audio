@@ -131,12 +131,12 @@ namespace SharpJaad.AAC.Ps
                 _delayD[i] = 1;
             }
 
-            /* mixing and phase */
+            /* mixing and phase：初始 H11/H12 的实部与虚部都置 1（首个包络插值前的默认旋转） */
             for (i = 0; i < 50; i++)
             {
                 _h11Prev[i, 0] = 1;
-                _h12Prev[i, 1] = 1;
-                _h11Prev[i, 0] = 1;
+                _h11Prev[i, 1] = 1;
+                _h12Prev[i, 0] = 1;
                 _h12Prev[i, 1] = 1;
             }
 
