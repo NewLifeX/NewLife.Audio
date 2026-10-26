@@ -12,8 +12,8 @@ namespace XUnitTest.Codecs;
 /// 后段门禁用 5~6 秒各 1 秒切片）。
 /// 断言口径：先按互相关对齐（编码器/解码器存在固定延迟），再比较归一化相关度与对齐后 SNR。
 /// <para>TNS 反向滤波（FIX-010）补齐后，LC 与 HEv1 与参考解码几乎逐样本一致（SNR 82~87 dB、相关度 1.0000），
-/// 门禁守在 60 dB；HE-AAC v2（PS）稳定段 21.2/19.5 dB，门禁守在 18 dB。PS 后段的左右声道能量关系
-/// 与参考相反（已知缺陷 FIX-011），该区间门禁只防退化。</para>
+/// 门禁守在 60 dB；HE-AAC v2（PS）稳定段 21.2/19.5 dB，门禁守在 18 dB。PS 后段右声道中频带略偏轻
+/// （FIX-011，建议级），该区间门禁只防退化。</para>
 /// </remarks>
 public class AacExternalVectorTests
 {
@@ -68,8 +68,7 @@ public class AacExternalVectorTests
     [Fact(DisplayName = "HE-AAC v2 后段（5~6 秒）外部向量：双声道 SNR ≥ 10 dB")]
     public void HeAacV2_LateSegment()
     {
-        // 该区间 PS 的左右声道能量关系与参考相反（右声道偏响、左声道偏弱），是已知的 PS 缺陷（FIX-011），
-        // 门禁只防继续退化，不代表该区间已与参考一致。
+        // 该区间右声道中频带能量比参考低 0.5~3 dB（FIX-011，建议级），门禁只防继续退化，不代表已与参考一致。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.late.ref.wav", skipSeconds: 5);
 
         Assert.Equal(44100, format.SampleRate);
