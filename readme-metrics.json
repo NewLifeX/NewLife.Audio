@@ -1,10 +1,11 @@
 {
-  "updated": "2026-10-19",
+  "updated": "2026-10-27",
   "doc": "Doc/README.md",
   "values": {
-    "aotSmoke": "19/19",
-    "aotScenarios": 19,
-    "tfmCount": 3,
+    "aotSmoke": "20/20",
+    "aotScenarios": 20,
+    "tfmCount": 4,
+    "tfmRange": "net461 → net8.0",
     "localeCount": 31,
     "readmeLocaleCount": 11
   }

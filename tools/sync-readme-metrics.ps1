@@ -22,6 +22,7 @@ $metrics = Get-Content -LiteralPath $configPath -Raw -Encoding UTF8 | ConvertFro
 $values = @{
     "aot-smoke"    = [String]$metrics.values.aotSmoke
     "tfm-count"    = [String]$metrics.values.tfmCount
+    "tfm-range"    = [String]$metrics.values.tfmRange
     "locale-count" = [String]$metrics.values.localeCount
 }
 
@@ -36,10 +37,11 @@ $BlockPattern = "(?s)" + [regex]::Escape($StartMarker) + ".*?" + [regex]::Escape
 
 function Get-MetricsBlock([String]$newline) {
     $smokeEncoded = [Uri]::EscapeDataString($values["aot-smoke"])
+    $tfmRangeEncoded = [Uri]::EscapeDataString("(" + $values["tfm-range"] + ")")
     $lines = @(
         $StartMarker
         "[![AOT smoke](https://img.shields.io/badge/AOT%20smoke-$smokeEncoded-brightgreen?logo=dotnet)](Doc/AOT兼容性分析.md)"
-        "[![TFM](https://img.shields.io/badge/TFM-$($values["tfm-count"])%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)"
+        "[![TFM](https://img.shields.io/badge/TFM-$($values["tfm-count"])%20$tfmRangeEncoded-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)"
         "[![locales](https://img.shields.io/badge/locales-$($values["locale-count"])-2ea44f?logo=dotnet)](Doc/多语言本地化.md)"
         $EndMarker
     )
