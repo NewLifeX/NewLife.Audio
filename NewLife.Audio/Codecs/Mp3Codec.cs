@@ -97,13 +97,15 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         return new ArrayPacket(decoder.Decode(audio, out _, out _));
     }
 
-    /// <summary>PCM 转 MP3（MPEG Layer III 编码，CBR）</summary>
+    /// <summary>PCM 转 MP3（MPEG Layer III 编码，支持 CBR/VBR/ABR）</summary>
     /// <param name="pcm">16 位小端交错 PCM</param>
     /// <param name="option"><see cref="Mp3EncoderOptions"/> 编码参数；也可直接传 Int32 比特率（kbps），其余参数取默认值（44.1kHz 单声道）</param>
     /// <returns>MP3 编码数据</returns>
     /// <remarks>
     /// 采样率由 <see cref="Mp3EncoderOptions.SampleRate"/> 决定，兼容 8k～48k 共 9 档标准采样率；
     /// 输入样本不足一帧时补零成帧，保证输出始终是完整的 MPEG 音频帧序列。
+    /// <para>VBR/ABR 模式下逐帧按信号复杂度选择码率档位，并在码流开头写入 Xing 信息帧（含总帧数、总字节数与 TOC），
+    /// 播放器无需全扫描即可得到时长与 seek 位置。</para>
     /// </remarks>
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
@@ -118,13 +120,26 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         var data = pcm.ToArray();
         var frameBytes = encoder.FrameSamples * options.Channels * 2;
         var frameBuf = new Byte[encoder.MaxFrameBytes];
+
+        var vbr = options.Mode != Mp3RateMode.Cbr;
+        var sizes = vbr ? new List<Int32>() : null;
         var ms = new MemoryStream(data.Length + 1024);
+
+        // ABR 的每帧目标比特数与累计漂移
+        var targetBits = (Double)options.Bitrate * 1000 * encoder.FrameSamples / options.SampleRate;
+        var drift = 0.0;
+        var demandScale = ReferenceScale(options.VbrQuality);
+        var minRate = options.MinBitrate * 1000;
+        var maxRate = options.MaxBitrate * 1000;
 
         var offset = 0;
         while (offset + frameBytes <= data.Length)
         {
-            var len = encoder.EncodeFrame(data, offset, frameBuf);
+            var len = vbr
+                ? EncodeVariableFrame(encoder, data, offset, frameBuf, options.Mode, demandScale, targetBits, minRate, maxRate, ref drift, out _)
+                : encoder.EncodeFrame(data, offset, frameBuf);
             ms.Write(frameBuf, 0, len);
+            sizes?.Add(len);
             offset += frameBytes;
         }
 
@@ -132,11 +147,77 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
         {
             var tail = new Byte[frameBytes];
             Array.Copy(data, offset, tail, 0, data.Length - offset);
-            var len = encoder.EncodeFrame(tail, 0, frameBuf);
+            var len = vbr
+                ? EncodeVariableFrame(encoder, tail, 0, frameBuf, options.Mode, demandScale, targetBits, minRate, maxRate, ref drift, out _)
+                : encoder.EncodeFrame(tail, 0, frameBuf);
             ms.Write(frameBuf, 0, len);
+            sizes?.Add(len);
         }
 
-        return new ArrayPacket(ms.ToArray());
+        if (!vbr || sizes == null || sizes.Count == 0) return new ArrayPacket(ms.ToArray());
+
+        // 前置 Xing/Info 信息帧
+        var quality = options.Mode == Mp3RateMode.Vbr ? Clamp(options.VbrQuality, 0, 9) * 10 : 100;
+        var magic = Mp3XingHeader.Build(options.SampleRate, options.Channels, sizes.Count, sizes, true, quality);
+        var output = new MemoryStream(magic.Length + (Int32)ms.Length);
+        output.Write(magic, 0, magic.Length);
+        ms.Position = 0;
+        ms.CopyTo(output);
+
+        return new ArrayPacket(output.ToArray());
+    }
+
+    /// <summary>编码一帧并返回本帧码率</summary>
+    private static Int32 EncodeVariableFrame(Mp3Layer3Encoder encoder, Byte[] pcm, Int32 offset, Byte[] frameBuf, Mp3RateMode mode, Double demandScale, Double targetBits, Int32 minRate, Int32 maxRate, ref Double drift, out Int32 bitrate)
+    {
+        var demand = encoder.PrepareFrame(pcm, offset, true, (Single)demandScale);
+
+        var desired = mode == Mp3RateMode.Vbr
+            ? demand
+            : demand * targetBits / (drift > 0 ? drift : demand);
+        if (desired < 0) desired = 0;
+
+        encoder.Bitrate = encoder.SelectBitrate((Int32)desired, minRate, maxRate);
+        bitrate = encoder.Bitrate;
+
+        var len = encoder.EncodePrepared(frameBuf);
+
+        // 主数据超容量会被截断：换更高码率重编（分析已完成，重编只重做量化与写位）
+        for (var i = 0; i < 4 && encoder.LastFrameTruncated; i++)
+        {
+            var next = encoder.NextBitrate(encoder.Bitrate);
+            if (next == encoder.Bitrate) break;
+            if (maxRate > 0 && next > maxRate) break;
+
+            encoder.Bitrate = next;
+            bitrate = next;
+            len = encoder.EncodePrepared(frameBuf);
+        }
+
+        // ABR 用需求移动平均把平均码率拉向目标：drift 存放需求均值
+        if (mode == Mp3RateMode.Abr)
+        {
+            drift = drift > 0 ? drift * 0.9 + demand * 0.1 : demand;
+        }
+
+        return len;
+    }
+
+    /// <summary>VBR 质量档位对应的参考量化尺度（相对帧峰值的量化步长比例），档位越低尺度越小（质量越高）</summary>
+    private static Double ReferenceScale(Int32 quality)
+    {
+        // 0~9 档按等比递增，约每档 1.8 倍；q2 对 1 kHz 正弦约 128 kbps
+        Double[] scales = [0.00005, 0.0001, 0.0002, 0.00035, 0.0007, 0.0015, 0.004, 0.01, 0.025, 0.06];
+
+        return scales[Clamp(quality, 0, 9)];
+    }
+
+    private static Int32 Clamp(Int32 value, Int32 min, Int32 max)
+    {
+        if (value < min) return min;
+        if (value > max) return max;
+
+        return value;
     }
 
     #region 帧头解析
@@ -254,4 +335,6 @@ public class Mp3Codec : IAudioCodec, ICodecInfo
     #endregion
 
 }
+
+
 

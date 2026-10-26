@@ -222,6 +222,135 @@ public class Mp3EncoderTests
         Assert.True(snr > 40, $"立体声质量基线未达标：{snr:F1} dB");
     }
 
+    [Fact(DisplayName = "MP3 VBR：写入 Xing 信息帧并携带帧数与 TOC")]
+    public void Encode_Vbr_WritesXingHeader()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 1, sampleRate, 1000, 0.4);
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Mode = Mp3RateMode.Vbr }).GetSpan().ToArray();
+
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        Assert.NotNull(header);
+
+        // 信息帧紧跟 17 字节单声道边信息
+        var mark = 4 + 17;
+        Assert.Equal((Byte)'X', encoded[mark]);
+        Assert.Equal((Byte)'i', encoded[mark + 1]);
+        Assert.Equal((Byte)'n', encoded[mark + 2]);
+        Assert.Equal((Byte)'g', encoded[mark + 3]);
+
+        var flags = ReadInt32(encoded, mark + 4);
+        Assert.True((flags & 0x07) == 0x07, $"Xing 标记位不完整：0x{flags:X}");
+
+        var frames = ReadInt32(encoded, mark + 8);
+        var bytes = ReadInt32(encoded, mark + 12);
+        Assert.True(frames > 0);
+        Assert.Equal(encoded.Length, bytes);
+
+        // 帧数与实际可解析的音频帧数一致
+        var counted = 0;
+        for (var offset = header.FrameSize; offset + 4 <= encoded.Length;)
+        {
+            var h = Mp3Codec.ParseFrameHeader(encoded, offset);
+            Assert.NotNull(h);
+            counted++;
+            offset += h.FrameSize;
+        }
+        Assert.Equal(frames, counted);
+    }
+
+    [Fact(DisplayName = "MP3 VBR：按信号复杂度分配码率，噪声段高于纯音段")]
+    public void Encode_Vbr_AllocatesByComplexity()
+    {
+        var sampleRate = 44100;
+        var samples = sampleRate;
+        var pcm = new Byte[samples * 2];
+        var random = new Random(20261026);
+        for (var i = 0; i < samples; i++)
+        {
+            // 前半段为纯音（频谱简单），后半段为白噪声（频谱复杂）
+            var value = i < samples / 2
+                ? Math.Sin(2 * Math.PI * 1000 * i / sampleRate) * 0.4
+                : (random.NextDouble() * 2 - 1) * 0.4;
+            var v = (Int16)(value * 32000);
+            pcm[i * 2] = (Byte)(v & 0xFF);
+            pcm[i * 2 + 1] = (Byte)((v >> 8) & 0xFF);
+        }
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Mode = Mp3RateMode.Vbr, VbrQuality = 2 }).GetSpan().ToArray();
+
+        var rates = new System.Collections.Generic.List<Int32>();
+        var header = Mp3Codec.ParseFrameHeader(encoded, 0);
+        for (var offset = header.FrameSize; offset + 4 <= encoded.Length;)
+        {
+            var h = Mp3Codec.ParseFrameHeader(encoded, offset);
+            rates.Add(h.Bitrate);
+            offset += h.FrameSize;
+        }
+
+        Assert.True(rates.Count > 8);
+        // 跳过起始两帧（滤波器组未稳定），比较两段的平均码率
+        var half = rates.Count / 2;
+        var tone = 0.0;
+        for (var i = 2; i < half; i++) tone += rates[i];
+        tone /= half - 2;
+        var noise = 0.0;
+        for (var i = half + 2; i < rates.Count; i++) noise += rates[i];
+        noise /= rates.Count - half - 2;
+
+        Assert.True(noise > tone, $"噪声段码率未高于纯音段：{tone / 1000:F0} kbps vs {noise / 1000:F0} kbps");
+    }
+
+    [Fact(DisplayName = "MP3 VBR：往返质量达标")]
+    public void Encode_Vbr_RoundTripQuality()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 1, sampleRate, 1000, 0.4);
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Mode = Mp3RateMode.Vbr, VbrQuality = 2 }).GetSpan().ToArray();
+        var decoded = new Mp3Codec().ToPcm(encoded, null).GetSpan().ToArray();
+
+        var snr = BestSnr(ToInt16(pcm), ToInt16(decoded));
+        Assert.True(snr > 40, $"VBR 往返信噪比过低：{snr:F1} dB");
+    }
+
+    [Fact(DisplayName = "MP3 ABR：平均码率贴近目标")]
+    public void Encode_Abr_TracksTargetBitrate()
+    {
+        var sampleRate = 44100;
+        var seconds = 2;
+        var pcm = BuildNoise(sampleRate, 1, sampleRate * seconds, 0.4);
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions
+        {
+            SampleRate = sampleRate,
+            Channels = 1,
+            Bitrate = 96,
+            Mode = Mp3RateMode.Abr,
+        }).GetSpan().ToArray();
+
+        var average = encoded.Length * 8.0 / seconds;
+        Assert.InRange(average, 96 * 1000 * 0.7, 96 * 1000 * 1.3);
+    }
+
+    [Fact(DisplayName = "MP3 CBR：不写信息帧")]
+    public void Encode_Cbr_NoInfoFrame()
+    {
+        var sampleRate = 44100;
+        var pcm = BuildTone(sampleRate, 1, sampleRate, 1000, 0.4);
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 128 }).GetSpan().ToArray();
+
+        var mark = 4 + 17;
+        var tag = (Char)encoded[mark];
+        Assert.NotEqual('X', tag);
+        Assert.NotEqual('I', tag);
+    }
+
+    private static Int32 ReadInt32(Byte[] data, Int32 offset) =>
+        data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3];
+
     private static Double MeasureSnr(Byte[] pcm, Int32 sampleRate, Int32 bitrate)
     {
         var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = bitrate });
@@ -277,7 +406,7 @@ public class Mp3EncoderTests
     private static Double BestSnr(Int16[] source, Int16[] actual)
     {
         var best = -999.0;
-        for (var shift = 0; shift < Math.Min(2000, actual.Length - 2000); shift++)
+        for (var shift = 0; shift < Math.Min(4096, actual.Length - 4096); shift++)
         {
             var sig = 0.0;
             var dot = 0.0;

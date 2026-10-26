@@ -47,11 +47,11 @@ internal sealed class Mp3Layer3Encoder
     #region 字段
     private readonly Int32 _sampleRate;
     private readonly Int32 _channels;
-    private readonly Int32 _bitrate;
+    private Int32 _bitrate;
     private readonly Boolean _mpeg1;
     private readonly Int32 _versionBits;
     private readonly Int32 _sampleRateIndex;
-    private readonly Int32 _bitrateIndex;
+    private Int32 _bitrateIndex;
     private readonly Int32 _granules;
     private readonly Int32 _slots;
     private readonly Int32 _frameSamples;
@@ -67,6 +67,8 @@ internal sealed class Mp3Layer3Encoder
     private readonly Single[] _scale;
     private readonly Int32[,] _estimate;
     private Int32 _modeExtension;
+    private Int32 _demandBits;
+    private Boolean _useMs;
 
     private readonly Single[] _block = new Single[Mp3EncoderTables.BlockLength];
     private readonly Single[] _y = new Single[64];
@@ -96,7 +98,65 @@ internal sealed class Mp3Layer3Encoder
     public Int32 Channels => _channels;
 
     /// <summary>比特率（bps）</summary>
-    public Int32 Bitrate => _bitrate;
+    /// <remarks>可在帧间赋值以支持 VBR/ABR，取值会吸附到当前 MPEG 版本的标准档位</remarks>
+    public Int32 Bitrate
+    {
+        get => _bitrate;
+        set
+        {
+            var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
+            _bitrateIndex = FindBitrateIndex(bitrates, value / 1000);
+            _bitrate = bitrates[_bitrateIndex] * 1000;
+        }
+    }
+
+    /// <summary>当前帧的主数据比特需求，来自最近一次 <see cref="PrepareFrame"/></summary>
+    public Int32 DemandBits => _demandBits;
+
+    /// <summary>最近一次 <see cref="EncodePrepared"/> 的主数据是否超出帧容量（已被截断）</summary>
+    public Boolean LastFrameTruncated { get; private set; }
+
+    /// <summary>取下一个更高的标准码率档位</summary>
+    /// <param name="bitrate">当前码率（bps）</param>
+    /// <returns>更高一档的码率（bps）；已是最高档时返回原值</returns>
+    public Int32 NextBitrate(Int32 bitrate)
+    {
+        var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
+        var index = FindBitrateIndex(bitrates, bitrate / 1000);
+
+        return index >= 14 ? bitrates[14] * 1000 : bitrates[index + 1] * 1000;
+    }
+
+    /// <summary>按比特需求挑选标准码率档位</summary>
+    /// <param name="desiredBits">本帧期望的主数据比特数</param>
+    /// <param name="lowest">可选最低码率（bps），小于等于 0 表示取最低档</param>
+    /// <param name="highest">可选最高码率（bps），小于等于 0 表示取最高档</param>
+    /// <returns>吸附到标准档位后的码率（bps）</returns>
+    public Int32 SelectBitrate(Int32 desiredBits, Int32 lowest, Int32 highest)
+    {
+        var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
+        var lo = lowest > 0 ? FindBitrateIndex(bitrates, lowest / 1000) : 1;
+        var hi = highest > 0 ? FindBitrateIndex(bitrates, highest / 1000) : 14;
+        if (hi < lo) hi = lo;
+
+        for (var i = lo; i <= hi; i++)
+        {
+            if (GetFrameBudget(i) >= desiredBits) return bitrates[i] * 1000;
+        }
+
+        return bitrates[hi] * 1000;
+    }
+
+    /// <summary>指定码率档位下扣除帧头与边信息后的主数据比特预算</summary>
+    /// <param name="bitrateIndex">码率档位序号</param>
+    /// <returns>主数据比特数</returns>
+    private Int32 GetFrameBudget(Int32 bitrateIndex)
+    {
+        var bitrates = _mpeg1 ? BitratesMpeg1 : BitratesLsf;
+        var frameBytes = (_mpeg1 ? 144 : 72) * bitrates[bitrateIndex] * 1000 / _sampleRate;
+
+        return frameBytes * 8 - 32 - _sideInfoBits;
+    }
 
     /// <summary>每帧样本数（每声道）</summary>
     public Int32 FrameSamples => _frameSamples;
@@ -191,9 +251,19 @@ internal sealed class Mp3Layer3Encoder
     /// <returns>写入的帧字节数</returns>
     public Int32 EncodeFrame(Byte[] pcm, Int32 offset, Byte[] output)
     {
-        var pad = NextPadding();
-        var frameBytes = (_mpeg1 ? 144 : 72) * _bitrate / _sampleRate + pad;
+        PrepareFrame(pcm, offset);
 
+        return EncodePrepared(output);
+    }
+
+    /// <summary>分析一帧 PCM 并估算比特需求，供 VBR/ABR 在使用前决定本帧码率</summary>
+    /// <param name="pcm">16 位小端交错 PCM，长度至少为 <see cref="FrameSamples"/> × 声道数 × 2</param>
+    /// <param name="offset">PCM 起始偏移</param>
+    /// <param name="needDemand">是否需要估算比特需求（单声道下估算会额外产生一次变换开销）</param>
+    /// <param name="referenceScale">估算用的固定量化尺度，大于 0 时替代自适应尺度，使比特需求与目标质量对应</param>
+    /// <returns>本帧在 L/R 与 M/S 中较优模式下的主数据比特需求；<paramref name="needDemand"/> 为 false 时返回 0</returns>
+    public Int32 PrepareFrame(Byte[] pcm, Int32 offset, Boolean needDemand = false, Single referenceScale = 0)
+    {
         // 子带分析
         for (var ch = 0; ch < _channels; ch++)
         {
@@ -210,12 +280,32 @@ internal sealed class Mp3Layer3Encoder
             }
             TransformToMs(_subbandMs);
 
-            useMs = EstimateBits(true) < EstimateBits(false);
+            var estimatedMs = EstimateBits(true, referenceScale);
+            var estimatedLr = EstimateBits(false, referenceScale);
+            useMs = estimatedMs < estimatedLr;
 
             // 若选中 M/S，重新估算以取得该模式下各声道的比特需求（用于预算分配）
-            if (useMs) EstimateBits(true);
+            if (useMs) EstimateBits(true, referenceScale);
+            _demandBits = useMs ? estimatedMs : estimatedLr;
         }
+        else
+        {
+            _demandBits = needDemand ? EstimateBits(false, referenceScale) : 0;
+        }
+        _useMs = useMs;
         _modeExtension = useMs ? 2 : 0;
+
+        return _demandBits;
+    }
+
+    /// <summary>按当前比特率把已分析的帧编码输出</summary>
+    /// <param name="output">输出缓冲区，长度至少为 <see cref="MaxFrameBytes"/></param>
+    /// <returns>写入的帧字节数</returns>
+    public Int32 EncodePrepared(Byte[] output)
+    {
+        var pad = NextPadding();
+        var frameBytes = (_mpeg1 ? 144 : 72) * _bitrate / _sampleRate + pad;
+        var useMs = _useMs;
 
         // 逐颗粒/声道编码主数据
         _mainWriter.Reset();
@@ -270,6 +360,9 @@ internal sealed class Mp3Layer3Encoder
         _frameWriter.AppendFrom(_mainWriter, 0, _mainWriter.Position);
         _frameWriter.CopyTo(output, 0, frameBytes);
 
+        // 主数据超出本帧容量时会被截断，调用方可换更高码率重编
+        LastFrameTruncated = _mainWriter.Position > budget;
+
         // 更新子带历史（L/R 与 M/S 各自维护，供下一帧选择任一模式时使用）
         for (var ch = 0; ch < _channels; ch++)
         {
@@ -299,8 +392,9 @@ internal sealed class Mp3Layer3Encoder
 
     /// <summary>用当前量化状态快速估算整帧比特数，用于 L/R 与 M/S 模式选择</summary>
     /// <param name="useMs">是否按 M/S 子带估算</param>
+    /// <param name="referenceScale">参考量化尺度（相对满量程的比例），大于 0 时按帧内峰值归一化后使用</param>
     /// <returns>整帧主数据比特数估计</returns>
-    private Int32 EstimateBits(Boolean useMs)
+    private Int32 EstimateBits(Boolean useMs, Single referenceScale)
     {
         var total = 0;
         for (var gr = 0; gr < _granules; gr++)
@@ -309,7 +403,24 @@ internal sealed class Mp3Layer3Encoder
             {
                 Mdct(ch, gr, useMs);
                 PrepareSpectrum(_spectrum[ch]);
-                var bits = Measure(_scale[ch], _spectrum[ch], _info[gr][ch]);
+
+                Single scale;
+                if (referenceScale > 0)
+                {
+                    // 按峰值归一化，使比特需求与信号绝对电平无关（只看相对复杂度和目标质量）
+                    var peak = 0f;
+                    for (var b = 0; b < _bandMax.Length; b++)
+                    {
+                        if (_bandMax[b] > peak) peak = _bandMax[b];
+                    }
+                    scale = peak > 1e-6f ? referenceScale / peak : 1e9f;
+                }
+                else
+                {
+                    scale = _scale[ch];
+                }
+
+                var bits = Measure(scale, _spectrum[ch], _info[gr][ch]);
                 _estimate[gr, ch] = bits;
                 total += bits;
             }

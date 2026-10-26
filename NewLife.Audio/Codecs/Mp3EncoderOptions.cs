@@ -13,6 +13,19 @@ public class Mp3EncoderOptions
     /// <summary>声道数，1 为单声道，2 为立体声</summary>
     public Int32 Channels { get; set; } = 1;
 
-    /// <summary>目标比特率（kbps）</summary>
+    /// <summary>目标比特率（kbps），CBR 为固定值，ABR 为平均值</summary>
     public Int32 Bitrate { get; set; } = 128;
+
+    /// <summary>码率模式，默认 CBR</summary>
+    public Mp3RateMode Mode { get; set; } = Mp3RateMode.Cbr;
+
+    /// <summary>VBR 质量档位，0 最高质量、9 最小体积，默认 2</summary>
+    /// <remarks>仅在 <see cref="Mode"/> 为 <see cref="Mp3RateMode.Vbr"/> 时生效</remarks>
+    public Int32 VbrQuality { get; set; } = 2;
+
+    /// <summary>VBR/ABR 的最低比特率（kbps），0 表示使用当前 MPEG 版本的最低档</summary>
+    public Int32 MinBitrate { get; set; }
+
+    /// <summary>VBR/ABR 的最高比特率（kbps），0 表示使用当前 MPEG 版本的最高档</summary>
+    public Int32 MaxBitrate { get; set; }
 }
