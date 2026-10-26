@@ -11,7 +11,7 @@
 [![NativeAOT](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml)
 <!-- metrics:start -->
 [![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](Doc/AOT兼容性分析.md)
-[![TFM](https://img.shields.io/badge/TFM-3%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
+[![TFM](https://img.shields.io/badge/TFM-4%20%28net461%20%E2%86%92%20net8.0%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
 [![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](Doc/多语言本地化.md)
 <!-- metrics:end -->
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue)
@@ -44,7 +44,7 @@ NuGet: `NewLife.Audio`
 - **MP3**(허프만 디코딩 + 역양자화 + IMDCT + 서브밴드 합성)
 - **AAC**(순수 관리형 AAC-LC/HE-AAC 디코딩, AAC-LC 인코딩, ADTS/raw/MP4/LOAS/LATM)
 - **FLAC**(Fixed LPC + Rice 잔차 부호화 + MD5)
-- **Ogg Vorbis**(3개 헤더 패킷 인코딩/디코딩)
+- **Ogg Vorbis**(순수 관리형 디코딩: floor 0/1, residue 0/1/2, 채널 커플링, MDCT; 인코더는 롱 블록 기준)
 - **Speex**(순수 관리형 협대역 CELP)
 - `CodecRegistry` + `ICodecInfo` 메타데이터 기반의 플러그인 방식 팩토리
 - IoT 칩 헤더 적응(Hisilicon / Dahua / Uniview)

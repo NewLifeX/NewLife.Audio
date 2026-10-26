@@ -11,7 +11,7 @@
 [![NativeAOT](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml)
 <!-- metrics:start -->
 [![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](Doc/AOT兼容性分析.md)
-[![TFM](https://img.shields.io/badge/TFM-3%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
+[![TFM](https://img.shields.io/badge/TFM-4%20%28net461%20%E2%86%92%20net8.0%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
 [![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](Doc/多语言本地化.md)
 <!-- metrics:end -->
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue)
@@ -46,7 +46,7 @@ Nuget：NewLife.Audio
 - **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman）
 - **AAC**（纯托管 AAC-LC/HE-AAC 解码；AAC-LC 编码；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
-- **Ogg Vorbis**（3 个头部包编码/解码）
+- **Ogg Vorbis**（纯托管解码：floor 0/1、residue 0/1/2、声道耦合、MDCT；编码为长块基线）
 - **Speex**（纯托管窄带 CELP）
 - 基于 `CodecRegistry` + `ICodecInfo` 元数据的可插拔工厂
 - IoT 芯片头适配（海思 / 大华 / 宇视）

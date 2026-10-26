@@ -11,7 +11,7 @@
 [![NativeAOT](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml)
 <!-- metrics:start -->
 [![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](Doc/AOT兼容性分析.md)
-[![TFM](https://img.shields.io/badge/TFM-3%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
+[![TFM](https://img.shields.io/badge/TFM-4%20%28net461%20%E2%86%92%20net8.0%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
 [![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](Doc/多语言本地化.md)
 <!-- metrics:end -->
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue)
@@ -44,7 +44,7 @@ Conversion PCM bidirectionnelle pour plus de 10 codecs audio, entièrement en C#
 - **MP3** (décodage Huffman + quantification inverse + IMDCT + synthèse par sous-bandes)
 - **AAC** (décodage AAC-LC/HE-AAC entièrement managé ; encodage AAC-LC ; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (LPC fixe + codage résiduel Rice + MD5)
-- **Ogg Vorbis** (encodage/décodage des 3 paquets d'en-tête)
+- **Ogg Vorbis** (décodage entièrement managé : floor 0/1, residue 0/1/2, couplage de canaux, MDCT ; encodeur de base à blocs longs)
 - **Speex** (CELP bande étroite entièrement managé)
 - Fabrique enfichable via `CodecRegistry` + métadonnées `ICodecInfo`
 - Adaptation des en-têtes de puces IoT (Hisilicon / Dahua / Uniview)

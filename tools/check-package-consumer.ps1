@@ -57,7 +57,7 @@ try {
     foreach ($item in $required) {
         if ($entries -notcontains $item) { throw "nupkg 缺少 $item" }
     }
-    Write-Host "   必需项齐全（三 TFM / README / 图标）"
+    Write-Host "   必需项齐全（四 TFM / README / 图标）"
 }
 finally {
     $zip.Dispose()

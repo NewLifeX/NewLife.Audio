@@ -24,7 +24,7 @@
 | `IAudioContainerWriter` | 容器写入器接口：`Open()`→`WriteFrame()`→`WriteMetadata()`→`Close()` |
 | `AudioContainerFactory` | 容器工厂：根据格式自动创建读写器 |
 | `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器 |
-| `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（支持 Vorbis + Opus） |
+| `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（Vorbis + Opus；OpusHead/OpusTags、lacing、granule/pre-skip 按 RFC 7845；Vorbis identification/comment/setup 独立头页与 granule） |
 | `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器 |
 | `Mp3FileReader` / `Mp3FileWriter` | MP3 文件读写器：ID3v2 标签 + 帧索引 + Xing/Info/VBRI 信息帧解析（帧数/字节数）；写入支持帧透传与 PCM 压缩 |
 | `Mp3Id3Tag` | ID3v2.3/v2.4 标签解析与 v2.4（UTF-8）标签生成；ID3v1/v1.1 尾标签读写（含 80 项流派表），读取时 ID3v2 优先于 ID3v1 |
@@ -191,6 +191,11 @@ data Chunk
 | `RawPcmReader` 支持格式推断 | IoT 场景大量原始 PCM 数据，自动推断减少调用方心智负担 |
 | 元数据与音频数据分离 | 写入时元数据可提前设置，不与帧数据混在一起 |
 | Ogg 容器同时支持 Vorbis 和 Opus | Ogg 是 Opus 的标准容器（RFC 7845），一石二鸟 |
+| Ogg Opus granule = pre-skip + 累计 48 kHz 样本 | 与 RFC 7845 的 PCM sample position 定义一致，浏览器 MSE 可正确 seek；包时长由 TOC 解析而非固定 20 ms |
+| Ogg Opus pre-skip 默认 0，本地编码取 `OpusCodec.GetLookahead(options)` | 预跳应等于编码器延迟；外部已编码流未知时取 0 比固定 80 ms 更安全，避免丢弃真实音频 |
+| Ogg Vorbis 头包按页拆分 | identification 单独一页，comment 与 setup 各自成页，避免多包同页导致部分解码器只读第一个头包 |
+| Ogg Vorbis 首音频包 granule=0 | 首包只建立重叠状态，不产生 PCM；后续页按 hop 累计，读取器按最后 granule 裁剪尾部 padding |
+| Ogg 读取器暴露 `PreSkip` / `TotalSamples` / `Duration` | 播放器可据此裁剪 Opus 预跳与尾部 padding，与 RFC 7845 的 PCM sample position 对齐 |
 
 ---
 

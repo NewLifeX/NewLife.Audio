@@ -127,7 +127,7 @@ await tts.SaveAsync("请注意", "alert.wav",
 | AAC 编码 | 纯托管 AAC-LC 编码器已可用（ADTS/raw），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Opus 编码 | `OpusCodec` 自研 M1：包解析/范围编解码器就绪，托管 CELT/SILK 未完成；当前通过系统 ffmpeg 降级，可与标准解码器互操作 | 🟡 编解码降级可用，托管实现进行中，TTS 输出待接入 |
 | FLAC 编码 | 现有实现帧头/子帧不完整，解码器仅支持 Verbatim 子帧 | ❌ 不暴露 |
-| Ogg Opus 封装 | `OggOpusStreamWriter` 可封装**已编码**的 Opus 包 | 🟡 仅供在线服务透传 |
+| Ogg Opus 封装 | `OggOpusStreamWriter` 支持标准 Ogg Opus 头、页与 granule；可封装**已编码**的 Opus 包 | ✅ 支持 |
 
 > **MP3 输入**：在线服务返回的 MP3 由内置 Layer III 解码器（`Mp3Layer3Decoder`，纯托管、零外部依赖）解码为 16 位 PCM，覆盖 MPEG-1/2/2.5、长短块与联合立体声；MP3 输出仍不在本轮范围。
 
@@ -370,7 +370,7 @@ var text = TtsText.Default.Normalize("设备型号 A2 温度 35 度");
 | 引擎只产 PCM，不返回结果对象 | 文件封装、统计、播放统一由 `TtsClient` 完成，引擎实现更薄 |
 | 引擎构造注入，`TtsClient` 不开放继承 | 组合优于继承；单元测试与多引擎组合更简单 |
 | 默认按平台选择系统语音 | 普通用户零配置；Windows SAPI / macOS say / Linux espeak-ng |
-| 本轮只做 WAV/PCM | 现有 MP3/AAC/Opus/FLAC 编码器不具备互操作质量，不拿用户当测试 |
+| 本轮只做 WAV/PCM | MP3/AAC/FLAC 编码器质量与场景仍需打磨（AAC 纯托管 LC 编码已可用）；Opus 自研 M1 可用（系统 ffmpeg 降级），TTS 接入单独立项 |
 | 系统语音走反射而非编译期引用 | 保持核心库零原生依赖与三 TFM；.NET Core 应用按需引用 `System.Speech` |
 | 缓存/预生成/文本规范化下沉到 `Tts.Advanced` | 主路径不落盘、不创建临时目录；高频告警场景按需启用 |
 | 不内置引擎降级链 | 链式降级会掩盖首包后失败、拼接不同音色；需要时由调用方用自定义引擎组合 |

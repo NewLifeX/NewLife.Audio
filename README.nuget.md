@@ -13,7 +13,7 @@
 [![NativeAOT](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml/badge.svg?branch=master)](https://github.com/NewLifeX/NewLife.Audio/actions/workflows/aot.yml)
 <!-- metrics:start -->
 [![AOT smoke](https://img.shields.io/badge/AOT%20smoke-19%2F19-brightgreen?logo=dotnet)](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/AOT兼容性分析.md)
-[![TFM](https://img.shields.io/badge/TFM-3%20%28net461%20%E2%86%92%20netstandard2.1%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
+[![TFM](https://img.shields.io/badge/TFM-4%20%28net461%20%E2%86%92%20net8.0%29-512BD4?logo=dotnet)](https://www.nuget.org/packages/NewLife.Audio)
 [![locales](https://img.shields.io/badge/locales-31-2ea44f?logo=dotnet)](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/多语言本地化.md)
 <!-- metrics:end -->
 ![platform](https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS%20%7C%20Android%20%7C%20iOS-blue)
@@ -43,10 +43,10 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 - **G.722** / **G.726** sub-band ADPCM
 - **IMA ADPCM** (DVI4)
 - **Opus** (self-hosted pure-managed implementation in progress: RFC 6716 packet parser + range coder, with ffmpeg fallback)
-- **MP3** (Huffman decoding + inverse quantization + IMDCT + subband synthesis)
+- **MP3** (decode: Huffman + inverse quantization + IMDCT + subband synthesis; encode: polyphase analysis + MDCT + quantization + Huffman)
 - **AAC** (pure-managed AAC-LC/HE-AAC decoding; AAC-LC encoding; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (Fixed LPC + Rice residual coding + MD5)
-- **Ogg Vorbis** (3 header packets encode/decode)
+- **Ogg Vorbis** (pure-managed decode: floor 0/1, residue 0/1/2, channel coupling, MDCT; baseline long-block encoder)
 - **Speex** (pure managed narrowband CELP)
 - Pluggable factory via `CodecRegistry` + `ICodecInfo` metadata
 - IoT chip header adaptation (Hisilicon / Dahua / Uniview)
@@ -102,6 +102,8 @@ Turn text into sound with three lines of code:
 - **Save to file** — WAV / raw PCM, chosen by file extension
 - **Stream out** — PCM chunks for HTTP/WebSocket generate-as-you-send
 - **Pluggable engines** — system speech, `HttpTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
+- **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
+- **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate, disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
 
 ## Installation

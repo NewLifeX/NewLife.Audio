@@ -1,6 +1,6 @@
 # CODEC-编解码引擎
 
-> 版本：v1.1 | 日期：2026-07-20 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v1.2 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 2 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 ---
@@ -40,7 +40,7 @@
 | `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman → 帧组装，支持 9 档采样率与单/立体声 |
 | `Mp3HuffmanEncoder` | 由解码表反推的 Huffman 编码表，保证收发使用同一份 ISO 码表 |
 | `FlacCodec` | FLAC 编解码器（纯托管，Fixed LPC + LPC 子帧 + Rice 残差编码） |
-| `VorbisCodec` | Ogg Vorbis 编解码器（纯托管） |
+| `VorbisCodec` | Ogg Vorbis 编解码门面：三头包、流式解码、长块基线编码、granule 裁剪 |
 | `SpeexCodec` | Speex 编解码器（纯托管窄带 CELP 实现） |
 | `G722Codec` / `G726Codec` | G.722/G.726 电信语音编解码器（无状态） |
 | `IAudioChipHeader` | 芯片音频头接口：`HeaderSize` 属性 + `TryTrim(ReadOnlySpan<Byte>, out IPacket)` / `TryAdd(ReadOnlySpan<Byte>, out IPacket)` |
@@ -204,6 +204,7 @@ public interface IAudioChipHeader
 | 有状态编解码器通过工厂创建 | 如 Opus/AAC/FLAC 需保存帧间状态，`RegisterFactory` 为每个流创建独立实例 |
 | AAC 全托管、不引入原生依赖 | AAC-LC 编解码与 HE-AAC 解码统一用纯托管实现；`FaacEncoder` 标记 `[Obsolete]` 并停止主链路引用，下一主版本移除 |
 | Opus 自研纯托管 | 不引入第三方编解码包，避免原生 libopus 部署门槛；包解析与范围编码器先落地，CELT/SILK 按 M2~M5 推进；系统 ffmpeg 仅作为 M1 降级与互操作验证，不进入主链路依赖 |
+| Vorbis 自研纯托管 | 解码按 Vorbis I 规范完整实现；编码先交付可互操作的长块基线，心理声学/短块/耦合按 CODEC-8c 迭代，避免一次性追求 libvorbis 对等而拖延主链路 |
 | `option` 参数保留 `Object` 类型 | 各编解码器配置差异大，统一为 `Object` 避免接口膨胀 |
 | 芯片头处理独立接口 | 便于新增厂商适配，不修改工厂核心逻辑 |
 
@@ -218,6 +219,16 @@ public interface IAudioChipHeader
 - **容器**：Ogg Opus 头包、页、granule position 与 lacing 按 RFC 7845 + RFC 3533 处理。
 - **pre-skip**：`OpusCodec.GetLookahead` 返回 libopus 6.5 ms 算法延迟（48 kHz = 312，16 kHz = 104）。
 - **路线图**：M2 CELT 解码 → M3 CELT 编码 → M4 SILK 解码 → M5 SILK 编码 → M6 性能/AOT/互操作，详见 [OPUS-自研编解码](OPUS-自研编解码.md)。
+
+---
+
+## 7. Vorbis 支持（纯托管）
+
+- **容器**：`OggFileReader` 保留 identification/comment/setup 三头包，按 granule 计算 `TotalSamples`；`OggFileWriter` 将注释与 setup 写成独立头页，音频页 granule 正确累计。
+- **解码**：`VorbisDecoder` 覆盖码本、floor0/1、residue 0/1/2、声道耦合、长短块、IMDCT 与重叠相加；5 组参考样本 85~89 dB SNR。
+- **编码**：`VorbisEncoder` 生成 6 个固定码本、floor1 恒定包络、residue2、canonical Huffman；长块基线，q0~q10、1~8 声道，NVorbis 可解码。
+- **性能**：MDCT/IMDCT 使用 `Vector<Single>` 点积；10 秒 44.1kHz 立体声 q5 编码约 0.23s、解码约 0.18s。
+- **边界**：编码器尚未实现心理声学、短块、耦合与码率控制，详见 [VORBIS-纯托管编解码](VORBIS-纯托管编解码.md)。
 
 ---
 
