@@ -12,7 +12,7 @@
 | 音频文件读取 | 解析容器格式（WAV / Ogg / MP4-M4A / FLAC / MP3 / AIFF / CAF / 裸 PCM），提取编码音频数据和格式元数据 |
 | 音频文件写入 | 将编码音频数据封装为容器格式并写入头/数据块；当前覆盖 WAV / Ogg / MP4-M4A / MP3 / FLAC / AIFF |
 | 流式输出 | `Writers` 命名空间的 `WavStreamWriter` / `OggOpusStreamWriter` / `Mp3StreamWriter` 面向不可 seek 的流（HTTP/WebSocket 边合成边写） |
-| 格式探测 | `AudioProbe` 按魔术字节识别 WAV/RF64/Ogg/FLAC/MP3/ADTS/MP4；扩展名只作提示，未知时明确返回 Unknown |
+| 格式探测 | `AudioProbe` 按魔术字节识别 WAV/RF64/Ogg/FLAC/MP3/ADTS/MP4/AIFF/CAF；扩展名只作提示，未知时明确返回 Unknown |
 | 元数据管理 | WAV（LIST/INFO）、MP3（ID3v2.4/v1.1）、FLAC（VORBIS_COMMENT）、Ogg（OpusTags/Vorbis comment）、M4A（udta/meta/ilst）均可读写 |
 
 > 已知限制：WAV 已支持 RIFF 块遍历、`fmt` 16/18/40、`WAVE_FORMAT_EXTENSIBLE`、IEEE float、24/32 bit、RF64 与 `LIST/INFO`；FLAC 读取器与 `FlacFileWriter` 均已提供；CAF 只有读取器，AMR/WMA 明确不做。`AudioContainerFactory.CreateReader(stream)` 只按魔术字节识别，未识别时抛 `NotSupportedException`（FIX-009 已修），需要判断未知流请用 `AudioProbe`，需要裸 PCM 请显式构造 `RawPcmReader` 并传入格式。
@@ -34,7 +34,7 @@
 | `FlacContainerReader` / `FlacFileWriter` | FLAC 原生容器读写：读取 fLaC 元数据块（STREAMINFO/VORBIS_COMMENT）并按帧头 CRC-8 定位；写入 STREAMINFO/SEEKTABLE/VORBIS_COMMENT 与规范帧 |
 | `AiffFileReader` / `AiffFileWriter` / `CafFileReader` | AIFF/AIFF-C 双向读写（FORM/COMM、80 位扩展浮点采样率、16 位大端 PCM、sowt 小端可读）；CAF 读取（desc+data、未压缩 lpcm） |
 | `RawPcmReader` | 原始 PCM 解析器：按调用方给定的采样率/位深/声道/帧长切帧；不做启发式推断 |
-| `AudioProbe` | 容器探测：按魔术字节返回容器、编码、格式、时长、码率、标签、CanSeek 与置信度 |
+| `AudioProbe` | 容器探测：按魔术字节识别 WAV/RF64/Ogg/FLAC/MP3/ADTS/MP4/AIFF/CAF，返回容器、编码、格式、时长、码率、标签、CanSeek 与置信度 |
 | `AudioStreamFactory` / `CallbackStream` | 统一路径、`Stream`、字节数组与回调式数据源/目标；按回调声明读写与定位能力 |
 | `AudioMetadata` | 音频元数据模型（标题、艺术家、专辑、时长、码率等） |
 | `WavStreamWriter` / `OggOpusStreamWriter` / `Mp3StreamWriter` | 面向不可 seek 流的流式写入器（`Writers` 命名空间），由 TTS 与实时推流使用 |
