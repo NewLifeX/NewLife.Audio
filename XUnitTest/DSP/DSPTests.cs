@@ -88,6 +88,35 @@ public class BitDepthConverterTests
             Assert.True(diff <= 1, $"index {i}: diff={diff}");
         }
     }
+
+    [Theory(DisplayName = "按采样格式与浮点互转往返一致")]
+    [InlineData(SampleFormat.Int16)]
+    [InlineData(SampleFormat.Int24)]
+    [InlineData(SampleFormat.Int32)]
+    [InlineData(SampleFormat.Float32)]
+    public void PcmToFloat_RoundTrip(SampleFormat format)
+    {
+        Single[] input = [0f, 0.5f, -0.5f, 0.25f];
+
+        var pcm = BitDepthConverter.FloatToPcm(input, format, input.Length);
+        var count = BitDepthConverter.PcmToFloat(pcm, format, out var samples);
+
+        Assert.Equal(input.Length, count);
+        for (var i = 0; i < input.Length; i++)
+        {
+            Assert.True(Math.Abs(input[i] - samples[i]) < 1e-3, $"{format} 第 {i} 个样本偏差过大：{input[i]} vs {samples[i]}");
+        }
+    }
+
+    [Fact(DisplayName = "FloatToPcm按count截断")]
+    public void FloatToPcm_Truncates()
+    {
+        Single[] input = [0.1f, 0.2f, 0.3f];
+
+        var pcm = BitDepthConverter.FloatToPcm(input, SampleFormat.Int16, 2);
+
+        Assert.Equal(4, pcm.Length);
+    }
 }
 
 public class ChannelConverterTests
@@ -116,6 +145,91 @@ public class ChannelConverterTests
 
         Assert.Equal(0.5f, mono[0]); // (1+0)/2
         Assert.Equal(0.5f, mono[1]); // (0.5+0.5)/2
+    }
+
+    [Fact(DisplayName = "声道转换：任意声道数按索引映射")]
+    public void Convert_RemapsChannels()
+    {
+        var stereo = new Single[] { 1f, 2f, 3f, 4f };
+        var quad = new Single[8];
+        var written = ChannelConverter.Convert(stereo, 2, quad, 0, 4, 2);
+
+        Assert.Equal(8, written);
+        Assert.Equal([1f, 2f, 0f, 0f, 3f, 4f, 0f, 0f], quad);
+    }
+
+    [Fact(DisplayName = "声道转换：管线内把立体声下混为单声道")]
+    public void Read_StereoToMono()
+    {
+        var source = new ArrayProcessor(new Single[] { 0.4f, 0.2f, -0.6f, -0.2f }, 2);
+        var converter = new ChannelConverter(1, new AudioFormat { Channels = 2 }) { Source = source };
+
+        var buffer = new Single[4];
+        var read = converter.Read(buffer, 0, 2);
+
+        Assert.Equal(2, read);
+        Assert.Equal(0.3f, buffer[0], 5);
+        Assert.Equal(-0.4f, buffer[1], 5);
+    }
+
+    [Fact(DisplayName = "声道转换：管线内把单声道上混为立体声")]
+    public void Read_MonoToStereo()
+    {
+        var source = new ArrayProcessor(new Single[] { 0.5f, -0.5f }, 1);
+        var converter = new ChannelConverter(2, new AudioFormat { Channels = 1 }) { Source = source };
+
+        var buffer = new Single[4];
+        var read = converter.Read(buffer, 0, 4);
+
+        Assert.Equal(4, read);
+        Assert.Equal([0.5f, 0.5f, -0.5f, -0.5f], buffer);
+    }
+
+    [Fact(DisplayName = "声道数相同时管线直通")]
+    public void Read_SameChannels_PassThrough()
+    {
+        var source = new ArrayProcessor(new Single[] { 0.1f, 0.2f }, 2);
+        var converter = new ChannelConverter(2, new AudioFormat { Channels = 2 }) { Source = source };
+
+        var buffer = new Single[2];
+        var read = converter.Read(buffer, 0, 2);
+
+        Assert.Equal(2, read);
+        Assert.Equal([0.1f, 0.2f], buffer);
+    }
+
+    /// <summary>按指定声道数回放固定采样的测试源</summary>
+    private sealed class ArrayProcessor : IAudioProcessor
+    {
+        private readonly Single[] _data;
+        private readonly Int32 _channels;
+        private Int32 _position;
+
+        public ArrayProcessor(Single[] data, Int32 channels)
+        {
+            _data = data;
+            _channels = channels;
+        }
+
+        public AudioFormat InputFormat => new() { Channels = _channels };
+
+        public AudioFormat OutputFormat => new() { Channels = _channels };
+
+        public IAudioProcessor Source { get; set; }
+
+        public Int32 Read(Single[] buffer, Int32 offset, Int32 count)
+        {
+            var available = _data.Length - _position;
+            var n = Math.Min(count, available);
+            if (n <= 0) return 0;
+
+            Array.Copy(_data, _position, buffer, offset, n);
+            _position += n;
+
+            return n;
+        }
+
+        public void Reset() => _position = 0;
     }
 }
 

@@ -1,6 +1,12 @@
 namespace NewLife.Audio.DSP;
 
-/// <summary>位深转换器。在 8/16/24/32-bit 整数与 32-bit 浮点之间转换</summary>
+/// <summary>位深转换器。在 8/16/24/32-bit 整数与 32/64-bit 浮点之间转换</summary>
+/// <remarks>
+/// 管线内部统一使用 ±1.0 的 <see cref="Single"/> 缓冲，因此作为 <see cref="IAudioProcessor"/> 时
+/// <see cref="Read"/> 只需转发；真正的位深转换发生在与字节流交界处，由
+/// <see cref="PcmToFloat"/> / <see cref="FloatToPcm"/> 按 <see cref="SampleFormat"/> 完成，
+/// 具体实现复用 <see cref="PcmConverter"/>。
+/// </remarks>
 public class BitDepthConverter : IAudioProcessor
 {
     private readonly AudioFormat _inputFormat;
@@ -26,16 +32,43 @@ public class BitDepthConverter : IAudioProcessor
     }
 
     /// <summary>读取转换后的采样数据</summary>
+    /// <param name="buffer">输出缓冲</param>
+    /// <param name="offset">输出起始位置</param>
+    /// <param name="count">期望采样数</param>
+    /// <returns>实际写入的采样数</returns>
     public Int32 Read(Single[] buffer, Int32 offset, Int32 count)
     {
         if (Source == null) return 0;
 
-        var read = Source.Read(buffer, offset, count);
-        return read;
+        return Source.Read(buffer, offset, count);
     }
 
     /// <summary>重置</summary>
-    public void Reset() { }
+    public void Reset() => Source?.Reset();
+
+    /// <summary>按采样格式把 PCM 字节转为 ±1.0 浮点采样</summary>
+    /// <param name="pcm">PCM 字节（小端）</param>
+    /// <param name="format">采样格式</param>
+    /// <param name="samples">输出浮点采样（为空时自动分配）</param>
+    /// <returns>转换的采样数</returns>
+    public static Int32 PcmToFloat(Byte[] pcm, SampleFormat format, out Single[] samples)
+    {
+        samples = PcmConverter.ToFloat(pcm, format);
+
+        return samples.Length;
+    }
+
+    /// <summary>按采样格式把浮点采样转为 PCM 字节</summary>
+    /// <param name="samples">浮点采样</param>
+    /// <param name="format">采样格式</param>
+    /// <param name="count">采样数</param>
+    /// <returns>PCM 字节（小端）</returns>
+    public static Byte[] FloatToPcm(Single[] samples, SampleFormat format, Int32 count)
+    {
+        var length = Math.Min(count, samples.Length);
+
+        return PcmConverter.FromFloat(samples.AsSpan(0, length), format);
+    }
 
     /// <summary>将16位PCM字节数组转为浮点采样</summary>
     /// <param name="pcm">PCM字节数据（小端）</param>
@@ -43,12 +76,10 @@ public class BitDepthConverter : IAudioProcessor
     /// <returns>转换的采样数</returns>
     public static Int32 Pcm16ToFloat(Byte[] pcm, Single[] samples)
     {
-        var count = Math.Min(pcm.Length / 2, samples.Length);
-        for (var i = 0; i < count; i++)
-        {
-            var val = (Int16)(pcm[i * 2 + 1] << 8 | pcm[i * 2]);
-            samples[i] = val / 32768f;
-        }
+        var converted = PcmConverter.ToFloat(pcm, SampleFormat.Int16);
+        var count = Math.Min(converted.Length, samples.Length);
+        Array.Copy(converted, samples, count);
+
         return count;
     }
 
