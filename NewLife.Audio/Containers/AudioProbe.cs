@@ -32,6 +32,12 @@ public enum AudioContainerKind
 
     /// <summary>无头原始 PCM</summary>
     RawPcm = 8,
+
+    /// <summary>AIFF/AIFF-C（FORM 容器）</summary>
+    Aiff = 9,
+
+    /// <summary>Apple CAF（Core Audio Format）</summary>
+    Caf = 10,
 }
 
 /// <summary>音频流探测结果</summary>
@@ -111,6 +117,8 @@ public static class AudioProbe
             ".mp3" => AudioContainerKind.Mp3,
             ".aac" or ".adts" => AudioContainerKind.Adts,
             ".m4a" or ".mp4" => AudioContainerKind.Mp4,
+            ".aiff" or ".aif" or ".aifc" => AudioContainerKind.Aiff,
+            ".caf" => AudioContainerKind.Caf,
             _ => AudioContainerKind.Unknown,
         };
     }
@@ -254,6 +262,18 @@ public static class AudioProbe
             }
         }
 
+        if (read >= 12 && Is(header, 0, "FORM") && (Is(header, 8, "AIFF") || Is(header, 8, "AIFC")))
+        {
+            info.Description = "FORM/AIFF 标记";
+            return AudioContainerKind.Aiff;
+        }
+
+        if (read >= 8 && Is(header, 0, "caff"))
+        {
+            info.Description = "caff 标记";
+            return AudioContainerKind.Caf;
+        }
+
         info.Description = "未识别的魔术字节";
         info.Confidence = 0;
         return AudioContainerKind.Unknown;
@@ -283,6 +303,10 @@ public static class AudioProbe
                 return new Mp3FileReader(source);
             case AudioContainerKind.Mp4:
                 return new Mp4FileReader(source);
+            case AudioContainerKind.Aiff:
+                return new AiffFileReader(source);
+            case AudioContainerKind.Caf:
+                return new CafFileReader(source);
             default:
                 return null;
         }

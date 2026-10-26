@@ -147,6 +147,8 @@ public class AudioFile
             AudioContainerKind.Mp4 => ReadMp4(stream, info),
             AudioContainerKind.Adts => ReadAdts(stream, info),
             AudioContainerKind.Ogg => ReadOgg(stream, info),
+            AudioContainerKind.Aiff => ReadAiff(stream, info),
+            AudioContainerKind.Caf => ReadCaf(stream, info),
             _ => throw new NotSupportedException(L.T("Unsupported container format: {0}.", info.Container)),
         };
     }
@@ -339,6 +341,16 @@ public class AudioFile
                         using var writer = new Mp3FileWriter(stream, format, options.Mp3BitrateKbps);
                         if (options.Metadata != null) writer.WriteMetadata(options.Metadata);
                         writer.WritePcm(audio.Data);
+                        writer.Flush();
+                        break;
+                    }
+
+                case ".aiff":
+                case ".aif":
+                case ".aifc":
+                    {
+                        using var writer = new AiffFileWriter(stream, format);
+                        writer.WriteFrame(audio.Data);
                         writer.Flush();
                         break;
                     }
@@ -543,6 +555,44 @@ public class AudioFile
         {
             Format = BuildFormat(info, 16),
             Codec = AVTypes.Opus,
+            Data = output.ToArray(),
+        };
+    }
+
+    private static AudioPcm ReadAiff(Stream stream, AudioStreamInfo info)
+    {
+        using var reader = new AiffFileReader(stream);
+        using var output = new MemoryStream();
+        while (true)
+        {
+            var packet = reader.ReadFrame();
+            if (packet == null) break;
+            WriteSpan(output, packet.GetSpan());
+        }
+
+        return new AudioPcm
+        {
+            Format = reader.Format,
+            Codec = AVTypes.LPCM,
+            Data = output.ToArray(),
+        };
+    }
+
+    private static AudioPcm ReadCaf(Stream stream, AudioStreamInfo info)
+    {
+        using var reader = new CafFileReader(stream);
+        using var output = new MemoryStream();
+        while (true)
+        {
+            var packet = reader.ReadFrame();
+            if (packet == null) break;
+            WriteSpan(output, packet.GetSpan());
+        }
+
+        return new AudioPcm
+        {
+            Format = reader.Format,
+            Codec = AVTypes.LPCM,
             Data = output.ToArray(),
         };
     }
