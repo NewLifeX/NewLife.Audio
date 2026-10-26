@@ -13,7 +13,8 @@ public class DeviceDriverTests
     {
         using var watcher = new AudioDeviceWatcher();
 
-        if (!AudioDriverFactory.IsSupported)
+        // 设备变化通知后端仅 Windows 实现，与“是否存在音频播放后端”无关
+        if (!AudioDriverFactory.IsWindows)
         {
             Assert.False(watcher.IsSupported);
             return;
@@ -59,7 +60,7 @@ public class DeviceDriverTests
     {
         var driver = AudioDriverFactory.Create("waveout");
         Assert.NotNull(driver);
-        if (!AudioDriverFactory.IsSupported) return;
+        if (!AudioDriverFactory.IsWindows) return;
 
         Assert.Contains("WaveOut", driver.Name);
     }
@@ -70,10 +71,10 @@ public class DeviceDriverTests
         var driver = AudioDriverFactory.Create();
         var devices = driver.EnumerateDevices();
 
-        if (AudioDriverFactory.IsSupported)
-            Assert.NotEmpty(devices);
-        else
-            Assert.Empty(devices);
+        Assert.NotNull(devices);
+        if (!AudioDriverFactory.IsSupported) Assert.Empty(devices);
+        // Linux 容器可能没有任何声卡，ALSA 后端枚举为空属正常，仅在 Windows 要求至少一个设备
+        else if (AudioDriverFactory.IsWindows) Assert.NotEmpty(devices);
     }
 
     [Fact(DisplayName = "驱动创建播放器：无后端时明确抛出平台不支持")]
@@ -114,7 +115,7 @@ public class DeviceDriverTests
         if (!AudioDriverFactory.IsSupported) return;
 
         using var recorder = driver.CreateRecorder();
-        Assert.Equal("WaveInRecorder", recorder.GetType().Name);
+        Assert.Equal(AudioDriverFactory.IsWindows ? "WaveInRecorder" : "AlsaRecorder", recorder.GetType().Name);
     }
 
     [Fact(DisplayName = "默认驱动路径播放器是真实输出而非空实现")]
@@ -125,7 +126,7 @@ public class DeviceDriverTests
         if (!AudioDriverFactory.IsSupported) return;
 
         using var player = driver.CreatePlayer();
-        Assert.Equal("WaveOutPlayer", player.GetType().Name);
+        Assert.Equal(AudioDriverFactory.IsWindows ? "WaveOutPlayer" : "AlsaPlayer", player.GetType().Name);
     }
 
     [Fact(DisplayName = "工厂按运行时平台上报后端能力")]
@@ -136,8 +137,15 @@ public class DeviceDriverTests
         Assert.Equal(AudioDriverFactory.IsSupported, backends.Count > 0);
         if (!AudioDriverFactory.IsSupported) return;
 
-        Assert.Contains("waveout", backends);
-        Assert.Contains("wasapi", backends);
+        if (AudioDriverFactory.IsWindows)
+        {
+            Assert.Contains("waveout", backends);
+            Assert.Contains("wasapi", backends);
+        }
+        else
+        {
+            Assert.Equal(["alsa"], backends);
+        }
     }
 
     [Fact(DisplayName = "AudioDeviceManager注册驱动后可用")]
