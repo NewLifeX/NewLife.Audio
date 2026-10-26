@@ -8,6 +8,52 @@ namespace XUnitTest.Devices;
 
 public class DeviceDriverTests
 {
+    [Fact(DisplayName = "设备观察器可注册与释放")]
+    public void Watcher_RegisterAndDispose()
+    {
+        using var watcher = new AudioDeviceWatcher();
+
+        if (!AudioDriverFactory.IsSupported)
+        {
+            Assert.False(watcher.IsSupported);
+            return;
+        }
+
+        Assert.True(watcher.IsSupported);
+        Assert.True(watcher.IsRegistered);
+
+        var raised = 0;
+        watcher.Changed += (s, e) =>
+        {
+            raised++;
+            Assert.NotNull(e.DeviceId);
+        };
+
+        // 注册期间读取设备列表不应抛异常
+        var outputs = watcher.GetRenderDeviceIds();
+        var inputs = watcher.GetCaptureDeviceIds();
+        Assert.NotNull(outputs);
+        Assert.NotNull(inputs);
+
+        watcher.Dispose();
+        Assert.False(watcher.IsRegistered);
+        Assert.Equal(0, raised);
+
+        // 重复释放安全
+        watcher.Dispose();
+    }
+
+    [Fact(DisplayName = "设备观察器事件参数默认值合理")]
+    public void Watcher_EventArgsConstructor()
+    {
+        var args = new AudioDeviceChangeEventArgs { Change = AudioDeviceChange.DefaultChanged, DeviceId = "id", IsDefault = true };
+
+        Assert.Equal(AudioDeviceChange.DefaultChanged, args.Change);
+        Assert.Equal("id", args.DeviceId);
+        Assert.True(args.IsDefault);
+        Assert.False(args.IsInput);
+    }
+
     [Fact(DisplayName = "AudioDriverFactory创建WaveOut驱动")]
     public void Factory_Creates_Driver()
     {

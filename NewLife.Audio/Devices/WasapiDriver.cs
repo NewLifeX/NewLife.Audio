@@ -270,10 +270,62 @@ internal static class WasapiInterop
         return list;
     }
 
+    /// <summary>获取指定方向的活动端点 ID 列表</summary>
+    /// <param name="input">true 取采集端点</param>
+    /// <returns>设备 ID 数组；枚举失败时返回空数组</returns>
+    public static String[] GetActiveDeviceIds(Boolean input)
+    {
+        var enumerator = CreateEnumerator();
+        try
+        {
+            if (enumerator.EnumAudioEndpoints(input ? E_CAPTURE : E_RENDER, DEVICE_STATE_ACTIVE, out var collection) != 0 || collection == null)
+                return [];
+
+            try
+            {
+                if (collection.GetCount(out var count) != 0) return [];
+
+                var ids = new String[count];
+                var index = 0;
+                for (var i = 0u; i < count; i++)
+                {
+                    if (collection.Item(i, out var device) != 0 || device == null) continue;
+
+                    try
+                    {
+                        if (device.GetId(out var id) == 0 && !id.IsNullOrEmpty()) ids[index++] = id;
+                    }
+                    finally
+                    {
+                        Release(device);
+                    }
+                }
+
+                if (index == count) return ids;
+
+                var result = new String[index];
+                Array.Copy(ids, result, index);
+
+                return result;
+            }
+            finally
+            {
+                Release(collection);
+            }
+        }
+        catch
+        {
+            return [];
+        }
+        finally
+        {
+            Release(enumerator);
+        }
+    }
+
     /// <summary>获取指定方向的默认端点 ID</summary>
     /// <param name="enumerator">设备枚举器</param>
-    /// <param name="input">true 取采集端点</param>
-    /// <returns>设备 ID；失败返回 null</returns>
+    /// <param name="input">true 取采集端点</param>    /// <returns>设备 ID；失败返回 null</returns>
     public static String GetDefaultId(IMMDeviceEnumerator enumerator, Boolean input)
     {
         if (enumerator.GetDefaultAudioEndpoint(input ? E_CAPTURE : E_RENDER, E_CONSOLE, out var device) != 0 || device == null) return null;
@@ -1143,6 +1195,24 @@ internal interface IMMDeviceEnumerator
     [PreserveSig] Int32 UnregisterEndpointNotificationCallback(IntPtr client);
 }
 
+[ComImport, Guid("7991EEC9-7E89-4D85-8390-6C703CEC60C0"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IMMNotificationClient
+{
+    [PreserveSig] Int32 OnDeviceStateChanged([MarshalAs(UnmanagedType.LPWStr)] String deviceId, UInt32 newState);
+    [PreserveSig] Int32 OnDeviceAdded([MarshalAs(UnmanagedType.LPWStr)] String deviceId);
+    [PreserveSig] Int32 OnDeviceRemoved([MarshalAs(UnmanagedType.LPWStr)] String deviceId);
+    [PreserveSig] Int32 OnDefaultDeviceChanged(Int32 flow, Int32 role, [MarshalAs(UnmanagedType.LPWStr)] String defaultDeviceId);
+    [PreserveSig] Int32 OnPropertyValueChanged([MarshalAs(UnmanagedType.LPWStr)] String deviceId, PropertyKey key);
+}
+
+/// <summary>PROPERTYKEY（GUID + 序号），用于端点属性通知</summary>
+[StructLayout(LayoutKind.Sequential)]
+internal struct PropertyKey
+{
+    public Guid FormatId;
+    public UInt32 PropertyId;
+}
+
 [ComImport, Guid("0BD7A1BE-7A1A-44DB-8397-CC5392387B5E"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
 internal interface IMMDeviceCollection
 {
@@ -1219,3 +1289,4 @@ internal struct PROPVARIANT
     public IntPtr data2;
 }
 #endregion
+
