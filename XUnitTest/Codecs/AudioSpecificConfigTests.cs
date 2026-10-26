@@ -68,7 +68,7 @@ public class AudioSpecificConfigTests
         // ADTS: AAC-LC, 44100Hz, 立体声, MPEG4
         var adts = new AacCodec.AdtsInfo
         {
-            Profile = 1,          // LC
+            Profile = 2,          // LC
             SampleRateIndex = 4,  // 44100
             SampleRate = 44100,
             Channels = 2,
@@ -79,7 +79,7 @@ public class AudioSpecificConfigTests
         };
 
         var asc = AudioSpecificConfig.FromAdts(adts);
-        Assert.Equal(2, asc.AudioObjectType);  // Profile(1) + 1 = AOT(2)
+        Assert.Equal(2, asc.AudioObjectType);  // Profile 与 AOT 一致
         Assert.Equal(4, asc.SamplingFrequencyIndex);
         Assert.Equal(44100, asc.SamplingFrequency);
         Assert.Equal(2, asc.ChannelConfiguration);
@@ -92,7 +92,7 @@ public class AudioSpecificConfigTests
         var asc = AudioSpecificConfig.FromParameters(2, 44100, 2);
         var adts = asc.ToAdtsInfo(100, true);
 
-        Assert.Equal(1, adts.Profile);         // AOT(2) - 1 = 1
+        Assert.Equal(2, adts.Profile);         // Profile 与 AOT 一致
         Assert.Equal(4, adts.SampleRateIndex);
         Assert.Equal(44100, adts.SampleRate);
         Assert.Equal(2, adts.Channels);
@@ -106,7 +106,7 @@ public class AudioSpecificConfigTests
     {
         var original = new AacCodec.AdtsInfo
         {
-            Profile = 1,
+            Profile = 2,
             SampleRateIndex = 4,
             SampleRate = 44100,
             Channels = 2,
@@ -158,6 +158,47 @@ public class AudioSpecificConfigTests
         Assert.Equal(44100, asc.SamplingFrequency);
         Assert.Equal(2, asc.ChannelConfiguration);
         Assert.False(asc.ExtensionFlag);
+    }
+
+    [Fact(DisplayName = "Parse 解析 HE-AAC v2（SBR+PS）配置")]
+    public void Parse_HeAacV2()
+    {
+        // 22050Hz 单声道核心 + SBR(44100) + PS
+        var data = new Byte[] { 0x13, 0x88, 0x56, 0xE5, 0xA4 };
+        var asc = AudioSpecificConfig.Parse(data);
+
+        Assert.Equal(2, asc.AudioObjectType);
+        Assert.Equal(1, asc.ChannelConfiguration);
+        Assert.Equal(22050, asc.EffectiveSampleRate);
+        Assert.True(asc.SbrPresentFlag);
+        Assert.True(asc.PsPresentFlag);
+        Assert.Equal(5, asc.ExtensionAudioObjectType);
+        Assert.Equal(44100, asc.EffectiveExtensionSampleRate);
+    }
+
+    [Fact(DisplayName = "Parse 解析 7.1 声道配置并给出 8 声道")]
+    public void Parse_SevenPlusOne()
+    {
+        var data = new Byte[] { 0x11, 0xB8, 0x56, 0xE5, 0x00 };
+        var asc = AudioSpecificConfig.Parse(data);
+
+        Assert.Equal(2, asc.AudioObjectType);
+        Assert.Equal(7, asc.ChannelConfiguration);
+        Assert.Equal(8, asc.ChannelCount);
+        Assert.Equal(48000, asc.EffectiveSampleRate);
+        Assert.False(asc.SbrPresentFlag);
+    }
+
+    [Fact(DisplayName = "HE-AAC v2 配置序列化后仍保留 SBR/PS")]
+    public void HeAacV2_RoundTrip()
+    {
+        var asc = AudioSpecificConfig.Parse(new Byte[] { 0x13, 0x88, 0x56, 0xE5, 0xA4 });
+        var parsed = AudioSpecificConfig.Parse(asc.ToByteArray());
+
+        Assert.True(parsed.SbrPresentFlag);
+        Assert.True(parsed.PsPresentFlag);
+        Assert.Equal(22050, parsed.EffectiveSampleRate);
+        Assert.Equal(44100, parsed.EffectiveExtensionSampleRate);
     }
 
     [Fact(DisplayName = "Parse 多组采样率索引")]

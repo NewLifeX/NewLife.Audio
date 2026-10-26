@@ -178,3 +178,64 @@ public class RtpDepacketizerTests
         Assert.Equal(new Byte[] { 9 }, frame);
     }
 }
+
+public class AacRtpTests
+{
+    [Fact(DisplayName = "AAC RTP单包封装带AU头并可解包")]
+    public void Packetize_SingleAu_AddsHeader()
+    {
+        var packetizer = new AacRtpPacketizer(97, 1400);
+        var au = new Byte[] { 1, 2, 3, 4, 5 };
+
+        var packets = packetizer.Packetize(au, 1024);
+
+        var packet = Assert.Single(packets);
+        Assert.True(packet.Marker);
+        Assert.Equal(97, packet.PayloadType);
+        Assert.Equal(4 + au.Length, packet.Payload.Length);
+        Assert.Equal(0, packet.Payload[0]);
+        Assert.Equal(16, packet.Payload[1]);
+        Assert.Equal(au, packet.Payload[4..]);
+    }
+
+    [Fact(DisplayName = "AAC RTP分片后按Marker重组出原AU")]
+    public void Packetize_Depacketize_LargeAu_RoundTrip()
+    {
+        var au = new Byte[3000];
+        new Random(42).NextBytes(au);
+
+        var packetizer = new AacRtpPacketizer(97, 200);
+        var packets = packetizer.Packetize(au, 1024);
+        Assert.True(packets.Length > 1);
+        Assert.False(packets[0].Marker);
+        Assert.True(packets[^1].Marker);
+
+        var depacketizer = new AacRtpDepacketizer();
+        Byte[] result = null;
+        foreach (var packet in packets)
+        {
+            if (depacketizer.Submit(packet, out var output)) result = output;
+        }
+
+        Assert.NotNull(result);
+        Assert.Equal(au, result);
+    }
+
+    [Fact(DisplayName = "AAC RTP连续AU按时间戳隔离")]
+    public void Depacketize_TwoAus_ProducesTwoFrames()
+    {
+        var packetizer = new AacRtpPacketizer(97, 1400);
+        var depacketizer = new AacRtpDepacketizer();
+        var outputs = new System.Collections.Generic.List<Byte[]>();
+
+        foreach (var packet in packetizer.Packetize([1, 2, 3], 1024))
+            if (depacketizer.Submit(packet, out var output)) outputs.Add(output);
+
+        foreach (var packet in packetizer.Packetize([4, 5, 6], 1024))
+            if (depacketizer.Submit(packet, out var output)) outputs.Add(output);
+
+        Assert.Equal(2, outputs.Count);
+        Assert.Equal(new Byte[] { 1, 2, 3 }, outputs[0]);
+        Assert.Equal(new Byte[] { 4, 5, 6 }, outputs[1]);
+    }
+}

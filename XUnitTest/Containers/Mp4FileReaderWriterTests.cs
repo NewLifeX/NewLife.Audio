@@ -1,6 +1,7 @@
 using System;
 using System.IO;
 using NewLife.Audio;
+using NewLife.Audio.Codecs;
 using NewLife.Audio.Containers;
 using NewLife.Audio.DSP;
 using Xunit;
@@ -92,6 +93,40 @@ public class Mp4FileReaderWriterTests
         var frame = reader.ReadFrame();
         Assert.NotNull(frame);
         Assert.Equal(200, frame.Total);
+    }
+
+    [Fact(DisplayName = "MP4写入AAC帧后可解析ASC并解码")]
+    public void Writer_EncodeAac_WriterReader_Decodes()
+    {
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16, Encoding = AVTypes.AAC, SamplesPerFrame = 1024 };
+        var codec = new AacCodec();
+        var options = new AacEncoderOptions { SampleRate = 44100, Channels = 1, Bitrate = 64000 };
+        var adts = codec.FromPcm(new Byte[4096], options).GetSpan().ToArray();
+        var info = AacCodec.ParseAdtsHeader(adts, 0);
+        Assert.NotNull(info);
+        var headerSize = info.ProtectionAbsent ? 7 : 9;
+        var raw = adts[headerSize..(Int32)info.FrameLength];
+
+        using var ms = new MemoryStream();
+        using (var writer = new Mp4FileWriter(ms, format))
+        {
+            writer.WriteFrame(raw);
+        }
+        ms.Position = 0;
+
+        using var reader = new Mp4FileReader(ms);
+        Assert.NotNull(reader.AacConfig);
+        Assert.Equal(44100, reader.Format.SampleRate);
+        Assert.Equal(1, reader.Format.Channels);
+
+        var frame = reader.ReadFrame();
+        Assert.NotNull(frame);
+
+        var decoder = new AacCodec();
+        var decoded = decoder.ToPcm(frame.GetSpan(), reader.AacConfig);
+        Assert.True(decoded.Total > 0);
+        Assert.Equal(44100, decoder.SampleRate);
+        Assert.Equal(1, decoder.Channels);
     }
 
     [Fact(DisplayName = "MP4容器工厂识别mp4扩展名")]

@@ -47,6 +47,11 @@ public class CodecRegistry
     /// <returns></returns>
     public Boolean IsSupported(AVTypes avType) => _codecs.ContainsKey(avType) || _factories.ContainsKey(avType);
 
+    /// <summary>检查指定编码类型是否通过工厂注册（每次创建新实例）</summary>
+    /// <param name="avType">音频编码类型</param>
+    /// <returns></returns>
+    public Boolean IsFactory(AVTypes avType) => _factories.ContainsKey(avType);
+
     /// <summary>获取所有已注册的编码类型</summary>
     public IReadOnlyCollection<AVTypes> RegisteredTypes => [.. _codecs.Keys, .. _factories.Keys];
 }

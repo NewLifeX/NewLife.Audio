@@ -139,17 +139,36 @@ Run("MP3 编码与帧解析", () =>
     if (!Mp3Codec.IsMp3Frame(header, 0)) throw new Exception("IsMp3Frame 有效帧返回 false");
 });
 
-Run("AAC ADTS 编码与解析", () =>
+Run("AAC ADTS 解析与编码解码", () =>
 {
     var codec = new AacCodec();
     var pcm = MakeSinePcm(2048, 440, 44100);
-    var encoded = codec.FromPcm(pcm, null);
-    if (encoded.Total <= 0) throw new Exception("编码输出为空");
-    if (encoded[0] != 0xFF || (encoded[1] & 0xF0) != 0xF0) throw new Exception("缺少 ADTS 同步字");
 
-    var span = encoded.GetSpan();
+    var options = new AacEncoderOptions { SampleRate = 44100, Channels = 1, Bitrate = 64000 };
+    var encoded = codec.FromPcm(pcm, options);
+    if (encoded.Total <= 0 || !AacCodec.IsAdtsFormat(encoded.GetSpan())) throw new Exception("AAC 编码输出不是有效 ADTS");
+
+    var decoded = new AacCodec().ToPcm(encoded.GetSpan(), null);
+    if (decoded.Total <= 0) throw new Exception("AAC 解码输出为空");
+
+    var header = new Byte[] { 0xFF, 0xF1, 0x50, 0x80, 0x20, 0x1F, 0xFC };
+    var span = header.AsSpan();
+    if (!AacCodec.IsAdtsFormat(span)) throw new Exception("ADTS 同步字检测失败");
     var adts = AacCodec.ParseAdtsHeader(span, 0);
     if (adts == null || adts.SampleRate <= 0) throw new Exception("ADTS 头解析失败");
+});
+
+Run("AAC LATM 封装与解码", () =>
+{
+    var codec = new AacCodec();
+    var pcm = MakeSinePcm(2048, 440, 44100);
+    var options = new AacEncoderOptions { SampleRate = 44100, Channels = 1, Bitrate = 64000, Adts = false };
+    var raw = codec.FromPcm(pcm, options).GetSpan().ToArray();
+    var asc = AudioSpecificConfig.FromParameters(2, 44100, 1).ToByteArray();
+    var loas = AacLatmWriter.Write(asc, [raw]);
+    if (!AacCodec.IsLoasFormat(loas)) throw new Exception("LATM 同步字检测失败");
+    var decoded = new AacCodec().ToPcm(loas, null);
+    if (decoded.Total <= 0) throw new Exception("LATM 解码输出为空");
 });
 
 Run("FLAC 编码往返", () =>

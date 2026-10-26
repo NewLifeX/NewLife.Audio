@@ -1,5 +1,6 @@
 using System;
 using NewLife.Audio;
+using NewLife.Audio.Codecs;
 using NewLife.Data;
 using Xunit;
 
@@ -74,7 +75,26 @@ public class AudioCodecFactoryTests
         Assert.Equal(pcm.Length / 2, result.Total);
     }
 
-    [Fact(DisplayName = "工厂不支持的编码类型抛NotSupportedException")]
+    [Fact(DisplayName = "工厂AAC按流创建独立实例，可编码并解码")]
+    public void Aac_IsFactoryRegistered_AndEncodes()
+    {
+        Assert.True(_factory.Registry.IsFactory(AVTypes.AAC));
+        Assert.True(_factory.Registry.IsFactory(AVTypes.AACLC));
+        Assert.True(_factory.Registry.IsFactory(AVTypes.HEAAC));
+
+        var first = _factory.Registry.GetCodec(AVTypes.AAC);
+        var second = _factory.Registry.GetCodec(AVTypes.AAC);
+        Assert.NotSame(first, second);
+
+        var encoded = _factory.FromPcm(AVTypes.AAC, new ArrayPacket(new Byte[4096]));
+        Assert.True(encoded.Total > 0);
+        Assert.True(AacCodec.IsAdtsFormat(encoded.GetSpan().ToArray()));
+
+        var decoded = _factory.ToPcm(AVTypes.AAC, encoded);
+        Assert.True(decoded.Total > 0);
+    }
+
+    [Fact(DisplayName = "工厂不支持的类型抛NotSupportedException")]
     public void ToPcm_UnsupportedType_ThrowsNotSupported()
     {
         var data = new Byte[] { 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00 };
