@@ -15,7 +15,7 @@
 | 格式探测 | `AudioProbe` 按魔术字节识别 WAV/RF64/Ogg/FLAC/MP3/ADTS/MP4；扩展名只作提示，未知时明确返回 Unknown |
 | 元数据管理 | WAV（LIST/INFO）、MP3（ID3v2.4/v1.1）、FLAC（VORBIS_COMMENT）、Ogg（OpusTags/Vorbis comment）、M4A（udta/meta/ilst）均可读写 |
 
-> 已知限制：WAV 已支持 RIFF 块遍历、`fmt` 16/18/40、`WAVE_FORMAT_EXTENSIBLE`、IEEE float、24/32 bit、RF64 与 `LIST/INFO`；FLAC 读取器与 `FlacFileWriter` 均已提供；CAF 只有读取器，AMR/WMA 明确不做。`AudioContainerFactory.CreateReader(stream)` 未识别格式时仍回退 `RawPcmReader` 默认参数（待修复项 FIX-009）；严格探测请直接用 `AudioProbe`，未知时返回 Unknown。
+> 已知限制：WAV 已支持 RIFF 块遍历、`fmt` 16/18/40、`WAVE_FORMAT_EXTENSIBLE`、IEEE float、24/32 bit、RF64 与 `LIST/INFO`；FLAC 读取器与 `FlacFileWriter` 均已提供；CAF 只有读取器，AMR/WMA 明确不做。`AudioContainerFactory.CreateReader(stream)` 只按魔术字节识别，未识别时抛 `NotSupportedException`（FIX-009 已修），需要判断未知流请用 `AudioProbe`，需要裸 PCM 请显式构造 `RawPcmReader` 并传入格式。
 
 ---
 
@@ -25,7 +25,7 @@
 |---|---|
 | `IAudioContainerReader` | 容器读取器接口：`Format` / `CodecType` / `TotalFrames` / `Duration` / `Metadata` 属性 + `ReadFrame()` / `SeekFrame()`，实现 `IDisposable` |
 | `IAudioContainerWriter` | 容器写入器接口：`Format` 属性 + `WriteMetadata()` / `WriteFrame()` / `Flush()`，实现 `IDisposable` |
-| `AudioContainerFactory` | 容器工厂：`CreateReader(path)` / `CreateReader(stream, hint)` / `CreateWriter(path, format)` / `CreateWriter(stream, hint, format)`；写出支持 `.wav` / `.ogg` / `.opus` / `.mp3` / `.mp4` / `.m4a` / `.flac`；读取按扩展名或魔术字节识别 WAV/Ogg/FLAC/MP3/MP4，未识别时回退 `RawPcmReader`（严格探测请用 `AudioProbe`） |
+| `AudioContainerFactory` | 容器工厂：`CreateReader(path)` / `CreateReader(stream, hint)` / `CreateWriter(path, format)` / `CreateWriter(stream, hint, format)`；写出支持 `.wav` / `.ogg` / `.opus` / `.mp3` / `.mp4` / `.m4a` / `.flac`；读取按扩展名或魔术字节识别 WAV/Ogg/FLAC/MP3/MP4，未识别时抛 `NotSupportedException`（判断未知流用 `AudioProbe`，读裸 PCM 显式构造 `RawPcmReader`）；不可定位流会把已读取的头部字节还回读取器 |
 | `WaveFileReader` / `WaveFileWriter` | WAV 容器读写器：RIFF 块遍历、`fmt` 16/18/40、EXTENSIBLE、浮点、24/32 bit、RF64、`LIST/INFO`；写入为流式头 + 结束回填 |
 | `OggFileReader` / `OggFileWriter` | Ogg 容器读写器（Vorbis + Opus；OpusHead/OpusTags、lacing、granule/pre-skip 按 RFC 7845；Vorbis identification/comment/setup 独立头页由 `WriteVorbisHeaders` 写入） |
 | `Mp4FileReader` / `Mp4FileWriter` | MP4/M4A 容器读写器（ISO BMFF 基础盒子 + `esds` + `udta/meta/ilst` 标签；无编辑列表/章节） |
