@@ -13,7 +13,7 @@ public class FlacCodecTests
     public void CodecInfo_IsCorrect()
     {
         Assert.Equal("FLAC", _codec.Name);
-        Assert.Equal("1.0", _codec.Version);
+        Assert.Equal("2.0", _codec.Version);
         Assert.True(_codec.IsStateful);
     }
 

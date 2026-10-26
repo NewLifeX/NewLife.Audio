@@ -71,6 +71,12 @@ public class FlacContainerReader : IAudioContainerReader
                 totalSamples = ((UInt64)(info[13] & 0x0F) << 32) | ((UInt64)info[14] << 24) |
                                ((UInt64)info[15] << 16) | ((UInt64)info[16] << 8) | info[17];
             }
+            else if (blockType == 4 && blockSize > 0)
+            {
+                var comment = new Byte[blockSize];
+                var read = _stream.Read(comment, 0, blockSize);
+                if (read == blockSize) ReadVorbisComment(comment);
+            }
             else
             {
                 _stream.Seek(blockSize, SeekOrigin.Current);
@@ -99,49 +105,18 @@ public class FlacContainerReader : IAudioContainerReader
 
         _stream.Seek(_currentPos, SeekOrigin.Begin);
 
-        // 读取足够的字节以找到帧边界
         var read = _stream.Read(_readBuffer, 0, _readBuffer.Length);
         if (read < 6) return null;
 
-        // 搜索帧同步码
-        var frameStart = -1;
-        for (var i = 0; i < read - 1; i++)
-        {
-            var word = (Int16)((_readBuffer[i] << 8) | _readBuffer[i + 1]);
-            if ((word >> 2) == FrameSyncCode)
-            {
-                frameStart = i;
-                break;
-            }
-        }
+        if (!TryFindFrame(_readBuffer, 0, read, out var frameStart)) return null;
 
-        if (frameStart < 0)
+        // 搜索下一帧以确定当前帧长度（用帧头 CRC-8 校验，避免把音频数据中的伪同步当作帧）
+        if (TryFindFrame(_readBuffer, frameStart + 6, read, out var nextFrameStart))
         {
-            _currentPos += read;
-            return new ArrayPacket(_readBuffer, 0, read);
-        }
-
-        // 搜索下一帧同步码以确定当前帧长度
-        var nextFrameStart = -1;
-        for (var i = frameStart + 6; i < read - 1; i++)
-        {
-            var word = (Int16)((_readBuffer[i] << 8) | _readBuffer[i + 1]);
-            if ((word >> 2) == FrameSyncCode)
-            {
-                nextFrameStart = i;
-                break;
-            }
-        }
-
-        if (nextFrameStart > frameStart)
-        {
-            // 找到完整帧边界
-            var frameLen = nextFrameStart - frameStart;
             _currentPos += nextFrameStart;
-            return new ArrayPacket(_readBuffer, frameStart, frameLen);
+            return new ArrayPacket(_readBuffer, frameStart, nextFrameStart - frameStart);
         }
 
-        // 未找到下一帧，返回从当前帧开始的所有数据
         _currentPos += read;
         return new ArrayPacket(_readBuffer, frameStart, read - frameStart);
     }
@@ -161,4 +136,108 @@ public class FlacContainerReader : IAudioContainerReader
 
     /// <summary>释放底层数据流</summary>
     public void Dispose() => _stream?.Dispose();
+
+    private void ReadVorbisComment(Byte[] data)
+    {        var offset = 0;
+        if (!TryReadLE32(data, ref offset, out var vendorLength) || offset + vendorLength > data.Length) return;
+        offset += vendorLength;
+
+        if (!TryReadLE32(data, ref offset, out var count)) return;
+
+        for (var i = 0; i < count && offset + 4 <= data.Length; i++)
+        {
+            if (!TryReadLE32(data, ref offset, out var length)) return;
+            if (length < 0 || offset + length > data.Length) return;
+
+            var text = System.Text.Encoding.UTF8.GetString(data, offset, length);
+            offset += length;
+
+            var index = text.IndexOf('=');
+            if (index <= 0) continue;
+
+            var key = text.Substring(0, index).ToUpperInvariant();
+            var value = text.Substring(index + 1);
+
+            switch (key)
+            {
+                case "TITLE": Metadata.Title = value; break;
+                case "ARTIST": Metadata.Artist = value; break;
+                case "ALBUM": Metadata.Album = value; break;
+                case "GENRE": Metadata.Genre = value; break;
+                case "COMMENT": Metadata.Comment = value; break;
+                case "TRACKNUMBER":
+                    if (Int32.TryParse(value, out var track)) Metadata.TrackNumber = track;
+                    break;
+                case "DATE":
+                    if (Int32.TryParse(value.Length >= 4 ? value.Substring(0, 4) : value, out var year)) Metadata.Year = year;
+                    break;
+            }
+        }
+    }
+
+    private static Boolean TryReadLE32(Byte[] data, ref Int32 offset, out Int32 value)
+    {
+        value = 0;
+        if (offset + 4 > data.Length) return false;
+
+        value = data[offset] | data[offset + 1] << 8 | data[offset + 2] << 16 | data[offset + 3] << 24;
+        offset += 4;
+        return true;
+    }
+
+    /// <summary>在缓冲区中查找下一个带合法帧头 CRC-8 的 FLAC 帧</summary>
+    private static Boolean TryFindFrame(Byte[] buffer, Int32 start, Int32 end, out Int32 index)
+    {
+        for (var i = Math.Max(0, start); i + 6 <= end; i++)
+        {
+            if (buffer[i] != 0xFF || (buffer[i + 1] & 0xFC) != 0xF8) continue;
+            if ((buffer[i + 3] & 0x01) != 0) continue;   // reserved 位必须为 0
+
+            var pos = i + 4;
+            var first = buffer[pos];
+
+            // UTF-8 编码的帧号/样本号
+            var count = 1;
+            if ((first & 0x80) != 0)
+            {
+                var mask = 0x80;
+                count = 0;
+                while ((first & mask) != 0 && count < 6)
+                {
+                    count++;
+                    mask >>= 1;
+                }
+                if (count < 2) continue;
+            }
+            pos += count;
+
+            var blockCode = buffer[i + 2] >> 4;
+            var rateCode = buffer[i + 2] & 0x0F;
+            pos += blockCode switch { 6 => 1, 7 => 2, _ => 0 };
+            pos += rateCode switch { 12 => 1, 13 or 14 => 2, _ => 0 };
+
+            if (pos >= end) continue;
+            if (Crc8(buffer, i, pos - i) != buffer[pos]) continue;
+
+            index = i;
+            return true;
+        }
+
+        index = -1;
+        return false;
+    }
+
+    private static Byte Crc8(Byte[] data, Int32 offset, Int32 count)
+    {
+        Byte crc = 0;
+        for (var i = 0; i < count; i++)
+        {
+            crc ^= data[offset + i];
+            for (var bit = 0; bit < 8; bit++)
+            {
+                crc = (Byte)((crc & 0x80) != 0 ? (crc << 1) ^ 0x07 : crc << 1);
+            }
+        }
+        return crc;
+    }
 }
