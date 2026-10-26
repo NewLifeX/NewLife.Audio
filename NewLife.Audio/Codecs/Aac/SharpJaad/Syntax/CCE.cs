@@ -29,7 +29,7 @@ namespace SharpJaad.AAC.Syntax
 
         public CCE(DecoderConfig config)
         {
-            _ics = new ICStream(config);
+            _ics = new ICStream(config, ICStream.DefaultNoiseSeed ^ 0x2C1B3C6D);
             _channelPair = new bool[8];
             _idSelect = new int[8];
             _chSelect = new int[8];

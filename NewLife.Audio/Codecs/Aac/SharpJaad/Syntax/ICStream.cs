@@ -1,4 +1,4 @@
-﻿using SharpJaad.AAC.Error;
+using SharpJaad.AAC.Error;
 using SharpJaad.AAC.Gain;
 using SharpJaad.AAC.Huffman;
 using SharpJaad.AAC.Tools;
@@ -10,7 +10,10 @@ namespace SharpJaad.AAC.Syntax
     {
         private const int SF_DELTA = 60;
         private const int SF_OFFSET = 200;
-        private static int randomState = 0x1F2E3D4C;
+
+        /// <summary>PNS 噪声序列的默认种子</summary>
+        public const Int32 DefaultNoiseSeed = 0x1F2E3D4C;
+
         private int _frameLength;
         //always needed
         private ICSInfo _info;
@@ -20,6 +23,7 @@ namespace SharpJaad.AAC.Syntax
         private float[] _scaleFactors;
         private int _globalGain;
         private bool _pulseDataPresent, _tnsDataPresent, _gainControlPresent;
+        private Int32 _randomState;
         //only allocated if needed
         private TNS _tns;
         private GainControl _gainControl;
@@ -27,13 +31,18 @@ namespace SharpJaad.AAC.Syntax
         private int _pulseCount;
         private int _pulseStartSWB;
         //error resilience
-#pragma warning disable CS0649 // Field 'ICStream._noiseUsed' is never assigned to, and will always have its default value false
         private bool _noiseUsed;
-#pragma warning restore CS0649 // Field 'ICStream._noiseUsed' is never assigned to, and will always have its default value false
         private int _reorderedSpectralDataLen, _longestCodewordLen;
         private RVLC _rvlc;
 
-        public ICStream(DecoderConfig config)
+        /// <summary>用默认噪声种子构造</summary>
+        /// <param name="config">解码器配置</param>
+        public ICStream(DecoderConfig config) : this(config, DefaultNoiseSeed) { }
+
+        /// <summary>指定 PNS 噪声种子构造</summary>
+        /// <param name="config">解码器配置</param>
+        /// <param name="noiseSeed">PNS 噪声序列种子；不同声道应使用不同种子，同一码流重复解码结果可复现</param>
+        public ICStream(DecoderConfig config, Int32 noiseSeed)
         {
             _frameLength = config.GetFrameLength();
             _info = new ICSInfo(config);
@@ -41,6 +50,7 @@ namespace SharpJaad.AAC.Syntax
             _sectEnd = new int[Constants.MAX_SECTIONS];
             _data = new float[_frameLength];
             _scaleFactors = new float[Constants.MAX_SECTIONS];
+            _randomState = noiseSeed;
         }
 
         /* ========= decoding ========== */
@@ -243,14 +253,15 @@ namespace SharpJaad.AAC.Syntax
                     else if (hcb == HCB.NOISE_HCB)
                     {
                         //apply PNS: fill with random values
+                        _noiseUsed = true;
                         for (w = 0; w < groupLen; w++, off += 128)
                         {
                             float energy = 0;
 
                             for (k = 0; k < width; k++)
                             {
-                                randomState = 1664525 * randomState + 1013904223;
-                                _data[off + k] = randomState;
+                                _randomState = 1664525 * _randomState + 1013904223;
+                                _data[off + k] = _randomState;
                                 energy += _data[off + k] * _data[off + k];
                             }
 

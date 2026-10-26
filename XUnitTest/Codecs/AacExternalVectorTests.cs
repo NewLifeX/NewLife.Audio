@@ -78,6 +78,21 @@ public class AacExternalVectorTests
         Assert.True(corr >= 0.90, $"相关度 {corr:F4} 低于门禁 0.90");
     }
 
+    [Fact(DisplayName = "AAC 解码可复现：同一码流连续解码两次逐字节一致")]
+    public void Decode_IsDeterministic()
+    {
+        // 噪声填充（PNS）的随机序列必须是流实例私有且种子固定：早前是进程级静态状态，
+        // 同一文件第二次解码会接着上次的状态继续推进（当前这批向量不含 PNS，本用例保护的是契约本身）。
+        var first = AudioFile.ReadPcm(AssetPath("lc-22k.mp4"));
+        var second = AudioFile.ReadPcm(AssetPath("lc-22k.mp4"));
+
+        Assert.Equal(first.Data.Length, second.Data.Length);
+        for (var i = 0; i < first.Data.Length; i++)
+        {
+            if (first.Data[i] != second.Data[i]) Assert.Fail($"第 {i} 字节不一致：同一码流两次解码结果不同");
+        }
+    }
+
     private static (Double snr, Double corr, AudioFormat format) Compare(String streamName, String referenceName, Double skipSeconds = 0)
     {
         var audio = AudioFile.ReadPcm(AssetPath(streamName));

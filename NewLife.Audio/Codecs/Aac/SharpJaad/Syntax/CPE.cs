@@ -12,8 +12,9 @@ namespace SharpJaad.AAC.Syntax
         public CPE(DecoderConfig config)
         {
             _msUsed = new bool[Constants.MAX_MS_MASK];
+            // PNS 噪声序列按声道区分，否则双声道噪声完全相干
             _icsL = new ICStream(config);
-            _icsR = new ICStream(config);
+            _icsR = new ICStream(config, ICStream.DefaultNoiseSeed ^ 0x5BF03635);
         }
 
         public void Decode(BitStream input, DecoderConfig conf)
