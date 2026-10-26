@@ -104,7 +104,7 @@ Nuget：NewLife.Audio
 - **文件输出** — WAV / 裸 PCM / MP3 / FLAC，扩展名决定格式（压缩格式走重采样 → 编码 → 容器管线）
 - **流式输出** — 逐块 PCM，适合 HTTP/WebSocket 边合成边发送
 - **引擎可插拔** — 系统语音、`HttpTtsEngine`、`ProcessTtsEngine`、自定义 `ITtsEngine`
-- **可选高级** — 音色/语速、磁盘缓存、预生成语音库、文本规范化（`NewLife.Audio.Tts.Advanced`）
+- **可选高级** — 音色/语速与音色目录（`TtsVoiceCatalog` 跨引擎按语言与场景挑选）、磁盘缓存、预生成语音库、文本规范化（`NewLife.Audio.Tts.Advanced`）
 
 ## 安装
 

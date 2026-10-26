@@ -1,6 +1,6 @@
 # TTS-语音合成
 
-> 版本：v3.1 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
+> 版本：v3.2 | 日期：2026-10-26 | [← 返回 README](../README.zh-CN.md) | [English README](../README.md)
 > 需求对应：[需求文档](需求文档.md) 第 9 章 | 功能清单：[功能模块清单](功能模块清单.md)
 
 > 设计目标：普通用户三行代码出声；需要音色、在线服务或自定义模型时再往下看。主命名空间只放极简入口、模型与引擎实现，缓存/预生成/文本规范化全部下沉到 `NewLife.Audio.Tts.Advanced`。
@@ -41,7 +41,7 @@ await TtsClient.Default.SayAsync("系统已启动");
 // 1) 直接播报：播完/取消/Stop 时任务完成
 await tts.SayAsync("设备A2温度过高");
 
-// 2) 保存为文件：扩展名决定格式（.wav / .pcm）
+// 2) 保存为文件：扩展名决定格式（.wav / .pcm / .mp3 / .flac）
 var result = await tts.SaveAsync("设备A2温度过高", "alert.wav");
 Console.WriteLine($"{result.Bytes} 字节，{result.AudioTime:F1} 秒");
 
@@ -113,29 +113,66 @@ await tts.SaveAsync("请注意", "alert.wav",
 | macOS `say` | 词/分钟 = 175 × 倍率，限制 80~500 |
 | espeak-ng | 词/分钟 = 175 × 倍率，限制 80~500 |
 
+### 3.1 音色目录与多音色管理
+
+`TtsVoice` 统一描述音色的引擎原生标识（`Id`）、语言（`Culture`）、性别与适用场景（`Scenarios`），并标记默认音色。
+`TtsVoiceCatalog` 把多个引擎的音色汇总成一份目录，按语言与场景挑选：
+
+```csharp
+var catalog = new TtsVoiceCatalog();
+catalog.Add(new SystemSpeechEngine())
+       .Add(new AzureTtsEngine { SubscriptionKey = "your-key" });
+
+// 按语言 + 场景筛选
+foreach (var entry in catalog.Find("zh-CN", TtsScenario.Alert))
+    Console.WriteLine($"{entry.EngineName} {entry.Name} {entry.Gender}");
+
+// 挑选：同区域+场景 → 同区域 → 同语种+场景 → 同语种，同档优先默认音色
+var entry = catalog.Select("zh-CN", TtsScenario.Alert);
+var tts = new TtsClient(entry?.Engine ?? new SystemSpeechEngine());
+if (entry != null) tts.Options.Voice = entry.Id;
+
+// 或者只写选项：找不到匹配时返回 null 且不改动选项
+catalog.Apply(tts.Options, "zh-CN", TtsScenario.Notification);
+```
+
+| 成员 | 用途 |
+|---|---|
+| `Add(ITtsEngine)` / `Add(engineName, voices)` | 登记引擎并枚举音色，或登记静态音色描述（不绑定实例） |
+| `Find(language, scenario?, gender?)` | 条件筛选，无匹配返回空列表 |
+| `Select(language, scenario)` | 带优先级挑选，语言为空取默认音色，语言不匹配返回 `null` |
+| `SelectDefault(engineName?)` | 取默认音色（未标记默认时取首个条目） |
+| `Apply(options, language, scenario)` | 挑选并写回 `TtsOptions.Voice` |
+
+- 场景取值：`General` 通用、`Alert` 告警、`Notification` 通知、`Narration` 长文本朗读、`Conversation` 对话；音色未声明场景表示通用。
+- 语言既可写区域（`zh-CN`），也可只写语种（`en`）；`zh` 请求可命中 `zh-CN`，跨区域（`zh-CN` 对 `zh-TW`）只作兜底。
+- 目录不持有引擎生命周期、不改引擎状态，枚举失败按无音色处理。
+- 云端引擎内置常用音色快照（默认音色一定在内），完整列表按服务商文档替换 `Voices` 或向目录追加。
+
 ---
 
 ## 4. 文件格式能力
 
-**本轮只承诺 WAV 与裸 PCM**。这不是能力上限，而是现有压缩编码器还不具备交付质量：
+**当前支持 WAV、裸 PCM、MP3 与 FLAC**；MP3/FLAC 走压缩输出管线（重采样 → 编码 → 容器）：
 
 | 格式 | 现状 | 结论 |
 |---|---|---|
 | WAV (PCM) | `WavStreamWriter` / `WaveFileWriter` 完整，可回填长度 | ✅ 支持 |
 | 裸 PCM | 16 位小端 | ✅ 支持（流式/自定义协议） |
-| MP3 编码 | `Mp3Layer3Encoder` 已能产出标准码流并可被标准解码器播放，但音质仅 15.4 dB（见功能清单 IMP-001），不适合分发 | ❌ 暂不暴露（等音质修复） |
+| MP3 编码 | `TtsFormat.Mp3` 经 `AudioEncodePipeline` 调 `Mp3Layer3Encoder`（默认 128 kbps CBR + ID3v2.4）；质量门禁 13.8 dB，短块未实现 | ✅ 支持（CODEC-6d 短块待排期） |
+| FLAC 编码 | `TtsFormat.Flac` 经 `AudioEncodePipeline` 调 `FlacFileWriter`，无损输出 | ✅ 支持 |
 | AAC 编码 | 纯托管 AAC-LC 编码器已可用（ADTS/raw），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Opus 编码 | `OpusCodec` 自研 M1：包解析/范围编解码器就绪，托管 CELT/SILK 未完成；当前通过系统 ffmpeg 降级，可与标准解码器互操作 | 🟡 编解码降级可用，托管实现进行中，TTS 输出待接入 |
-| FLAC 编码 | `FlacCodec` 已是完整纯托管实现（Fixed/LPC 子帧、Rice 残差、MS 立体声、MD5），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Ogg Opus 封装 | `OggOpusStreamWriter` 支持标准 Ogg Opus 头、页与 granule；可封装**已编码**的 Opus 包 | ✅ 支持 |
 
-> **MP3 输入**：在线服务返回的 MP3 由内置 Layer III 解码器（`Mp3Layer3Decoder`，纯托管、零外部依赖）解码为 16 位 PCM，覆盖 MPEG-1/2/2.5、长短块与联合立体声；MP3 输出仍不在本轮范围。
+> **MP3 输入**：在线服务返回的 MP3 由内置 Layer III 解码器（`Mp3Layer3Decoder`，纯托管、零外部依赖）解码为 16 位 PCM，覆盖 MPEG-1/2/2.5、长短块与联合立体声；MP3 输出已接入 `TtsFormat.Mp3`。
 
-后续路线（需单独立项）：
+后续路线：
 
 1. **网络流式首选 Opus**：`OpusCodec` 已接入自研包解析与范围编解码器，托管 CELT/SILK 完成前通过系统 ffmpeg 降级；PCM 按源采样率编码后接 `OggOpusStreamWriter`，输出 `audio/ogg; codecs=opus`。
-2. **文件分发需要 MP3**：先修复托管 Layer III 编码器的音质（IMP-001），再接入 TTS 输出；备选 Windows Media Foundation 或原生 LAME。
-3. **无损 FLAC**：`FlacCodec` 纯托管编码已完成并可互操作，接入 TTS 输出即可（`TtsFormat` 增加 FLAC 分支）。
+2. **文件分发 MP3**：已接入 TTS 输出；短块（CODEC-6d）继续提升瞬态音质。
+3. **无损 FLAC**：已接入 TTS 输出。
+4. **AAC 输出**：复用现有 AAC-LC 编码器，按需求再接入。
 
 `TtsFormat` 与 `SaveAsync(stream, format)` 已为后续格式留好位置，加格式不改变极简 API。
 
@@ -260,6 +297,7 @@ await tts.SaveAsync("设备A2温度过高", "alert.wav");
 | 百度 | `per` 编号，默认 0（度小美） | `5+(倍率-1)×5`，范围 0~15 | `×5`，范围 0~15 |
 | 微软 | 完整音色名，默认 zh-CN-XiaoxiaoNeural | SSML prosody 百分比 | SSML prosody 百分比 |
 
+- 云端引擎内置常用音色快照（含默认音色与场景标注），`GetVoices()` 可直接枚举，完整列表按服务商文档替换 `Voices` 或追加；跨引擎按语言/场景挑选见 §3.1。
 - WAV 响应边收边剥头，适合大段文本；MP3 与腾讯云的 base64 音频必须整段解码，内存占用与音频时长成正比。
 - 服务端错误：HTTP 非 2xx 抛 `HttpRequestException`；HTTP 200 但返回 JSON 错误对象时抛 `InvalidOperationException`，消息里带服务端错误描述。
 - 令牌缓存：阿里云与百度在实例内缓存令牌并提前 60 秒刷新；多个引擎实例之间不共享缓存，需要共享时复用同一个引擎实例。
@@ -370,7 +408,7 @@ var text = TtsText.Default.Normalize("设备型号 A2 温度 35 度");
 | 引擎只产 PCM，不返回结果对象 | 文件封装、统计、播放统一由 `TtsClient` 完成，引擎实现更薄 |
 | 引擎构造注入，`TtsClient` 不开放继承 | 组合优于继承；单元测试与多引擎组合更简单 |
 | 默认按平台选择系统语音 | 普通用户零配置；Windows SAPI / macOS say / Linux espeak-ng |
-| 本轮只做 WAV/PCM | MP3/AAC/FLAC 编码器质量与场景仍需打磨（AAC 纯托管 LC 编码已可用）；Opus 自研 M1 可用（系统 ffmpeg 降级），TTS 接入单独立项 |
+| WAV/PCM 直写，MP3/FLAC 走压缩管线 | `AudioEncodePipeline` 统一完成重采样、编码与容器写出；AAC/Opus 输出待编码器就绪或场景明确后再接入 |
 | 系统语音走反射而非编译期引用 | 保持核心库零原生依赖与三 TFM；.NET Core 应用按需引用 `System.Speech` |
 | 缓存/预生成/文本规范化下沉到 `Tts.Advanced` | 主路径不落盘、不创建临时目录；高频告警场景按需启用 |
 | 不内置引擎降级链 | 链式降级会掩盖首包后失败、拼接不同音色；需要时由调用方用自定义引擎组合 |
