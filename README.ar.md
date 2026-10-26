@@ -42,7 +42,7 @@ NuGet: `NewLife.Audio`
 - **IMA ADPCM** (DVI4)
 - **Opus** (تنفيذ CELT مُدار بالكامل)
 - **MP3** (فك ترميز Huffman + التكميم العكسي + IMDCT + تركيب النطاقات الفرعية)
-- **AAC-LC** (تحليل ICS + فك ترميز Huffman + IMDCT + تداخل النوافذ بالجمع التراكبي)
+- **AAC** (فك ترميز AAC-LC/HE-AAC مُدار بالكامل؛ ترميز AAC-LC؛ ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (LPC ثابت + ترميز البواقي Rice + MD5)
 - **Ogg Vorbis** (ترميز/فك ترميز 3 حزم ترويسة)
 - **Speex** (CELP ضيّق النطاق مُدار بالكامل)

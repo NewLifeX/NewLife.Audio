@@ -42,7 +42,7 @@ Conversion PCM bidirectionnelle pour plus de 10 codecs audio, entièrement en C#
 - **IMA ADPCM** (DVI4)
 - **Opus** (implémentation CELT entièrement managée)
 - **MP3** (décodage Huffman + quantification inverse + IMDCT + synthèse par sous-bandes)
-- **AAC-LC** (analyse ICS + décodage Huffman + IMDCT + recouvrement-additif de fenêtres)
+- **AAC** (décodage AAC-LC/HE-AAC entièrement managé ; encodage AAC-LC ; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (LPC fixe + codage résiduel Rice + MD5)
 - **Ogg Vorbis** (encodage/décodage des 3 paquets d'en-tête)
 - **Speex** (CELP bande étroite entièrement managé)

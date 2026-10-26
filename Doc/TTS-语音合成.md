@@ -124,7 +124,7 @@ await tts.SaveAsync("请注意", "alert.wav",
 | WAV (PCM) | `WavStreamWriter` / `WaveFileWriter` 完整，可回填长度 | ✅ 支持 |
 | 裸 PCM | 16 位小端 | ✅ 支持（流式/自定义协议） |
 | MP3 编码 | 现有 `Mp3Codec.FromPcm` 是简化实现，帧长与 Huffman 不符合标准，标准解码器无法互通 | ❌ 不暴露 |
-| AAC 编码 | 依赖可选原生 `libfaac`；托管回退是 PCM 透传 | ❌ 不暴露 |
+| AAC 编码 | 纯托管 AAC-LC 编码器已可用（ADTS/raw），TTS 输出尚未接入 | 🟡 可用，待接入 |
 | Opus 编码 | 现有 `OpusCodec.FromPcm` 为简化 CELT，未验证标准互操作 | ❌ 不暴露 |
 | FLAC 编码 | 现有实现帧头/子帧不完整，解码器仅支持 Verbatim 子帧 | ❌ 不暴露 |
 | Ogg Opus 封装 | `OggOpusStreamWriter` 可封装**已编码**的 Opus 包 | 🟡 仅供在线服务透传 |

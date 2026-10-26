@@ -42,7 +42,7 @@ Bidirektionale PCM-Konvertierung für über 10 Audio-Codecs, vollständig in rei
 - **IMA ADPCM** (DVI4)
 - **Opus** (reine verwaltete CELT-Implementierung)
 - **MP3** (Huffman-Dekodierung + inverse Quantisierung + IMDCT + Subband-Synthese)
-- **AAC-LC** (ICS-Parsing + Huffman-Dekodierung + IMDCT + Fenster-Overlap-Add)
+- **AAC** (vollständig verwaltete AAC-LC/HE-AAC-Dekodierung; AAC-LC-Kodierung; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (Fixed LPC + Rice-Restkodierung + MD5)
 - **Ogg Vorbis** (Kodierung/Dekodierung von 3 Header-Paketen)
 - **Speex** (reines verwaltetes Schmalband-CELP)

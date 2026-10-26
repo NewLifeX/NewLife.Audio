@@ -44,7 +44,7 @@ Nuget：NewLife.Audio
 - **IMA ADPCM**（DVI4）
 - **Opus**（纯托管 CELT 实现）
 - **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman）
-- **AAC-LC**（ICS 解析 + Huffman 解码 + IMDCT + 窗函数重叠相加）
+- **AAC**（纯托管 AAC-LC/HE-AAC 解码；AAC-LC 编码；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
 - **Ogg Vorbis**（3 个头部包编码/解码）
 - **Speex**（纯托管窄带 CELP）

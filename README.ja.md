@@ -42,7 +42,7 @@ NuGet：`NewLife.Audio`
 - **IMA ADPCM**（DVI4）
 - **Opus**（純マネージド CELT 実装）
 - **MP3**（ハフマン復号 + 逆量子化 + IMDCT + サブバンド合成）
-- **AAC-LC**（ICS 解析 + ハフマン復号 + IMDCT + 窓関数オーバーラップ加算）
+- **AAC**（純マネージド AAC-LC/HE-AAC デコード、AAC-LC エンコード、ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差符号化 + MD5）
 - **Ogg Vorbis**（3 つのヘッダーパケットのエンコード/デコード）
 - **Speex**（純マネージド狭帯域 CELP）

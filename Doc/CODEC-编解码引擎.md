@@ -28,7 +28,7 @@
 | `ADPCMCodec` | IMA ADPCM 编解码器（无状态，类级单例） |
 | `G711ACodec` | G.711 A-law 编解码器（无状态，类级单例） |
 | `G711UCodec` | G.711 μ-law 编解码器（无状态，类级单例，查表法实现） |
-| `AacCodec` | AAC 编解码器（纯托管解码，编码通过 `FaacEncoder` 包装 libfaac 原生库） |
+| `AacCodec` | AAC 编解码器（纯托管：AAC-LC/HE-AAC v1/v2 解码 + AAC-LC 编码；ADTS/raw+ASC/MP4-M4A/3GP；详见 [AAC 编解码设计](AAC-编解码设计.md)） |
 | `OpusCodec` | Opus 编解码器（纯托管 CELT 实现，有状态，工厂模式创建实例） |
 | `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5，含 Xing/Info/VBRI 信息帧静音处理；编码 Layer III CBR） |
 | `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman → 帧组装，支持 9 档采样率与单/立体声 |
@@ -196,6 +196,7 @@ public interface IAudioChipHeader
 | 接口使用 `ReadOnlySpan<Byte>` + `IPacket` 返回 | `ReadOnlySpan<Byte>` 零拷贝输入，`IPacket` 是 NewLife 标准高性能缓冲区 |
 | 无状态编解码器使用类级单例 | 如 G.711/ADPCM/G.722/G.726 不保存流状态，一个实例服务多路数据，避免重复分配 |
 | 有状态编解码器通过工厂创建 | 如 Opus/AAC/FLAC 需保存帧间状态，`RegisterFactory` 为每个流创建独立实例 |
+| AAC 全托管、不引入原生依赖 | AAC-LC 编解码与 HE-AAC 解码统一用纯托管实现；`FaacEncoder` 标记 `[Obsolete]` 并停止主链路引用，下一主版本移除 |
 | `option` 参数保留 `Object` 类型 | 各编解码器配置差异大，统一为 `Object` 避免接口膨胀 |
 | 芯片头处理独立接口 | 便于新增厂商适配，不修改工厂核心逻辑 |
 
