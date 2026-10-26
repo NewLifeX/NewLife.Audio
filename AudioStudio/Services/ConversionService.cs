@@ -44,8 +44,16 @@ public class ConversionService
         var srcFormat = reader.Format;
         var srcCodecType = reader.CodecType;
 
-        // 确定目标格式
-        var dstFormat = targetFormat ?? srcFormat.Clone();
+        // 确定目标格式：以源格式为基线，只覆盖调用方明确指定的参数
+        // 直接整体替换会让未指定的采样率/位深变成 0，导致重采样目标为 0 或容器头写错
+        var dstFormat = srcFormat.Clone();
+        if (targetFormat != null)
+        {
+            if (targetFormat.SampleRate > 0) dstFormat.SampleRate = targetFormat.SampleRate;
+            if (targetFormat.Channels > 0) dstFormat.Channels = targetFormat.Channels;
+            if (targetFormat.BitsPerSample > 0) dstFormat.BitsPerSample = targetFormat.BitsPerSample;
+            if (targetFormat.Encoding > 0) dstFormat.Encoding = targetFormat.Encoding;
+        }
 
         // 目标编码类型（根据输出扩展名推断）
         var dstCodecType = GetCodecTypeForExtension(ext);
@@ -108,6 +116,10 @@ public class ConversionService
                 if (pcmRate != dstFormat.SampleRate)
                     pcm = Resample(pcm, pcmRate, dstFormat.SampleRate, srcChannels);
 
+                // 编解码器只吃 16 位 PCM，按目标声道数转换后再编码
+                var dstChannels = dstFormat.Channels > 0 ? dstFormat.Channels : srcChannels;
+                if (dstChannels != srcChannels) pcm = ConvertChannels(pcm, srcChannels, dstChannels);
+
                 var encoded = dstCodec.FromPcm(pcm, null);
                 writer.WriteFrame(encoded.GetSpan());
             }
@@ -116,6 +128,9 @@ public class ConversionService
                 var pcm = pcmData.ToArray();
                 if (pcmRate != dstFormat.SampleRate)
                     pcm = Resample(pcm, pcmRate, dstFormat.SampleRate, srcChannels);
+
+                // 声道与位深必须真正转换：只改容器头会得到"时长对但声音全错"的文件
+                pcm = ConvertFormat(pcm, srcChannels, dstFormat);
 
                 writer.WriteFrame(pcm);
             }
@@ -206,7 +221,7 @@ public class ConversionService
     private static Byte[] Resample(Byte[] pcm, Int32 inputRate, Int32 outputRate, Int32 channels)
     {
         if (pcm.Length == 0 || inputRate == outputRate || inputRate <= 0 || outputRate <= 0) return pcm;
-        if (channels <= 1) return Resampler.ResamplePcm(pcm, inputRate, outputRate);
+        if (channels <= 1) return Resampler.ResamplePcm(pcm, inputRate, outputRate, ResamplerQuality.Sinc);
 
         var samples = pcm.Length / 2 / channels;
         var outputSamples = (Int32)((Int64)samples * outputRate / inputRate);
@@ -221,7 +236,7 @@ public class ConversionService
                 channelBytes[i * 2 + 1] = pcm[(i * channels + ch) * 2 + 1];
             }
 
-            var resampled = Resampler.ResamplePcm(channelBytes, inputRate, outputRate);
+            var resampled = Resampler.ResamplePcm(channelBytes, inputRate, outputRate, ResamplerQuality.Sinc);
             var count = Math.Min(outputSamples, resampled.Length / 2);
             for (var i = 0; i < count; i++)
             {
@@ -231,5 +246,36 @@ public class ConversionService
         }
 
         return result;
+    }
+
+    /// <summary>16 位交错 PCM 的声道数转换</summary>
+    /// <param name="pcm">16 位交错 PCM</param>
+    /// <param name="inputChannels">源声道数</param>
+    /// <param name="outputChannels">目标声道数</param>
+    /// <returns>转换后的 16 位交错 PCM</returns>
+    private static Byte[] ConvertChannels(Byte[] pcm, Int32 inputChannels, Int32 outputChannels)
+    {
+        if (pcm.Length == 0 || inputChannels <= 0 || outputChannels <= 0 || inputChannels == outputChannels) return pcm;
+
+        var samples = PcmConverter.ToFloat(pcm, SampleFormat.Int16);
+        var frames = samples.Length / inputChannels;
+        var output = new Single[frames * outputChannels];
+        ChannelConverter.Convert(samples, inputChannels, output, 0, outputChannels, frames);
+
+        return PcmConverter.FromFloat(output, SampleFormat.Int16);
+    }
+
+    /// <summary>按目标格式转换声道数与位深</summary>
+    /// <param name="pcm">源 16 位交错 PCM</param>
+    /// <param name="inputChannels">源声道数</param>
+    /// <param name="target">目标格式</param>
+    /// <returns>与目标格式一致的 PCM</returns>
+    private static Byte[] ConvertFormat(Byte[] pcm, Int32 inputChannels, AudioFormat target)
+    {
+        var channels = target.Channels > 0 ? target.Channels : inputChannels;
+        var result = ConvertChannels(pcm, inputChannels, channels);
+
+        var format = target.SampleFormat;
+        return format is SampleFormat.Int16 or SampleFormat.Unknown ? result : PcmConverter.FromFloat(PcmConverter.ToFloat(result, SampleFormat.Int16), format);
     }
 }

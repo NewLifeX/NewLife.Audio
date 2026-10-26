@@ -32,6 +32,9 @@ public partial class RecordingViewModel : ViewModelBase
     [ObservableProperty]
     private Double _inputLevel; // 0.0~1.0
 
+    /// <summary>最近一次采集块的峰值，由采集线程写入、监视循环读取</summary>
+    private volatile Single _peakLevel;
+
     [ObservableProperty]
     private Int32 _sampleRate = 44100;
 
@@ -218,14 +221,28 @@ public partial class RecordingViewModel : ViewModelBase
             _recordedStream.Write(data, 0, data.Length);
             _recordedBytes += data.Length;
         }
+
+        // 采集线程上只做电平统计，界面属性交给监视循环更新
+        if (data.Length > 0) _peakLevel = (Single)NewLife.Audio.DSP.AudioLevel.Measure(data, CurrentSampleFormat).Peak;
     }
+
+    /// <summary>按当前位深选择推断采样格式</summary>
+    private NewLife.Audio.DSP.SampleFormat CurrentSampleFormat => SelectedBitIndex switch
+    {
+        0 => NewLife.Audio.DSP.SampleFormat.UInt8,
+        1 => NewLife.Audio.DSP.SampleFormat.Int16,
+        _ => NewLife.Audio.DSP.SampleFormat.Int32,
+    };
 
     private async Task MonitorLevel(CancellationToken token)
     {
         while (!token.IsCancellationRequested)
         {
-            // 电平从设备服务获取简化为随机模拟
-            InputLevel = 0.15 + new Random().NextDouble() * 0.6;
+            // 实时电平来自采集数据块，按峰值保持 + 指数衰减平滑显示，避免块间跳动
+            var peak = _peakLevel;
+            _peakLevel = 0;
+            InputLevel = Math.Clamp(Math.Max(peak, InputLevel * 0.85), 0, 1);
+
             try { await Task.Delay(100, token); }
             catch { break; }
         }
