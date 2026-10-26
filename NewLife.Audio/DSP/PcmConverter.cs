@@ -245,6 +245,75 @@ public static class PcmConverter
 
         return interleaved;
     }
+
+    /// <summary>把交错 PCM 字节拆成逐声道平面</summary>
+    /// <param name="pcm">交错 PCM 字节（LRLR…），尾部不足一个样本的字节忽略</param>
+    /// <param name="format">音频格式，取 <see cref="AudioFormat.BitsPerSample"/> 与 <see cref="AudioFormat.Channels"/></param>
+    /// <returns>每声道一个数组；格式非法或数据不足一个样本时返回空数组</returns>
+    /// <remarks>按字节搬运，8/16/24/32 位与浮点都适用，不做位深转换。</remarks>
+    public static Byte[][] Deinterleave(ReadOnlySpan<Byte> pcm, AudioFormat format)
+    {
+        if (format == null) throw new ArgumentNullException(nameof(format));
+
+        var bytes = format.BytesPerSample;
+        var channels = format.Channels;
+        if (bytes <= 0 || channels <= 0) return [];
+
+        var sampleBytes = bytes * channels;
+        var samples = pcm.Length / sampleBytes;
+        if (samples <= 0) return [];
+
+        var planes = new Byte[channels][];
+        for (var ch = 0; ch < channels; ch++)
+        {
+            var plane = new Byte[samples * bytes];
+            for (var i = 0; i < samples; i++)
+            {
+                pcm.Slice(i * sampleBytes + ch * bytes, bytes).CopyTo(plane.AsSpan(i * bytes, bytes));
+            }
+            planes[ch] = plane;
+        }
+
+        return planes;
+    }
+
+    /// <summary>把逐声道平面合并成交错 PCM 字节</summary>
+    /// <param name="planes">每声道一个数组，长度以最短声道为准</param>
+    /// <param name="format">音频格式，取 <see cref="AudioFormat.BitsPerSample"/>；声道数取 <paramref name="planes"/> 的长度</param>
+    /// <returns>交错 PCM 字节；没有可用声道时返回空数组</returns>
+    /// <remarks>缺失的声道按静音（全零）补齐，与 <see cref="Interleave(Single[][])"/> 语义一致。</remarks>
+    public static Byte[] Interleave(Byte[][] planes, AudioFormat format)
+    {
+        if (planes == null) throw new ArgumentNullException(nameof(planes));
+        if (format == null) throw new ArgumentNullException(nameof(format));
+
+        var bytes = format.BytesPerSample;
+        var channels = planes.Length;
+        if (bytes <= 0 || channels <= 0) return [];
+
+        var samples = Int32.MaxValue;
+        foreach (var plane in planes)
+        {
+            if (plane == null) continue;
+            var count = plane.Length / bytes;
+            if (count < samples) samples = count;
+        }
+        if (samples == Int32.MaxValue || samples <= 0) return [];
+
+        var output = new Byte[samples * channels * bytes];
+        for (var i = 0; i < samples; i++)
+        {
+            for (var ch = 0; ch < channels; ch++)
+            {
+                var plane = planes[ch];
+                if (plane == null) continue;
+
+                Array.Copy(plane, i * bytes, output, (i * channels + ch) * bytes, bytes);
+            }
+        }
+
+        return output;
+    }
     #endregion
 
     #region 辅助
