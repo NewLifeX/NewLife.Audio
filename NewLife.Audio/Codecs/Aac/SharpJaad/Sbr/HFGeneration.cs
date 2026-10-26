@@ -340,7 +340,9 @@ namespace SharpJaad.AAC.Sbr
                 sbr._noPatches--;
             }
 
-            sbr._noPatches = Math.Min(sbr._noPatches, 5);
+            // 不再把 patch 数量截断到 5：patch 必须正好铺满 [kx, kx+M)，
+            // 截断会丢掉最上面一个 patch，导致 SBR 高频段顶部（约 2 kHz）始终静默。
+            // 数组容量 64，patch 数量最多 32（kx ≤ 32 且每 patch ≥ 1 带），无需截断。
         }
     }
 }

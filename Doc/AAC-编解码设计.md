@@ -204,7 +204,7 @@ flowchart TD
   2. `SbrGrid`：frame class、num env、freq res、time/freq variation、pointer。
   3. `SbrEnvelope` / `SbrNoise`：Huffman 解码、delta 解码、包络/噪声能量。
   4. `AacQmf`：32 带复数 QMF 分析/合成（原型滤波器表）。
-  5. `SbrHFGenerator`：低频 patch → 高频。
+  5. `SbrHFGenerator`：低频 patch → 高频。patch 必须正好铺满 `[kx, kx+M)`：patch 数量不能被截断（数组容量 64），否则最上面一个 patch 丢失，SBR 频段顶部约 2 kHz 会一直静默。
   6. `SbrHFAdjustment`：包络调整、噪声、正弦分量、limiter。
 - 输出采样率 = 核心采样率 × 2；解码器对外报告的格式需随之更新。
 
@@ -214,7 +214,7 @@ flowchart TD
 - 混合滤波器组：QMF + 8/4/2 通道 FFT（低于 2 kHz 的频带）；分析端必须同时送入实部与虚部，否则低频（≤1 kHz）会整体衰减约 11 dB。
 - 去相关 + 混合：单声道核心 → 立体声。
 - PS 依赖 SBR；HE-AAC v2 = SBR + PS。
-- 当前质量（外部参考向量，稳定段 3~7 秒）：SNR 8.9/10.9 dB、相关度 0.938/0.960；残余缺口在 12~17 kHz，属 SBR 高频再生范畴。
+- 当前质量（外部参考向量，稳定段 3~7 秒）：SNR 12.7/14.5 dB、相关度 0.973/0.982；同一批向量的 LC 与 HE-AAC v1 已与官方参考解码几乎逐样本一致（SNR 约 62 dB、相关度 1.0000）。
 
 ### 5.3 验收
 
