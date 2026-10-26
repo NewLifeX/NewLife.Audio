@@ -28,6 +28,12 @@ internal sealed class Mp3Layer3Encoder
     /// <summary>量化上限对应的最大幅度比，用于反推最小量化步长</summary>
     private static readonly Single MaxValueRatio = (Single)Math.Pow(MaxQuantizedValue, 4.0 / 3.0);
 
+    /// <summary>掩蔽阈值的保守权重（0.5 表示只允许把步长放宽到掩蔽电平的一半）</summary>
+    private const Single MaskingWeight = 0.5f;
+
+    /// <summary>掩蔽允许的最大步长放宽倍数（2 倍，约 +6 dB）</summary>
+    private const Single MaskingBoost = 2f;
+
     /// <summary>分析链路到标准谱线幅度的校准系数</summary>
     /// <remarks>决定解码端重建 PCM 的电平，取自有解参考信号的反向标定</remarks>
     private const Double OutputScale = 1.0 / 566.3;
@@ -77,6 +83,9 @@ internal sealed class Mp3Layer3Encoder
     private readonly Single[] _bandMax;
     private readonly Single[] _bandEnergy;
     private readonly Single[] _bandRms;
+    private readonly Single[] _bandMask;
+    private readonly Single[] _bandFreq;
+    private readonly Single _lowpass;
     private readonly Single[] _bandStep;
     private readonly Single[] _bandTilt;
     private readonly Int32[] _scales;
@@ -229,6 +238,9 @@ internal sealed class Mp3Layer3Encoder
         _bandMax = new Single[bands.Length];
         _bandEnergy = new Single[bands.Length];
         _bandRms = new Single[bands.Length];
+        _bandMask = new Single[bands.Length];
+        _bandFreq = BuildBandFreq(bands);
+        _lowpass = sampleRate * 0.5f;
         _bandStep = new Single[bands.Length];
         _bandTilt = BuildBandTilt(bands);
         _scales = new Int32[bands.Length];
@@ -642,6 +654,7 @@ internal sealed class Mp3Layer3Encoder
 
         var bands = _bands;
         var offset = 0;
+        var peak = 0f;
         for (var b = 0; b < bands.Length; b++)
         {
             var width = bands[b];
@@ -656,7 +669,71 @@ internal sealed class Mp3Layer3Encoder
             _bandMax[b] = (Single)(max * OutputScale);
             _bandEnergy[b] = energy;
             _bandRms[b] = width > 0 ? (Single)(Math.Sqrt(energy / width) * OutputScale) : 0f;
+            if (_bandRms[b] > peak) peak = _bandRms[b];
             offset += width;
+        }
+
+        // 绝对听阈：相对帧内峰值低于听阈的频带整带丢弃（谱线置零，量化后即为 0）
+        offset = 0;
+        for (var b = 0; b < bands.Length; b++)
+        {
+            var width = bands[b];
+            if (_bandFreq[b] >= _lowpass || (peak > 0 && _bandRms[b] > 0 && _bandRms[b] < peak * AbsoluteThreshold(_bandFreq[b])))
+            {
+                for (var i = 0; i < width; i++) spec[offset + i] = 0f;
+                _bandMax[b] = 0f;
+                _bandEnergy[b] = 0f;
+                _bandRms[b] = 0f;
+                for (var i = offset; i < offset + width; i++) _pow75[i] = 0f;
+            }
+
+            offset += width;
+        }
+
+        UpdateMasking(bands.Length);
+    }
+
+    /// <summary>绝对听阈（相对帧内峰值的比例）：高频听阈显著抬升，低于该比例的频带可整带丢弃</summary>
+    /// <param name="frequency">频带中心频率（Hz）</param>
+    /// <returns>该频率的听阈（相对峰值）</returns>
+    private static Single AbsoluteThreshold(Single frequency)
+    {
+        if (frequency < 12000) return 1e-4f;
+
+        // 12 kHz 以上按每 4 kHz 翻倍抬升
+        var rise = Math.Pow(2, (frequency - 12000) / 4000.0);
+
+        return (Single)Math.Min(1e-4 * rise, 1e-2);
+    }
+
+    /// <summary>简化的心理声学掩蔽：按频带距离做能量扩散，得到各频带被邻近频带掩蔽的电平</summary>
+    /// <param name="count">频带数</param>
+    /// <remarks>
+    /// 用指数衰减近似 Bark 域扩散函数，低频对高频的掩蔽更强（上坡 0.35 / 下坡 0.9 衰减系数）。
+    /// 结果存入 <see cref="_bandMask"/>，供量化步长在「自身 RMS」与「被掩蔽电平」之间取较大者，
+    /// 使强带附近弱带的量化噪声藏在掩蔽阈值以下，腾出的比特留给未掩蔽频带。
+    /// </remarks>
+    private void UpdateMasking(Int32 count)
+    {
+        for (var b = 0; b < count; b++)
+        {
+            var sum = 0f;
+            for (var n = 0; n < count; n++)
+            {
+                if (n == b) continue;
+
+                var rms = _bandRms[n];
+                if (rms <= 0) continue;
+
+                var d = n - b;
+                var slope = d > 0 ? 0.35 : 0.9;
+                var w = Math.Exp(-Math.Abs(d) * slope);
+                if (w < 0.02) continue;
+
+                sum += rms * rms * (Single)w;
+            }
+
+            _bandMask[b] = (Single)Math.Sqrt(sum) * MaskingWeight;
         }
     }
 
@@ -669,13 +746,30 @@ internal sealed class Mp3Layer3Encoder
     {
         var bands = _bands;
 
-        // 1. 逐带确定量化步长：以带内 RMS 为基准（比峰值更贴近听感），并受幅值上限约束
+        // 1. 逐带确定量化步长：以带内 RMS 为基准（比峰值更贴近听感），
+        //    再用心理声学掩蔽电平放宽被强带掩蔽的弱带，并低通掉听阈以上的高频带
         var maxStep = 1e-9f;
         for (var b = 0; b < bands.Length; b++)
         {
             var max = _bandMax[b];
+
+            // 绝对听阈：接近 Nyquist 的频带直接丢弃
+            if (_bandFreq[b] >= _lowpass)
+            {
+                _bandStep[b] = 1e9f;
+                continue;
+            }
+
             var rms = _bandRms[b];
-            var step = rms > 0 ? rms * scale * _bandTilt[b] : 1e9f;
+            var reference = rms;
+            var mask = _bandMask[b];
+            if (mask > reference && reference > 0)
+            {
+                // 掩蔽只允许有限放宽，避免测量信噪比过度下降
+                reference = Math.Min(mask, reference * MaskingBoost);
+            }
+
+            var step = reference > 0 ? reference * scale * _bandTilt[b] : 1e9f;
             var minStep = max > 0 ? max / MaxValueRatio : 1e-9f;
             if (step < minStep) step = minStep;
             _bandStep[b] = step;
@@ -1096,6 +1190,21 @@ internal sealed class Mp3Layer3Encoder
 
         return tilt;
     }
+
+    /// <summary>各频带的中心频率（Hz），用于绝对听阈低通与掩蔽扩散</summary>
+    private Single[] BuildBandFreq(Byte[] bands)
+    {
+        var freqs = new Single[bands.Length];
+        var line = 0;
+        for (var b = 0; b < bands.Length; b++)
+        {
+            var width = bands[b];
+            freqs[b] = (Single)((line + width * 0.5) * _sampleRate / 1152.0);
+            line += width;
+        }
+
+        return freqs;
+    }
     #endregion
 
     #region 内部类型
@@ -1117,3 +1226,8 @@ internal sealed class Mp3Layer3Encoder
     }
     #endregion
 }
+
+
+
+
+

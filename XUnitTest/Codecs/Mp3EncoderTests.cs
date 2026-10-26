@@ -348,9 +348,77 @@ public class Mp3EncoderTests
         Assert.NotEqual('I', tag);
     }
 
+    [Fact(DisplayName = "MP3 心理声学：低于绝对听阈的高频分量被丢弃")]
+    public void Encode_Ath_DropsInaudibleHighBand()
+    {
+        var sampleRate = 44100;
+        var samples = sampleRate / 2;
+        var pcm = new Byte[samples * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            // 1 kHz 主音 + 21 kHz 极弱分量（远低于听阈）
+            var v = (Int16)((Math.Sin(2 * Math.PI * 1000 * i / sampleRate) * 0.5 + Math.Sin(2 * Math.PI * 21000 * i / sampleRate) * 0.00002) * 32000);
+            pcm[i * 2] = (Byte)(v & 0xFF);
+            pcm[i * 2 + 1] = (Byte)((v >> 8) & 0xFF);
+        }
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 128 }).GetSpan().ToArray();
+        var decoded = new Mp3Codec().ToPcm(encoded, null).GetSpan().ToArray();
+
+        var input = ToInt16(pcm);
+        var output = ToInt16(decoded);
+        var inputHigh = ToneLevel(input, sampleRate, 21000);
+        var outputHigh = ToneLevel(output, sampleRate, 21000);
+        var inputMain = ToneLevel(input, sampleRate, 1000);
+        var outputMain = ToneLevel(output, sampleRate, 1000);
+
+        Assert.True(outputHigh < inputHigh * 0.5, $"听阈以下的高频分量未被丢弃：输入 {inputHigh:E2} 输出 {outputHigh:E2}");
+        Assert.True(outputMain > inputMain * 0.9, $"主音被误伤：输入 {inputMain:F3} 输出 {outputMain:F3}");
+    }
+
+    [Fact(DisplayName = "MP3 心理声学：强带旁的弱带不被量化噪声淹没")]
+    public void Encode_Masking_PreservesQuietTone()
+    {
+        var sampleRate = 44100;
+        var samples = sampleRate / 2;
+        var pcm = new Byte[samples * 2];
+        for (var i = 0; i < samples; i++)
+        {
+            var v = (Int16)((Math.Sin(2 * Math.PI * 300 * i / sampleRate) * 0.5 + Math.Sin(2 * Math.PI * 4000 * i / sampleRate) * 0.02) * 32000);
+            pcm[i * 2] = (Byte)(v & 0xFF);
+            pcm[i * 2 + 1] = (Byte)((v >> 8) & 0xFF);
+        }
+
+        var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = 64 }).GetSpan().ToArray();
+        var decoded = new Mp3Codec().ToPcm(encoded, null).GetSpan().ToArray();
+
+        // 4 kHz 弱分量与 300 Hz 强分量的幅度比应基本保持（不被噪声淹没）
+        var input = ToInt16(pcm);
+        var output = ToInt16(decoded);
+        var inputRatio = ToneLevel(input, sampleRate, 4000) / ToneLevel(input, sampleRate, 300);
+        var outputRatio = ToneLevel(output, sampleRate, 4000) / ToneLevel(output, sampleRate, 300);
+
+        Assert.True(outputRatio > inputRatio * 0.4, $"弱分量被淹没：输入比 {inputRatio:F3} 输出比 {outputRatio:F3}");
+    }
+
     private static Int32 ReadInt32(Byte[] data, Int32 offset) =>
         data[offset] << 24 | data[offset + 1] << 16 | data[offset + 2] << 8 | data[offset + 3];
 
+    /// <summary>用单频相关估计指定频率分量的归一化幅度</summary>
+    private static Double ToneLevel(Int16[] samples, Int32 sampleRate, Double frequency)
+    {
+        var count = Math.Min(samples.Length, sampleRate);
+        var re = 0.0;
+        var im = 0.0;
+        for (var i = 0; i < count; i++)
+        {
+            var angle = 2 * Math.PI * frequency * i / sampleRate;
+            re += samples[i] * Math.Cos(angle);
+            im += samples[i] * Math.Sin(angle);
+        }
+
+        return 2 * Math.Sqrt(re * re + im * im) / count / 32768;
+    }
     private static Double MeasureSnr(Byte[] pcm, Int32 sampleRate, Int32 bitrate)
     {
         var encoded = new Mp3Codec().FromPcm(pcm, new Mp3EncoderOptions { SampleRate = sampleRate, Channels = 1, Bitrate = bitrate });
