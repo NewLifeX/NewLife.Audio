@@ -62,7 +62,12 @@
             16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31, 32, 33
         };
 
-        public static int[] delay_length_d = { 3, 4, 5 /* d_48kHz */};
+        /// <summary>全通链路采样延迟：索引 0 = 低于 32 kHz，索引 1 = 32 kHz 及以上</summary>
+        public static int[][] delay_length_d =
+        {
+            new int[] { 1, 2, 3 /* d_24kHz */ },
+            new int[] { 3, 4, 5 /* d_48kHz */ },
+        };
         /* tables */
         /* filters are mirrored in coef 6, second half left out */
         public static float[] p8_13_20 =

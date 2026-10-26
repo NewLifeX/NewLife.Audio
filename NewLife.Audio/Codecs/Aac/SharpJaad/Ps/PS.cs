@@ -106,20 +106,22 @@ namespace SharpJaad.AAC.Ps
                 _delayBufIndexDelay[i] = 0;
             }
 
+            // 去相关器参数随输出采样率切换（等价于 FAAD2 的 PARAM_32KHZ 分支）：
+            // 采样率索引 0~5 即 ≥32 kHz 用 48 kHz 那套延迟与衰减，更低采样率用 24 kHz 那套。
+            var highRate = (Int32)sr <= 5;
+
             for (i = 0; i < PSConstants.NO_ALLPASS_LINKS; i++)
             {
                 _delayBufIndexSer[i] = 0;
-                /* THESE ARE CONSTANTS NOW */
-                _numSampleDelaySer[i] = PSTables.delay_length_d[i];
+                // delay_length_d: { 1, 2, 3 }（<32 kHz） / { 3, 4, 5 }（≥32 kHz）
+                _numSampleDelaySer[i] = PSTables.delay_length_d[highRate ? 1 : 0][i];
             }
 
-            /* THESE ARE CONSTANTS NOW */
-            short_delay_band = 35;
-            _nrAllpassBands = 22;
-            _alphaDecay = 0.76592833836465f;
-            _alphaSmooth = 0.25f;
+            short_delay_band = highRate ? 35 : 64;
+            _nrAllpassBands = highRate ? 22 : 45;
+            _alphaDecay = highRate ? 0.76592833836465f : 0.58664621951003f;
+            _alphaSmooth = highRate ? 0.25f : 0.6f;
 
-            /* THESE ARE CONSTANT NOW IF PS IS INDEPENDANT OF SAMPLERATE */
             for (i = 0; i < short_delay_band; i++)
             {
                 _delayD[i] = 14;
