@@ -40,6 +40,15 @@ public class Mp3FileReader : IAudioContainerReader
 
     /// <summary>平均比特率（bps），无帧时为 0</summary>
     public Int32 AverageBitrate { get; private set; }
+
+    /// <summary>是否带 Xing/Info/VBRI 信息帧（VBR/CBR 头）</summary>
+    public Boolean HasVbrHeader { get; private set; }
+
+    /// <summary>信息帧记录的有效音频帧数（不含信息帧），未知为 0</summary>
+    public Int64 VbrFrameCount { get; private set; }
+
+    /// <summary>信息帧记录的文件字节数，未知为 0</summary>
+    public Int64 VbrStreamBytes { get; private set; }
     #endregion
 
     #region 构造
@@ -172,6 +181,20 @@ public class Mp3FileReader : IAudioContainerReader
                 continue;
             }
 
+            if (_offsets.Count == 0 && !HasVbrHeader)
+            {
+                var frameHead = new Byte[Math.Min(info.FrameSize, 512)];
+                _stream.Seek(pos, SeekOrigin.Begin);
+                var got = 0;
+                while (got < frameHead.Length)
+                {
+                    var n = _stream.Read(frameHead, got, frameHead.Length - got);
+                    if (n <= 0) break;
+                    got += n;
+                }
+                ReadVbrHeader(frameHead, 0, info);
+            }
+
             _offsets.Add(pos);
             _format ??= CreateFormat(info);
             pos += info.FrameSize;
@@ -204,6 +227,7 @@ public class Mp3FileReader : IAudioContainerReader
     private void ScanBuffer()
     {
         var pos = Mp3Id3Tag.Skip(_buffer);
+        var firstFrame = true;
         while (pos + 4 <= _buffer.Length)
         {
             var info = Mp3Codec.ParseFrameHeader(_buffer, pos);
@@ -212,6 +236,12 @@ public class Mp3FileReader : IAudioContainerReader
                 if (pos + 3 <= _buffer.Length && _buffer[pos] == 'T' && _buffer[pos + 1] == 'A' && _buffer[pos + 2] == 'G') break;
                 pos++;
                 continue;
+            }
+
+            if (firstFrame)
+            {
+                ReadVbrHeader(_buffer, pos, info);
+                firstFrame = false;
             }
 
             _offsets.Add(pos);
@@ -226,6 +256,43 @@ public class Mp3FileReader : IAudioContainerReader
         {
             var bytes = pos - _offsets[0];
             AverageBitrate = (Int32)(bytes * 8 / Math.Max(Duration, 1e-6));
+        }
+    }
+
+    /// <summary>解析 Xing/Info/VBRI 信息帧记录的帧数与字节数</summary>
+    /// <param name="data">数据缓冲</param>
+    /// <param name="offset">帧起始偏移</param>
+    /// <param name="info">帧头</param>
+    private void ReadVbrHeader(Byte[] data, Int32 offset, Mp3Codec.FrameHeader info)
+    {
+        var mpeg1 = info.Version == Mp3Codec.MpegVersion.Mpeg1;
+        var mono = info.ChannelMode == 3;
+        // 边信息长度：MPEG-1 单声道 17 / 立体声 32；MPEG-2/2.5 单声道 9 / 立体声 17
+        var sideInfo = mpeg1 ? (mono ? 17 : 32) : (mono ? 9 : 17);
+        // protection_bit 为 0 表示帧头后有 2 字节 CRC
+        var hasCrc = offset + 1 < data.Length && (data[offset + 1] & 1) == 0;
+        var mark = offset + 4 + (hasCrc ? 2 : 0) + sideInfo;
+
+        if (mark + 8 > data.Length) return;
+
+        var isXing = data[mark] == 'X' && data[mark + 1] == 'i' && data[mark + 2] == 'n' && data[mark + 3] == 'g';
+        var isInfo = data[mark] == 'I' && data[mark + 1] == 'n' && data[mark + 2] == 'f' && data[mark + 3] == 'o';
+        if (!isXing && !isInfo) return;
+
+        HasVbrHeader = true;
+
+        var flags = (UInt32)data[mark + 4] << 24 | (UInt32)data[mark + 5] << 16 | (UInt32)data[mark + 6] << 8 | data[mark + 7];
+        var pos = mark + 8;
+
+        if ((flags & 1) != 0 && pos + 4 <= data.Length)
+        {
+            VbrFrameCount = (Int64)((UInt32)data[pos] << 24 | (UInt32)data[pos + 1] << 16 | (UInt32)data[pos + 2] << 8 | data[pos + 3]);
+            pos += 4;
+        }
+
+        if ((flags & 2) != 0 && pos + 4 <= data.Length)
+        {
+            VbrStreamBytes = (Int64)((UInt32)data[pos] << 24 | (UInt32)data[pos + 1] << 16 | (UInt32)data[pos + 2] << 8 | data[pos + 3]);
         }
     }
 

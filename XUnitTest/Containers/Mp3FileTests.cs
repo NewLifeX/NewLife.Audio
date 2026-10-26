@@ -215,6 +215,36 @@ public class Mp3FileTests
         Assert.Equal("V2 Artist", reader.Metadata.Artist);
     }
 
+    [Fact(DisplayName = "MP3 读取器解析 Xing/Info 信息帧的帧数")]
+    public void Reader_ParsesVbrHeader()
+    {
+        var path = AssetPath("m1-joint-vbr-44k.mp3");
+        using var reader = new Mp3FileReader(File.OpenRead(path));
+
+        Assert.True(reader.HasVbrHeader);
+        Assert.True(reader.VbrFrameCount > 0);
+        Assert.True(reader.VbrStreamBytes > 0);
+
+        // 信息帧记录的是有效音频帧数，允许多算一帧（信息帧本身）
+        Assert.InRange(reader.TotalFrames, reader.VbrFrameCount, reader.VbrFrameCount + 1);
+    }
+
+    [Fact(DisplayName = "无信息帧的文件不报告 VBR 头")]
+    public void Reader_WithoutVbrHeader()
+    {
+        using var ms = new MemoryStream();
+        var format = new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 };
+
+        var writer = new Mp3FileWriter(ms, format, 128);
+        writer.WritePcm(BuildTone(44100, 1, 22050, 1000, 0.3));
+        writer.Flush();
+
+        ms.Position = 0;
+        using var reader = new Mp3FileReader(ms);
+        Assert.False(reader.HasVbrHeader);
+        Assert.Equal(0, reader.VbrFrameCount);
+    }
+
     [Fact(DisplayName = "MP3 写入 PCM 后解码可还原信号")]
     public void Writer_WritePcm_RoundTrip()
     {

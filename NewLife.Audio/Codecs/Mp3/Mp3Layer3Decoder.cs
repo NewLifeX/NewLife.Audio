@@ -168,7 +168,9 @@ internal sealed class Mp3Layer3Decoder
     /// <remarks>信息帧紧跟边信息存放标记：Xing/Info（LAME 的 CBR/VBR 头）或 VBRI。</remarks>
     private static Boolean IsInfoFrame(Byte[] data, Int32 offset, Mp3Header header)
     {
-        var sideInfo = (header.Version == Mp3Version.Mpeg1 ? 17 : 9) * header.Channels;
+        // 边信息长度：MPEG-1 单声道 17 / 立体声 32；MPEG-2/2.5 单声道 9 / 立体声 17
+        var mono = header.Channels == 1;
+        var sideInfo = header.Version == Mp3Version.Mpeg1 ? (mono ? 17 : 32) : (mono ? 9 : 17);
         var mark = offset + 4 + (header.HasCrc ? 2 : 0) + sideInfo;
         if (mark + 4 > data.Length) return false;
 
