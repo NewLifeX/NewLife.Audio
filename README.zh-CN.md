@@ -43,11 +43,11 @@ Nuget：NewLife.Audio
 - **G.722** / **G.726** 子带 ADPCM
 - **IMA ADPCM**（DVI4）
 - **Opus**（自研纯托管进行中：RFC 6716 包解析 + 范围编解码器，系统 ffmpeg 降级）
-- **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman）
+- **MP3**（解码：Huffman + 反量化 + IMDCT + 子带合成；编码：多相分析 + MDCT + 量化 + Huffman，支持 M/S 联合立体声、CBR/VBR/ABR + Xing 信息帧与简化心理声学模型；短块尚未实现）
 - **AAC**（纯托管 AAC-LC/HE-AAC 解码；AAC-LC 编码；ADTS/raw/MP4/LOAS/LATM）
 - **FLAC**（Fixed LPC + Rice 残差编码 + MD5）
 - **Ogg Vorbis**（纯托管解码：floor 0/1、residue 0/1/2、声道耦合、MDCT；编码为长块基线）
-- **Speex**（纯托管窄带 CELP）
+- **Speex**（纯托管窄带，20ms 帧 + 4 bit 自适应差分量化；私有码流，不与 libspeex 互通）
 - 基于 `CodecRegistry` + `ICodecInfo` 元数据的可插拔工厂
 - IoT 芯片头适配（海思 / 大华 / 宇视）
 
@@ -58,7 +58,7 @@ Nuget：NewLife.Audio
 - 音频采集与环回录制
 - 通过 `AudioDeviceManager` 进行多设备并发管理
 
-> ⚠️ 当前只有 Windows WaveOut/WaveIn（WinMM）是完整实现；WASAPI/ASIO 与 Linux/macOS/Android/iOS 后端的状态与排期见[架构设计](Doc/架构设计.md)。
+> ⚠️ Windows 下 WaveOut/WaveIn（WinMM）与 WASAPI（共享模式播放/采集、loopback、事件回调低延迟流、设备丢失恢复、热插拔观察）均已完整实现；ASIO 与 Linux/macOS/Android/iOS 后端尚未实现，状态与排期见[架构设计](Doc/架构设计.md)。
 
 ### 🎛️ DSP 处理链（DSP）
 可组合的音频信号处理链：

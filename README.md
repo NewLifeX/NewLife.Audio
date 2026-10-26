@@ -41,11 +41,11 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 - **G.722** / **G.726** sub-band ADPCM
 - **IMA ADPCM** (DVI4)
 - **Opus** (self-hosted pure-managed implementation in progress: RFC 6716 packet parser + range coder, with ffmpeg fallback)
-- **MP3** (decode: Huffman + inverse quantization + IMDCT + subband synthesis; encode: polyphase analysis + MDCT + quantization + Huffman)
+- **MP3** (decode: Huffman + inverse quantization + IMDCT + subband synthesis; encode: polyphase analysis + MDCT + quantization + Huffman, with joint stereo M/S, CBR/VBR/ABR + Xing info frame and a simplified psychoacoustic model; short blocks not yet implemented)
 - **AAC** (pure-managed AAC-LC/HE-AAC decoding; AAC-LC encoding; ADTS/raw/MP4/LOAS/LATM)
 - **FLAC** (Fixed LPC + Rice residual coding + MD5)
 - **Ogg Vorbis** (pure-managed decode: floor 0/1, residue 0/1/2, channel coupling, MDCT; baseline long-block encoder)
-- **Speex** (pure managed narrowband CELP)
+- **Speex** (pure managed narrowband, 20 ms frames + 4-bit adaptive differential coding; private bitstream, not libspeex-compatible)
 - Pluggable factory via `CodecRegistry` + `ICodecInfo` metadata
 - IoT chip header adaptation (Hisilicon / Dahua / Uniview)
 
@@ -56,7 +56,7 @@ Cross-platform audio device abstraction:
 - Audio capture & loopback recording
 - Multi-device concurrent management via `AudioDeviceManager`
 
-> ⚠️ Only the Windows WaveOut/WaveIn (WinMM) backend is fully implemented today; the status and roadmap of WASAPI/ASIO and of the Linux/macOS/Android/iOS backends are documented in the [architecture design](Doc/架构设计.md).
+> ⚠️ On Windows, both WinMM (WaveOut/WaveIn) and WASAPI (shared-mode playback/capture, loopback, event-driven low-latency streams, device-loss recovery, hot-plug watcher) are fully implemented. ASIO and the Linux/macOS/Android/iOS backends are not; their status and roadmap are documented in the [architecture design](Doc/架构设计.md).
 
 ### 🎛️ DSP Pipeline (DSP)
 Composable audio signal processing chain:
