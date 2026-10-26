@@ -63,6 +63,8 @@ public enum AVTypes : Byte
     AMR = 28,
     /// <summary>Opus 音频（RTP 动态负载类型 96 起）</summary>
     Opus = 29,
+    /// <summary>Ogg Vorbis 音频</summary>
+    Vorbis = 30,
 
     /// <summary>透明传输</summary>
     Transparent = 91,

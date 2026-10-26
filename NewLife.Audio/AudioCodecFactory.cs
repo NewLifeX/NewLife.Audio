@@ -40,6 +40,7 @@ public class AudioCodecFactory
         _registry.RegisterFactory(AVTypes.AACLC, () => new AacCodec());
         _registry.RegisterFactory(AVTypes.HEAAC, () => new AacCodec());
         _registry.RegisterFactory(AVTypes.Opus, () => new OpusCodec());
+        _registry.RegisterFactory(AVTypes.Vorbis, () => new VorbisCodec());
         _registry.RegisterFactory(AVTypes.Transparent, () => new OpusCodec());
 
         // 注册芯片头处理器（按优先级排序）

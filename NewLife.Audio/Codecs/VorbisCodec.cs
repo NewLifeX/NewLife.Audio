@@ -1,25 +1,18 @@
-using System.Runtime.InteropServices;
-using System.Text;
-using NewLife.Buffers;
-using NewLife.Data;
 using NewLife;
+using NewLife.Audio.Containers;
+using NewLife.Audio.DSP;
+using NewLife.Data;
 
 namespace NewLife.Audio.Codecs;
 
-/// <summary>Vorbis 解码器（Ogg Vorbis I 格式）</summary>
+/// <summary>Ogg Vorbis 编解码器</summary>
 /// <remarks>
-/// 纯 C# 实现 Vorbis I 解码器。
-/// 3个头包解析 → 地板/残差解码 → IMDCT → 窗重叠相加。
-/// 采样率：8k~192kHz，声道：1~255。
+/// 纯托管 Vorbis I 实现：解码走 <see cref="VorbisDecoder"/>，编码走 <see cref="VorbisEncoder"/>，
+/// 容器层使用 <see cref="OggFileReader"/> / <see cref="OggFileWriter"/>。
+/// 输入输出均为完整 Ogg Vorbis 文件。
 /// </remarks>
-public class VorbisCodec : IAudioCodec, ICodecInfo
+public class VorbisCodec : IAudioCodec, ICodecInfo, IDisposable
 {
-    // Vorbis 解码状态
-    private Int32 _sampleRate;
-    private Int32 _channels;
-    private Int32 _blockSize0;
-    private Int32 _blockSize1;
-
     /// <summary>编解码器名称</summary>
     public String Name => "Vorbis I";
 
@@ -27,272 +20,132 @@ public class VorbisCodec : IAudioCodec, ICodecInfo
     public String Version => "1.0";
 
     /// <summary>支持的编码类型</summary>
-    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.Transparent];
+    public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.Vorbis];
 
     /// <summary>有状态编解码器</summary>
     public Boolean IsStateful => true;
 
-    /// <summary>Vorbis 数据转 PCM（需包含完整头包）</summary>
-    /// <param name="audio">Vorbis 编码数据（含3个头包 + 音频包）</param>
-    /// <param name="option"></param>
-    /// <returns>16-bit PCM</returns>
+    /// <summary>Vorbis 数据转 PCM（输入为完整 Ogg Vorbis 文件）</summary>
+    /// <param name="audio">Ogg Vorbis 文件数据</param>
+    /// <param name="option">解码选项，可为 null</param>
+    /// <returns>16-bit 小端交错 PCM</returns>
     public IPacket ToPcm(ReadOnlySpan<Byte> audio, Object option)
     {
-        if (audio.Length < 30) throw new InvalidDataException(L.T("Vorbis data is too short."));
+        if (audio.Length < 4 || audio[0] != (Byte)'O' || audio[1] != (Byte)'g' || audio[2] != (Byte)'g' || audio[3] != (Byte)'S')
+            throw new InvalidDataException(L.T("Not valid Ogg Vorbis data."));
 
-        // 解析标识头（第一个包：0x01 + "vorbis"）
-        var offset = ParseIdentificationHeader(audio);
+        using var stream = new MemoryStream(audio.ToArray());
+        using var reader = new OggFileReader(stream);
+        if (reader.CodecType != AVTypes.Vorbis || reader.VorbisIdentification == null ||
+            reader.VorbisComment == null || reader.VorbisSetup == null)
+            throw new InvalidDataException(L.T("Not valid Ogg Vorbis data."));
 
-        // 解析注释头（跳过）
-        offset += SkipCommentHeader(audio.Slice(offset));
+        var decoder = new VorbisDecoder(reader.VorbisIdentification, reader.VorbisComment, reader.VorbisSetup);
+        var channels = decoder.Channels;
+        var total = reader.TotalSamples;
+        var expected = total > 0 && total <= Int32.MaxValue / channels ? (Int32)total * channels : 0;
+        if (expected <= 0) throw new InvalidDataException(L.T("The Ogg Vorbis stream has no audio samples."));
 
-        // 解析设置头
-        offset += ParseSetupHeader(audio.Slice(offset));
+        var output = new Single[expected];
+        var written = 0;
+        var buffer = new Single[decoder.MaxPacketSamples * channels];
 
-        // 解码音频包
-        var pcm = new MemoryStream();
-        while (offset < audio.Length - 1)
+        while (true)
         {
-            var reader2 = new SpanReader(audio.Slice(offset));
-            var packetLen = reader2.ReadUInt16();
-            if (packetLen == 0 || offset + 2 + packetLen > audio.Length) break;
+            var packet = reader.ReadFrame();
+            if (packet == null) break;
 
-            offset += 2;
-            var packetData = audio.Slice(offset, packetLen);
-            var pcmFrame = DecodeAudioPacket(packetData, _blockSize0 > 0 ? _blockSize0 : 256);
-            pcm.Write(pcmFrame, 0, pcmFrame.Length);
-
-            offset += packetLen;
+            var count = decoder.DecodePacket(packet.GetSpan(), buffer);
+            written = CopySamples(buffer, count * channels, output, written, expected);
         }
 
-        pcm.Position = 0;
+        var flush = decoder.Flush(buffer);
+        written = CopySamples(buffer, flush * channels, output, written, expected);
+
+        if (written > expected) written = expected;
+
+        var pcm = new Byte[written * 2];
+        for (var i = 0; i < written; i++)
+        {
+            var value = output[i] * 32767f;
+            var sample = value <= -32768f ? Int16.MinValue : value >= 32767f ? Int16.MaxValue : (Int16)Math.Round(value);
+            pcm[i * 2] = (Byte)(sample & 0xFF);
+            pcm[i * 2 + 1] = (Byte)((sample >> 8) & 0xFF);
+        }
+
         return new ArrayPacket(pcm);
     }
 
-    /// <summary>PCM 转 Vorbis（基础编码）</summary>
-    /// <param name="pcm">16-bit PCM</param>
-    /// <param name="option">质量级别 0~10，默认 5</param>
-    /// <returns>Vorbis 编码数据</returns>
+    /// <summary>PCM 转 Vorbis（输出为完整 Ogg Vorbis 文件）</summary>
+    /// <param name="pcm">16-bit 小端交错 PCM</param>
+    /// <param name="option"><see cref="VorbisOptions"/>、质量档位 Int32 或 null</param>
+    /// <returns>Ogg Vorbis 文件数据</returns>
     public IPacket FromPcm(ReadOnlySpan<Byte> pcm, Object option)
     {
-        var quality = option is Int32 q ? (q < 0 ? 0 : q > 10 ? 10 : q) : 5;
-        var sampleRate = 44100;
+        var options = option as VorbisOptions ?? new VorbisOptions();
+        if (option is Int32 quality) options.Quality = quality;
+        options.Validate();
 
-        var ms = new MemoryStream();
+        using var encoder = new VorbisEncoder(options);
+        var headers = encoder.Headers;
 
-        // 标识头
-        WriteIdentificationHeader(ms, sampleRate);
-
-        // 注释头
-        WriteCommentHeader(ms);
-
-        // 设置头
-        WriteSetupHeader(ms);
-
-        // 编码帧
-        var blockSize = 1024;
-        var sampleCount = pcm.Length / 2;
-        for (var pos = 0; pos < sampleCount; pos += blockSize)
+        using var stream = new MemoryStream();
+        using (var writer = new OggFileWriter(stream, new AudioFormat
         {
-            var remaining = Math.Min(blockSize, sampleCount - pos);
-            var chunk = pcm.Slice(pos * 2, remaining * 2);
-            var packetData = EncodeAudioPacket(chunk, remaining * 2);
-            Span<Byte> lenBuf = stackalloc Byte[2];
-            var lenWriter = new SpanWriter(lenBuf);
-            lenWriter.Write((UInt16)packetData.Length);
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
-            ms.Write(lenBuf);
-#else
-            ms.Write(lenBuf.ToArray(), 0, 2);
-#endif
-            ms.Write(packetData, 0, packetData.Length);
-        }
-
-        ms.Position = 0;
-        return new ArrayPacket(ms);
-    }
-
-    #region 头解析
-
-    private Int32 ParseIdentificationHeader(ReadOnlySpan<Byte> data)
-    {
-        var reader = new SpanReader(data);
-
-        var packetType = reader.ReadByte();
-        if (packetType != 1) throw new InvalidDataException(L.T("Not a Vorbis identification header."));
-
-        // "vorbis" 签名（6 字节）
-        if (reader.ReadBytes(6).ToStr(Encoding.ASCII) != "vorbis")
-            throw new InvalidDataException(L.T("Not valid Vorbis data."));
-
-        // Vorbis 版本
-        var version = reader.ReadUInt32();
-        if (version != 0) throw new NotSupportedException(L.T("Vorbis version {0} is not supported.", version));
-
-        _channels = reader.ReadByte();
-        _sampleRate = (Int32)reader.ReadUInt32();
-
-        // 跳过 bitrate max/nom/min (12 bytes)
-        reader.Advance(12);
-
-        var bs = reader.ReadByte();
-        _blockSize0 = 1 << (bs & 0x0F);
-        _blockSize1 = 1 << ((bs >> 4) & 0x0F);
-
-        reader.Advance(1); // framing flag
-
-        return reader.Position;
-    }
-
-    private Int32 SkipCommentHeader(ReadOnlySpan<Byte> data)
-    {
-        var reader = new SpanReader(data);
-
-        var packetType = reader.ReadByte();
-        if (packetType != 3) throw new InvalidDataException(L.T("Not a Vorbis comment header."));
-
-        // 跳过 "vorbis" (6 bytes)
-        reader.Advance(6);
-
-        // 跳过 vendor string
-        var vendorLen = reader.ReadUInt32();
-        reader.Advance((Int32)vendorLen);
-
-        // 跳过 user comments
-        var commentCount = reader.ReadUInt32();
-        for (var i = 0; i < commentCount; i++)
+            SampleRate = options.SampleRate,
+            Channels = options.Channels,
+            BitsPerSample = 16,
+            Encoding = AVTypes.Vorbis,
+        }, AVTypes.Vorbis))
         {
-            var len = reader.ReadUInt32();
-            reader.Advance((Int32)len);
-        }
+            writer.WriteVorbisHeaders(headers[0], headers[1], headers[2]);
 
-        reader.Advance(1); // framing flag
+            var channels = options.Channels;
+            var samplesPerChannel = pcm.Length / 2 / channels;
+            var frameSamples = options.BlockSize0;
+            var floatSamples = new Single[frameSamples * channels];
 
-        return reader.Position;
-    }
-
-    private Int32 ParseSetupHeader(ReadOnlySpan<Byte> data)
-    {
-        if (data[0] != 5) throw new InvalidDataException(L.T("Not a Vorbis setup header."));
-
-        var offset = 7; // packetType(1) + "vorbis"(6)
-
-        // 简化：跳过设置头其余部分
-        // 实际实现需要解析 codebook, floor, residue, mapping 等
-        var remaining = data.Length - offset;
-        offset += Math.Min(remaining, 100);
-
-        return offset;
-    }
-
-    #endregion
-
-    #region 头写入
-
-    private static void WriteIdentificationHeader(Stream ms, Int32 sampleRate)
-    {
-        ms.WriteByte(1); // packet type
-        ms.Write(System.Text.Encoding.ASCII.GetBytes("vorbis"), 0, 6);
-        WriteUInt32LE(ms, 0); // version 0
-        ms.WriteByte(1); // channels
-        WriteUInt32LE(ms, (UInt32)sampleRate);
-        WriteUInt32LE(ms, 0); // max bitrate
-        WriteUInt32LE(ms, 160000); // nominal bitrate
-        WriteUInt32LE(ms, 0); // min bitrate
-        ms.WriteByte(0x88); // blocksize 0=256, 1=2048
-        ms.WriteByte(1); // framing flag
-    }
-
-    private static void WriteCommentHeader(Stream ms)
-    {
-        ms.WriteByte(3); // packet type
-        ms.Write(System.Text.Encoding.ASCII.GetBytes("vorbis"), 0, 6);
-        var vendor = System.Text.Encoding.UTF8.GetBytes("NewLife.Audio");
-        WriteUInt32LE(ms, (UInt32)vendor.Length);
-        ms.Write(vendor, 0, vendor.Length);
-        WriteUInt32LE(ms, 0); // 0 comments
-        ms.WriteByte(1); // framing flag
-    }
-
-    private static void WriteSetupHeader(Stream ms)
-    {
-        ms.WriteByte(5); // packet type
-        ms.Write(System.Text.Encoding.ASCII.GetBytes("vorbis"), 0, 6);
-        // 简化设置（实际需要 codebook/floor/residue/mapping）
-        WriteUInt32LE(ms, 0); // 0 codebooks
-        WriteUInt32LE(ms, 0); // 0 floors
-        WriteUInt32LE(ms, 0); // 0 residues
-        WriteUInt32LE(ms, 0); // 0 mappings
-        WriteUInt32LE(ms, 0); // 0 modes
-        ms.WriteByte(1); // framing flag
-    }
-
-    private static void WriteUInt32LE(Stream ms, UInt32 value)
-    {
-        Span<Byte> buf = stackalloc Byte[4];
-        var writer = new SpanWriter(buf);
-        writer.Write(value);
-#if NETSTANDARD2_1_OR_GREATER || NETCOREAPP
-        ms.Write(buf);
-#else
-        ms.Write(buf.ToArray(), 0, 4);
-#endif
-    }
-
-    #endregion
-
-    #region 编解码核心
-
-    /// <summary>解码一个 Vorbis 音频包，返回 PCM 字节数组</summary>
-    private Byte[] DecodeAudioPacket(ReadOnlySpan<Byte> packet, Int32 blockSize)
-    {
-        var channels = _channels > 0 ? _channels : 1;
-        var samples = blockSize / 2;
-        var pcm = new Byte[samples * channels * 2];
-
-        // 简化解码：用正弦波合成填充（替代真实 floor/residue/IMDCT）
-        // 生产级实现需完整解析 codebook/floor1/residue/IMDCT 管线
-        var scale = 8000f;
-        for (var s = 0; s < samples; s++)
-        {
-            var val = (Int16)(Math.Sin(2 * Math.PI * 440 * s / _sampleRate) * scale);
-            for (var c = 0; c < channels; c++)
+            for (var offset = 0; offset < samplesPerChannel; offset += frameSamples)
             {
-                var off = (s * channels + c) * 2;
-                pcm[off] = (Byte)(val & 0xFF);
-                pcm[off + 1] = (Byte)((val >> 8) & 0xFF);
-            }
-        }
-
-        return pcm;
-    }
-
-    /// <summary>编码 PCM 数据为 Vorbis 音频包</summary>
-    private Byte[] EncodeAudioPacket(ReadOnlySpan<Byte> pcm, Int32 blockSize)
-    {
-        var channels = _channels > 0 ? _channels : 1;
-        var samplesPerChannel = blockSize / 2;
-        var sampleCount = pcm.Length / 2 / channels;
-
-        // 简化编码：记录 PCM 样本统计信息
-        var ms = new MemoryStream();
-        for (var s = 0; s < Math.Min(samplesPerChannel, sampleCount); s++)
-        {
-            // 提取每声道样本并量化到 8-bit
-            for (var c = 0; c < channels; c++)
-            {
-                var off = (s * channels + c) * 2;
-                if (off + 1 < pcm.Length)
+                var count = Math.Min(frameSamples, samplesPerChannel - offset);
+                for (var i = 0; i < count * channels; i++)
                 {
-                    var sample = (Int16)(pcm[off + 1] << 8 | pcm[off]);
-                    var q = (Byte)((sample + 32768) >> 8); // 16→8 bit
-                    ms.WriteByte(q);
+                    var index = (offset * channels + i) * 2;
+                    var sample = (Int16)(pcm[index] | pcm[index + 1] << 8);
+                    floatSamples[i] = sample / 32768f;
                 }
+
+                var packet = encoder.EncodePacket(floatSamples.AsSpan(0, count * channels), count);
+                if (packet.Length > 0)
+                    writer.WriteFrame(packet, encoder.LastPacketSamples);
+            }
+
+            while (true)
+            {
+                var tail = encoder.Flush();
+                if (tail.Length == 0) break;
+                writer.WriteFrame(tail, encoder.LastPacketSamples);
             }
         }
 
-        return ms.ToArray();
+        return new ArrayPacket(stream.ToArray());
     }
 
-    #endregion
+    /// <summary>释放资源</summary>
+    public void Dispose()
+    {
+    }
+
+    private static Int32 CopySamples(Single[] source, Int32 count, Single[] destination, Int32 offset, Int32 limit)
+    {
+        if (count <= 0) return offset;
+
+        var available = limit - offset;
+        if (available <= 0) return offset;
+
+        var length = Math.Min(count, available);
+        Array.Copy(source, 0, destination, offset, length);
+
+        return offset + length;
+    }
 }
