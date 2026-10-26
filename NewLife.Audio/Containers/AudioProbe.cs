@@ -358,11 +358,9 @@ public static class AudioProbe
         public override Int64 Position { get => _inner.Position; set => _inner.Position = value; }
         public override void Flush() => _inner.Flush();
         public override Int32 Read(Byte[] buffer, Int32 offset, Int32 count) => _inner.Read(buffer, offset, count);
-        public override Int32 Read(Span<Byte> buffer) => _inner.Read(buffer);
         public override Int64 Seek(Int64 offset, SeekOrigin origin) => _inner.Seek(offset, origin);
         public override void SetLength(Int64 value) => _inner.SetLength(value);
         public override void Write(Byte[] buffer, Int32 offset, Int32 count) => _inner.Write(buffer, offset, count);
-        public override void Write(ReadOnlySpan<Byte> buffer) => _inner.Write(buffer);
         protected override void Dispose(Boolean disposing) { }
     }
 

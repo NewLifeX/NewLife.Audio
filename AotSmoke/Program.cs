@@ -390,7 +390,7 @@ Run("多语言 31 种语言表在 AOT 下可用", () =>
 {
     if (IsInvariantGlobalization())
     {
-        if (Localization.Translate("Default device") != "Default device") throw new Exception("不变全球化下未回退英文");
+        if (Localization.Translate("Default audio device") != "Default audio device") throw new Exception("不变全球化下未回退英文");
         return;
     }
 
@@ -407,7 +407,7 @@ Run("多语言 31 种语言表在 AOT 下可用", () =>
         foreach (var name in cultures)
         {
             Localization.Culture = CultureInfo.GetCultureInfo(name);
-            if (Localization.Translate("Default device") == "Default device") missing.Add(name);
+            if (Localization.Translate("Default audio device") == "Default audio device") missing.Add(name);
         }
     }
     finally
@@ -424,7 +424,7 @@ Run("多语言 未知语言回退英文", () =>
     try
     {
         Localization.Culture = CultureInfo.InvariantCulture;
-        if (Localization.Translate("Default device") != "Default device") throw new Exception("未知语言未回退英文");
+        if (Localization.Translate("Default audio device") != "Default audio device") throw new Exception("未知语言未回退英文");
     }
     finally
     {
@@ -481,3 +481,5 @@ internal sealed class SineSource : IAudioProcessor
 
     public void Reset() => _pos = 0;
 }
+
+
