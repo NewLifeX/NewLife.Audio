@@ -26,7 +26,7 @@
 
 Bibliothèque de traitement audio .NET multiplateforme et entièrement managée, couvrant les codecs, les E/S des périphériques audio, les effets DSP, le traitement de la parole, la lecture/écriture de formats conteneurs et le streaming — le tout dans un seul paquet NuGet.
 
-🎧 Client de démonstration de bureau multiplateforme [AudioStudio](AudioStudio/) (Avalonia) inclus, avec six modules d'outils : lecture, conversion, périphériques, enregistrement, DSP et diagnostics.
+🎧 Client de démonstration de bureau multiplateforme [AudioStudio](AudioStudio/) (Avalonia) inclus, avec sept modules d'outils : lecture, conversion, périphériques, enregistrement, DSP, diagnostics et synthèse vocale.
 
 Source : https://github.com/NewLifeX/NewLife.Audio  
 NuGet : `NewLife.Audio`

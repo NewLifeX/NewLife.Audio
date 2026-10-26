@@ -26,7 +26,7 @@
 
 跨平台、純受控的 .NET 音訊處理程式庫，支援編解碼、裝置 I/O、DSP 效果、語音處理、容器格式 I/O 與串流，全部整合於單一 NuGet 套件中。
 
-🎧 內附 [AudioStudio](AudioStudio/) 跨平台桌面示範用戶端（Avalonia），提供播放、轉換、裝置、錄製、DSP 與診斷六大工具模組。
+🎧 內附 [AudioStudio](AudioStudio/) 跨平台桌面示範用戶端（Avalonia），提供播放、轉換、裝置、錄製、DSP、診斷與語音合成七個工具模組。
 
 原始碼： https://github.com/NewLifeX/NewLife.Audio  
 NuGet：`NewLife.Audio`

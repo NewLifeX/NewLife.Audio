@@ -26,7 +26,7 @@
 
 Eine plattformübergreifende .NET-Bibliothek für Audioverarbeitung, vollständig in verwaltetem Code: Codec, Geräte-I/O, DSP-Effekte, Sprachverarbeitung, Containerformat-Ein-/Ausgabe und Streaming – alles in einem einzigen NuGet-Paket.
 
-🎧 Enthält den plattformübergreifenden Desktop-Demo-Client [AudioStudio](AudioStudio/) (Avalonia) mit sechs Werkzeugmodulen: Wiedergabe, Konvertierung, Geräte, Aufnahme, DSP und Diagnose.
+🎧 Enthält den plattformübergreifenden Desktop-Demo-Client [AudioStudio](AudioStudio/) (Avalonia) mit sieben Werkzeugmodulen: Wiedergabe, Konvertierung, Geräte, Aufnahme, DSP, Diagnose und Sprachsynthese.
 
 Quellcode: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`

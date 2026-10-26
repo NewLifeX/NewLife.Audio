@@ -26,7 +26,7 @@
 
 코덱, 장치 I/O, DSP 효과, 음성 처리, 컨테이너 포맷 입출력, 스트리밍을 하나의 NuGet 패키지에서 모두 지원하는 크로스 플랫폼 순수 관리형 .NET 오디오 처리 라이브러리입니다.
 
-🎧 [AudioStudio](AudioStudio/) 크로스 플랫폼 데스크톱 데모 클라이언트(Avalonia)가 포함되어 있으며, 재생, 변환, 장치, 녹음, DSP, 진단의 6가지 도구 모듈을 제공합니다.
+🎧 [AudioStudio](AudioStudio/) 크로스 플랫폼 데스크톱 데모 클라이언트(Avalonia)가 포함되어 있으며, 재생, 변환, 장치, 녹음, DSP, 진단, 음성 합성의 7가지 도구 모듈을 제공합니다.
 
 소스: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`

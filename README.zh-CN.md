@@ -26,7 +26,7 @@
 
 跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成（系统语音/HTTP/子进程）、容器格式读写（WAV/Ogg/MP4/FLAC）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
 
-🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断六大工具模块。
+🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断、语音合成七大工具模块。
 
 源码： https://github.com/NewLifeX/NewLife.Audio  
 Nuget：NewLife.Audio  
