@@ -28,6 +28,24 @@ public class Mp3CodecTests
         Assert.True((encoded[1] & 0xE0) == 0xE0);
     }
 
+    [Fact(DisplayName = "Xing/Info 信息帧解码为静音而非杂音")]
+    public void Decode_InfoFrame_IsSilent()
+    {
+        var path = System.IO.Path.Combine(AppContext.BaseDirectory, "Assets", "mp3", "m1-mono-44k-320.mp3");
+        var data = System.IO.File.ReadAllBytes(path);
+
+        var pcm = _codec.ToPcm(data, null);
+        var bytes = pcm.GetSpan().ToArray();
+        Assert.True(bytes.Length >= 1152 * 2);
+
+        // 该文件的 LAME Info 帧不承载音频，解码结果首帧必须是静音（且总采样数不变）
+        for (var i = 0; i < 1152; i++)
+        {
+            var v = (Int16)(bytes[i * 2] | bytes[i * 2 + 1] << 8);
+            Assert.Equal(0, v);
+        }
+    }
+
     [Fact(DisplayName = "MP3帧头解析MPEG1 Layer3 128kbps 44100Hz")]
     public void ParseHeader_DefaultFrame()
     {

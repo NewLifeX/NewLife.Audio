@@ -131,6 +131,15 @@ internal sealed class Mp3Layer3Decoder
             sampleRate = header.SampleRate;
             channels = header.Channels;
 
+            // Xing/Info/VBRI 信息帧不承载音频：输出等长静音保持采样对齐，且不按音频解码
+            if (IsInfoFrame(input, offset, header))
+            {
+                var infoSamples = (header.Version == Mp3Version.Mpeg1 ? 2 : 1) * 576;
+                for (var i = 0; i < infoSamples * channels * 2; i++) output.WriteByte(0);
+                offset += header.FrameBytes;
+                continue;
+            }
+
             Array.Clear(pcm, 0, pcm.Length);
             DecodeFrame(input, offset, header, pcm);
 
@@ -151,6 +160,28 @@ internal sealed class Mp3Layer3Decoder
     #endregion
 
     #region 帧头与 ID3
+    /// <summary>判断是否为 Xing/Info/VBRI 信息帧（不含音频数据）</summary>
+    /// <param name="data">码流</param>
+    /// <param name="offset">帧起始偏移</param>
+    /// <param name="header">已解析的帧头</param>
+    /// <returns>信息帧返回 true</returns>
+    /// <remarks>信息帧紧跟边信息存放标记：Xing/Info（LAME 的 CBR/VBR 头）或 VBRI。</remarks>
+    private static Boolean IsInfoFrame(Byte[] data, Int32 offset, Mp3Header header)
+    {
+        var sideInfo = (header.Version == Mp3Version.Mpeg1 ? 17 : 9) * header.Channels;
+        var mark = offset + 4 + (header.HasCrc ? 2 : 0) + sideInfo;
+        if (mark + 4 > data.Length) return false;
+
+        if (data[mark] == (Byte)'X' && data[mark + 1] == (Byte)'i' && data[mark + 2] == (Byte)'n' && data[mark + 3] == (Byte)'g') return true;
+        if (data[mark] == (Byte)'I' && data[mark + 1] == (Byte)'n' && data[mark + 2] == (Byte)'f' && data[mark + 3] == (Byte)'o') return true;
+
+        // VBRI 固定在帧头后 32 字节处
+        var vbri = offset + 4 + 32;
+        if (vbri + 4 <= data.Length && data[vbri] == (Byte)'V' && data[vbri + 1] == (Byte)'B' && data[vbri + 2] == (Byte)'R' && data[vbri + 3] == (Byte)'I') return true;
+
+        return false;
+    }
+
     /// <summary>跳过 ID3v2 标签</summary>
     /// <param name="data">码流</param>
     /// <returns>首个音频帧可能出现的偏移</returns>

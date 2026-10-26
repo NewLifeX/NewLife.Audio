@@ -30,7 +30,7 @@
 | `G711UCodec` | G.711 μ-law 编解码器（无状态，类级单例，查表法实现） |
 | `AacCodec` | AAC 编解码器（纯托管解码，编码通过 `FaacEncoder` 包装 libfaac 原生库） |
 | `OpusCodec` | Opus 编解码器（纯托管 CELT 实现，有状态，工厂模式创建实例） |
-| `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5，编码 Layer III CBR） |
+| `Mp3Codec` | MP3 编解码器（纯托管双向：解码 MPEG-1/2/2.5，含 Xing/Info/VBRI 信息帧静音处理；编码 Layer III CBR） |
 | `Mp3Layer3Encoder` | MP3 Layer III 编码器：多相分析 → MDCT → 反混叠折叠 → 量化 → Huffman → 帧组装，支持 9 档采样率与单/立体声 |
 | `Mp3HuffmanEncoder` | 由解码表反推的 Huffman 编码表，保证收发使用同一份 ISO 码表 |
 | `FlacCodec` | FLAC 编解码器（纯托管，Fixed LPC + LPC 子帧 + Rice 残差编码） |
