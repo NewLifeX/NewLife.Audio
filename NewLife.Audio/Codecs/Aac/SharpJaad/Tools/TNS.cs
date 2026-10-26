@@ -55,22 +55,101 @@ namespace SharpJaad.AAC.Tools
             }
         }
 
+        /// <summary>短窗 TNS 最大阶数</summary>
+        private const Int32 MaxShortOrder = 7;
+
         /// <summary>对谱线应用 TNS 反向滤波</summary>
         /// <param name="ics">当前声道流</param>
-        /// <param name="spec">逆量化后的谱线</param>
-        /// <param name="sf">采样率（TNS 可覆盖的频带上限随之变化）</param>
-        /// <param name="decode">true 表示 LTP 路径</param>
+        /// <param name="spec">逆量化后的谱线（长窗 1024 点，短窗 8×128 点）</param>
+        /// <param name="sf">采样率（TNS 可覆盖的频带上限随之变化，本实现由 max_sfb 约束）</param>
+        /// <param name="decode">true 表示 LTP 路径，语义不变</param>
         /// <remarks>
-        /// 尚未实现（移植自上游时即为空实现）：TNS 参数已被正确解析，但滤波器没生效。
-        /// 后果用外部参考向量可量化——AAC-LC 前 4 秒与参考解码几乎逐样本一致（约 60 dB），
-        /// 一旦码流开始用 TNS（本批向量约 3.7 秒起，order 6~12、覆盖 23~27 个缩放因子带），
-        /// 整段 SNR 掉到 7~9 dB、频带能量比仍为 1.00，即频谱对、波形错。
-        /// 实现要点见 ISO/IEC 14496-3 §4.6.9（反射系数→LPC、按 dir 位做全极点反向滤波、
-        /// 频带范围从 num_swb 起按 length 向下计并受 max_tns_sfb 限制），已登记为待修复项。
+        /// 规范见 ISO/IEC 14496-3 §4.6.9：量化反射系数经 Levinson 递推转 LPC，再在
+        /// 对应缩放因子带区间做全极点反向滤波，方向由方向位控制，每个滤波器状态清零。
         /// </remarks>
         public void Process(ICStream ics, float[] spec, SampleFrequency sf, bool decode)
         {
-            // TODO TNS 反向滤波未实现，见功能清单待修复项
+            if (ics == null || spec == null || spec.Length == 0) return;
+
+            var info = ics.GetInfo();
+            var windowCount = info.GetWindowCount();
+            var offsets = info.GetSWBOffsets();
+            var maxSfb = info.GetMaxSFB();
+            var shortFrame = info.IsEightShortFrame();
+            var frameLength = spec.Length;
+            var windowLength = shortFrame ? frameLength / 8 : frameLength;
+            var maxOrder = shortFrame ? MaxShortOrder : TNS_MAX_ORDER;
+
+            for (var w = 0; w < windowCount && w < _nFilt.Length; w++)
+            {
+                // 滤波器从最高缩放因子带往下依次占用：length 以 sfB 为单位从"带总数"往下计，
+                // 若从 max_sfb 起算会把本该保留的低频带一起滤掉。
+                var bottom = info.GetSWBCount();
+
+                for (var filt = 0; filt < _nFilt[w] && filt < 4; filt++)
+                {
+                    var top = bottom;
+                    bottom = Math.Max(top - _length[w, filt], 0);
+
+                    var order = Math.Min(_order[w, filt], maxOrder);
+                    if (order <= 0) continue;
+
+                    var start = Math.Min(bottom, maxSfb);
+                    var end = Math.Min(top, maxSfb);
+                    if (start >= end) continue;
+
+                    var startIndex = Math.Min(offsets[start], windowLength);
+                    var endIndex = Math.Min(offsets[end], windowLength);
+                    var count = endIndex - startIndex;
+                    if (count <= 0) continue;
+
+                    var lpc = ConvertToLpc(w, filt, order);
+                    var baseIndex = shortFrame ? w * windowLength : 0;
+                    ArFilter(spec, baseIndex + startIndex, count, order, lpc, _direction[w, filt]);
+                }
+            }
+        }
+
+        /// <summary>反射系数转 LPC 系数（Levinson-Durbin 递推，a[0] 恒为 1）</summary>
+        private Single[] ConvertToLpc(Int32 w, Int32 filt, Int32 order)
+        {
+            var lpc = new Single[order];
+            var a = new Single[order + 1];
+            var b = new Single[order + 1];
+            a[0] = 1f;
+
+            for (var m = 1; m <= order; m++)
+            {
+                // 本移植的系数表与 ISO 表符号相反，递推前先取反，才能与 AR 滤波的减号配对
+                a[m] = -_coef[w, filt, m - 1];
+
+                for (var i = 1; i < m; i++) b[i] = a[i] + a[m] * a[m - i];
+                for (var i = 1; i < m; i++) a[i] = b[i];
+            }
+
+            for (var j = 0; j < order; j++) lpc[j] = a[j + 1];
+
+            return lpc;
+        }
+
+        /// <summary>全极点反向滤波：y(n) = x(n) - Σ lpc[i]·y(n-1-i)</summary>
+        private static void ArFilter(Single[] spec, Int32 start, Int32 length, Int32 order, Single[] lpc, Boolean reverse)
+        {
+            var state = new Single[order];
+            var step = reverse ? -1 : 1;
+            var index = reverse ? start + length - 1 : start;
+
+            for (var n = 0; n < length; n++)
+            {
+                var y = spec[index];
+                for (var i = 0; i < order; i++) y -= lpc[i] * state[i];
+
+                for (var i = order - 1; i > 0; i--) state[i] = state[i - 1];
+                state[0] = y;
+
+                spec[index] = y;
+                index += step;
+            }
         }
     }
 }

@@ -11,71 +11,71 @@ namespace XUnitTest.Codecs;
 /// 码流与参考 PCM 均取自公共测试包，参考 PCM 为官方参考解码器输出（LC/HEv1 截取 2 秒，HEv2 截取 3~7 秒，
 /// 后段门禁用 5~6 秒各 1 秒切片）。
 /// 断言口径：先按互相关对齐（编码器/解码器存在固定延迟），再比较归一化相关度与对齐后 SNR。
-/// <para>LC 与 HE-AAC v1 在上述窗口内与参考几乎逐样本一致（SNR 约 62 dB），门禁守在 45 dB；
-/// HE-AAC v2（PS）稳定段 12.7/14.5 dB，门禁守在 11 dB。用整段参考复测时第 4 秒后 SNR 降至 11~14 dB，
-/// 但频带能量比与时延都正常（差异在噪声/正弦分量的随机实现），详见功能清单收口记录。</para>
+/// <para>TNS 反向滤波（FIX-010）补齐后，LC 与 HEv1 与参考解码几乎逐样本一致（SNR 82~87 dB、相关度 1.0000），
+/// 门禁守在 60 dB；HE-AAC v2（PS）稳定段 21.2/19.5 dB，门禁守在 18 dB。PS 后段的左右声道能量关系
+/// 与参考相反（已知缺陷 FIX-011），该区间门禁只防退化。</para>
 /// </remarks>
 public class AacExternalVectorTests
 {
     private static String AssetPath(String name) => Path.Combine(AppContext.BaseDirectory, "Assets", "aacplus", name);
 
-    [Fact(DisplayName = "AAC-LC 外部向量：22.05kHz 单声道对齐后 SNR ≥ 45 dB")]
+    [Fact(DisplayName = "AAC-LC 外部向量：22.05kHz 单声道对齐后 SNR ≥ 60 dB")]
     public void AacLc_ExternalVector()
     {
         var (snr, corr, format) = Compare("lc-22k.mp4", "lc-22k.ref.wav");
 
         Assert.Equal(22050, format.SampleRate);
         Assert.Equal(1, format.Channels);
-        Assert.True(snr >= 45, $"SNR {snr:F2} dB 低于门禁 45 dB");
-        Assert.True(corr >= 0.999, $"相关度 {corr:F4} 低于门禁 0.999");
+        Assert.True(snr >= 60, $"SNR {snr:F2} dB 低于门禁 60 dB");
+        Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
-    [Fact(DisplayName = "HE-AAC v1（SBR）外部向量：44.1kHz 单声道对齐后 SNR ≥ 45 dB")]
+    [Fact(DisplayName = "HE-AAC v1（SBR）外部向量：44.1kHz 单声道对齐后 SNR ≥ 60 dB")]
     public void HeAacV1_ExternalVector()
     {
         var (snr, corr, format) = Compare("heaac-v1-44k.mp4", "heaac-v1-44k.ref.wav");
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(1, format.Channels);
-        Assert.True(snr >= 45, $"SNR {snr:F2} dB 低于门禁 45 dB");
-        Assert.True(corr >= 0.999, $"相关度 {corr:F4} 低于门禁 0.999");
+        Assert.True(snr >= 60, $"SNR {snr:F2} dB 低于门禁 60 dB");
+        Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
-    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 11 dB")]
+    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 18 dB")]
     public void HeAacV2_ExternalVector()
     {
         // 参考向量取自 3~7 秒：PS 状态在开头数秒需收敛（已知），稳定段才具备可比性。
-        // 混合滤波器组补虚部 + SBR patch 不再截断到 5 个之后，稳定段 SNR 提升到 12.68/14.46 dB、相关度 0.9732/0.9821，
-        // 13~15 kHz 频带从静默恢复到 -0.3 dB。
+        // TNS 反向滤波补齐后（FIX-010），PS 稳定段由 12.7/14.5 dB 提升到 21.2/19.5 dB。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.ref.wav", skipSeconds: 3);
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(2, format.Channels);
-        Assert.True(snr >= 11, $"SNR {snr:F2} dB 低于门禁 11 dB");
-        Assert.True(corr >= 0.96, $"相关度 {corr:F4} 低于门禁 0.96");
+        Assert.True(snr >= 18, $"SNR {snr:F2} dB 低于门禁 18 dB");
+        Assert.True(corr >= 0.99, $"相关度 {corr:F4} 低于门禁 0.99");
     }
 
-    [Fact(DisplayName = "HE-AAC v1 后段（5~6 秒）外部向量：SNR ≥ 9 dB")]
+    [Fact(DisplayName = "HE-AAC v1 后段（5~6 秒）外部向量：SNR ≥ 60 dB")]
     public void HeAacV1_LateSegment()
     {
-        // 后段是 SBR 噪声/正弦分量占主导的区间，当前实现与参考解码器存在波形级差异（频谱与时延正常），
-        // 门禁只用于防止继续退化，不代表该区间已与参考一致。详见功能清单收口记录。
+        // TNS 实现前该区间只有 11 dB（噪声/正弦分量主导的表象），补上 TNS 后达到 84 dB。
         var (snr, corr, format) = Compare("heaac-v1-44k.mp4", "heaac-v1-44k.late.ref.wav", skipSeconds: 5);
 
         Assert.Equal(44100, format.SampleRate);
-        Assert.True(snr >= 9, $"SNR {snr:F2} dB 低于门禁 9 dB");
-        Assert.True(corr >= 0.93, $"相关度 {corr:F4} 低于门禁 0.93");
+        Assert.True(snr >= 60, $"SNR {snr:F2} dB 低于门禁 60 dB");
+        Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
-    [Fact(DisplayName = "HE-AAC v2 后段（5~6 秒）外部向量：双声道 SNR ≥ 7 dB")]
+    [Fact(DisplayName = "HE-AAC v2 后段（5~6 秒）外部向量：双声道 SNR ≥ 10 dB")]
     public void HeAacV2_LateSegment()
     {
+        // 该区间 PS 的左右声道能量关系与参考相反（右声道偏响、左声道偏弱），是已知的 PS 缺陷（FIX-011），
+        // 门禁只防继续退化，不代表该区间已与参考一致。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.late.ref.wav", skipSeconds: 5);
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(2, format.Channels);
-        Assert.True(snr >= 7, $"SNR {snr:F2} dB 低于门禁 7 dB");
-        Assert.True(corr >= 0.90, $"相关度 {corr:F4} 低于门禁 0.90");
+        Assert.True(snr >= 10, $"SNR {snr:F2} dB 低于门禁 10 dB");
+        Assert.True(corr >= 0.96, $"相关度 {corr:F4} 低于门禁 0.96");
     }
 
     [Fact(DisplayName = "AAC 解码可复现：同一码流连续解码两次逐字节一致")]
