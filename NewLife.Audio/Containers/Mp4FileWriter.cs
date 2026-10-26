@@ -58,11 +58,11 @@ public class Mp4FileWriter : IAudioContainerWriter
         _flushed = true;
 
         // ftyp 已写入，当前位置是 moov 的起始
-        // mdat 数据起始 = 当前位置 + 8 (moov header) + moovData.Length + 8 (mdat header)
+        // mdat box 起始 = 当前位置 + 8 (moov header) + moovData.Length
         // 需要先知道 moovData 长度 → 两遍构建
         // 第一遍：用 0 占位计算 moov 大小
         var draftMoov = BuildMoovData(0);
-        var mdatDataStart = _stream.Position + 8 + draftMoov.Length + 8;
+        var mdatDataStart = _stream.Position + 8 + draftMoov.Length;
 
         // 第二遍：用真实偏移重建 moov
         var moovData = BuildMoovData(mdatDataStart);
@@ -384,7 +384,7 @@ public class Mp4FileWriter : IAudioContainerWriter
 
         // esds box (Elementary Stream Descriptor)
         var esds = BuildEsds();
-        WriteUInt32BEToStream(ms, (UInt32)(8 + esds.Length));
+        WriteUInt32BEToStream(ms, (UInt32)(8 + 4 + esds.Length));
         WriteFourCCToStream(ms, "esds");
         ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0); ms.WriteByte(0);
         ms.Write(esds, 0, esds.Length);
@@ -394,37 +394,40 @@ public class Mp4FileWriter : IAudioContainerWriter
 
     private Byte[] BuildEsds()
     {
-        var ms = new MemoryStream();
-        // ES_Descriptor tag=3
-        ms.WriteByte(3);
-        // length (variable)
         var config = BuildDecoderConfig();
-        var esdLen = 3 + 1 + 1 + 1 + 3 + 5 + config.Length;
-        WriteDescriptorLength(ms, esdLen);
-        // ES_ID=1, flags=0
-        WriteUInt16BEToStream(ms, 1);
-        ms.WriteByte(0);
 
-        // DecoderConfigDescriptor tag=4
-        ms.WriteByte(4);
-        WriteDescriptorLength(ms, 1 + 1 + 3 + 5 + config.Length);
-        // objectType=0x40 (Audio ISO/IEC 14496-3), streamType=0x05 (Audio), bufferSizeDB, maxBitrate, avgBitrate
-        ms.WriteByte(0x40);
-        ms.WriteByte(0x15); // streamType<<2 | upstream<<1 | reserved
-        WriteUInt24BEToStream(ms, 0); // bufferSizeDB
-        WriteUInt32BEToStream(ms, (UInt32)(_format.SampleRate * _format.Channels * 2 * 8)); // maxBitrate
-        WriteUInt32BEToStream(ms, (UInt32)(_format.SampleRate * _format.Channels * 2 * 8)); // avgBitrate
+        // DecoderSpecificInfo (tag 5)
+        var dsi = BuildDescriptor(5, config);
 
-        // DecoderSpecificInfo tag=5
-        ms.WriteByte(5);
-        WriteDescriptorLength(ms, config.Length);
-        ms.Write(config, 0, config.Length);
+        // DecoderConfigDescriptor (tag 4)：13B 固定字段 + DSI
+        var dcdPayload = new MemoryStream();
+        dcdPayload.WriteByte(0x40); // objectTypeIndication: Audio ISO/IEC 14496-3
+        dcdPayload.WriteByte(0x15); // streamType=Audio
+        WriteUInt24BEToStream(dcdPayload, 0); // bufferSizeDB
+        WriteUInt32BEToStream(dcdPayload, (UInt32)(_format.SampleRate * _format.Channels * 2 * 8)); // maxBitrate
+        WriteUInt32BEToStream(dcdPayload, (UInt32)(_format.SampleRate * _format.Channels * 2 * 8)); // avgBitrate
+        dcdPayload.Write(dsi, 0, dsi.Length);
+        var dcd = BuildDescriptor(4, dcdPayload.ToArray());
 
-        // SLConfigDescriptor tag=6
-        ms.WriteByte(6);
-        WriteDescriptorLength(ms, 1);
-        ms.WriteByte(2); // pre-defined
+        // SLConfigDescriptor (tag 6)
+        var sl = BuildDescriptor(6, [2]);
 
+        // ES_Descriptor (tag 3)：ES_ID(2) + flags(1) + DCD + SL
+        var esdPayload = new MemoryStream();
+        WriteUInt16BEToStream(esdPayload, 1);
+        esdPayload.WriteByte(0);
+        esdPayload.Write(dcd, 0, dcd.Length);
+        esdPayload.Write(sl, 0, sl.Length);
+
+        return BuildDescriptor(3, esdPayload.ToArray());
+    }
+
+    private static Byte[] BuildDescriptor(Byte tag, Byte[] payload)
+    {
+        var ms = new MemoryStream();
+        ms.WriteByte(tag);
+        WriteDescriptorLength(ms, payload.Length);
+        ms.Write(payload, 0, payload.Length);
         return ms.ToArray();
     }
 

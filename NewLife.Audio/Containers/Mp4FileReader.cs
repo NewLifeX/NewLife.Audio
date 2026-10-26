@@ -1,6 +1,7 @@
 using System.Text;
 using NewLife.Buffers;
 using NewLife.Data;
+using NewLife.Audio.Codecs;
 using NewLife.Audio.DSP;
 
 namespace NewLife.Audio.Containers;
@@ -29,6 +30,9 @@ public class Mp4FileReader : IAudioContainerReader
 
     /// <summary>编码类型</summary>
     public AVTypes CodecType => _codecType;
+
+    /// <summary>AAC AudioSpecificConfig。从 MP4 esds 解析；非 AAC 或无 esds 时为 null</summary>
+    public AudioSpecificConfig AacConfig { get; private set; }
 
     /// <summary>总帧数</summary>
     public Int64 TotalFrames => _totalFrames;
@@ -164,6 +168,7 @@ public class Mp4FileReader : IAudioContainerReader
     private void ParseMdia(ReadOnlySpan<Byte> mdiaData, ref Byte[] stsd, ref Byte[] stts, ref Byte[] stsc,
         ref Byte[] stsz, ref Byte[] stco, ref Int32 stcoVersion)
     {
+        var isSound = true;
         var reader = new SpanReader(mdiaData) { IsLittleEndian = false };
         while (reader.Available >= 8)
         {
@@ -179,7 +184,12 @@ public class Mp4FileReader : IAudioContainerReader
                 case "mdhd":
                     ParseMdhd(ref r);
                     break;
-                case "minf":
+                case "hdlr":
+                    // hdlr: version/flags(4) + pre_defined(4) + handler_type(4)
+                    if (subSpan.Length >= 12)
+                        isSound = subSpan.Slice(8, 4).ToStr(Encoding.ASCII) == "soun";
+                    break;
+                case "minf" when isSound:
                     ParseMinf(ref r, ref stsd, ref stts, ref stsc, ref stsz, ref stco, ref stcoVersion);
                     break;
             }
@@ -220,7 +230,8 @@ public class Mp4FileReader : IAudioContainerReader
 
             switch (type)
             {
-                case "stsd": stsd = subSpan.ToArray(); break;
+                // 只接受 AAC（mp4a）音频轨；MP4 可能同时包含元数据轨（mp4s）
+                case "stsd" when IsMp4aStsd(subSpan): stsd = subSpan.ToArray(); break;
                 case "stts": stts = subSpan.ToArray(); break;
                 case "stsc": stsc = subSpan.ToArray(); break;
                 case "stsz": stsz = subSpan.ToArray(); break;
@@ -228,6 +239,17 @@ public class Mp4FileReader : IAudioContainerReader
                 case "co64": stco = subSpan.ToArray(); stcoVersion = 1; break;
             }
         }
+    }
+
+    private static Boolean IsMp4aStsd(ReadOnlySpan<Byte> stsd)
+    {
+        if (stsd.Length < 16) return false;
+
+        var entryCount = (stsd[4] << 24) | (stsd[5] << 16) | (stsd[6] << 8) | stsd[7];
+        if (entryCount < 1) return false;
+
+        var descSize = (stsd[8] << 24) | (stsd[9] << 16) | (stsd[10] << 8) | stsd[11];
+        return descSize >= 8 && stsd.Slice(12, 4).ToStr(Encoding.ASCII) == "mp4a";
     }
 
     private void ParseMvhd(ref SpanReader reader)
@@ -277,17 +299,140 @@ public class Mp4FileReader : IAudioContainerReader
         var sampleSize = (UInt16)((stsdData[dataOff + 18] << 8) | stsdData[dataOff + 19]);
         var sampleRate = (Int32)(((stsdData[dataOff + 24] << 24) | (stsdData[dataOff + 25] << 16) | (stsdData[dataOff + 26] << 8) | stsdData[dataOff + 27]) >> 16);
 
+        // mp4a 负载 28 字节后是 esds 等子 box
+        if (dataOff + 28 < stsdData.Length && TryFindEsds(stsdData.Slice(dataOff + 28), out var ascBytes))
+        {
+            try
+            {
+                AacConfig = AudioSpecificConfig.Parse(ascBytes);
+                var sbr = AacConfig.SbrPresentFlag || AacConfig.AudioObjectType is 5 or 29;
+                var extRate = AacConfig.EffectiveExtensionSampleRate;
+                if (sbr && extRate > 0) sampleRate = extRate;
+                else if (AacConfig.EffectiveSampleRate > 0) sampleRate = AacConfig.EffectiveSampleRate;
+                if (AacConfig.PsPresentFlag) channels = 2;
+                else if (AacConfig.ChannelConfiguration > 0) channels = (UInt16)AacConfig.ChannelCount;
+                sampleSize = 16;
+            }
+            catch (Exception)
+            {
+                AacConfig = null;
+            }
+        }
+
         _format = new AudioFormat
         {
             SampleRate = sampleRate > 0 ? sampleRate : 44100,
             Channels = channels > 0 ? channels : 2,
             BitsPerSample = sampleSize > 0 ? (Int32)sampleSize : 16,
-            Encoding = AVTypes.AAC,
-            SamplesPerFrame = 1024, // AAC-LC 典型帧长
+            Encoding = AacConfig?.SbrPresentFlag == true ? AVTypes.HEAAC : AVTypes.AAC,
+            SamplesPerFrame = AacConfig?.FrameLengthFlag == true ? 960 : 1024,
         };
 
-        _codecType = AVTypes.AAC;
+        _codecType = _format.Encoding;
     }
+
+    /// <summary>在 mp4a 子 box 中查找 esds 并提取 DecoderSpecificInfo</summary>
+    private static Boolean TryFindEsds(ReadOnlySpan<Byte> boxes, out Byte[] asc)
+    {
+        asc = null;
+        var offset = 0;
+
+        while (offset + 8 <= boxes.Length)
+        {
+            var size = ReadUInt32BE(boxes, offset);
+            var type = boxes.Slice(offset + 4, 4).ToStr(Encoding.ASCII);
+            var headerSize = 8;
+            if (size == 1)
+            {
+                if (offset + 16 > boxes.Length) return false;
+                size = ReadUInt32BE(boxes, offset + 8);
+                headerSize = 16;
+            }
+            else if (size == 0)
+                size = (UInt32)(boxes.Length - offset);
+
+            if (size < headerSize || offset + size > boxes.Length) return false;
+
+            var payload = boxes.Slice(offset + headerSize, (Int32)size - headerSize);
+            if (type == "esds") return TryParseEsdsPayload(payload, out asc);
+            if (type == "wave" && TryFindEsds(payload, out asc)) return true;
+
+            offset += (Int32)size;
+        }
+
+        return false;
+    }
+
+    /// <summary>解析 esds 负载中的 DecoderSpecificInfo</summary>
+    private static Boolean TryParseEsdsPayload(ReadOnlySpan<Byte> data, out Byte[] asc)
+    {
+        asc = null;
+        // version + flags
+        return data.Length > 4 && TryParseDescriptors(data.Slice(4), out asc);
+    }
+
+    private static Boolean TryParseDescriptors(ReadOnlySpan<Byte> data, out Byte[] asc)
+    {
+        asc = null;
+        var offset = 0;
+
+        while (offset < data.Length)
+        {
+            var tag = data[offset++];
+            if (!TryReadDescriptorLength(data, ref offset, out var length)) return false;
+            if (length > data.Length - offset) length = data.Length - offset;
+
+            var payload = data.Slice(offset, length);
+            offset += length;
+
+            if (tag == 0x05)
+            {
+                asc = payload.ToArray();
+                return asc.Length > 0;
+            }
+
+            // ES_Descriptor：ES_ID(2) + flags(1) + 可选字段
+            if (tag == 0x03)
+            {
+                if (payload.Length < 3) continue;
+                var pos = 3;
+                var flags = payload[2];
+                if ((flags & 0x80) != 0) pos += 2;
+                if ((flags & 0x40) != 0)
+                {
+                    if (pos >= payload.Length) continue;
+                    pos += 1 + payload[pos];
+                }
+                if ((flags & 0x20) != 0) pos += 2;
+                if (pos < payload.Length && TryParseDescriptors(payload.Slice(pos), out asc)) return true;
+            }
+            // DecoderConfigDescriptor：objectType(1) + streamType(1) + bufferSize(3) + maxBitrate(4) + avgBitrate(4)
+            else if (tag == 0x04)
+            {
+                var pos = 13;
+                if (pos < payload.Length && TryParseDescriptors(payload.Slice(pos), out asc)) return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static Boolean TryReadDescriptorLength(ReadOnlySpan<Byte> data, ref Int32 offset, out Int32 length)
+    {
+        length = 0;
+        for (var i = 0; i < 4; i++)
+        {
+            if (offset >= data.Length) return false;
+            var b = data[offset++];
+            length = (length << 7) | (b & 0x7F);
+            if ((b & 0x80) == 0) return true;
+        }
+
+        return false;
+    }
+
+    private static UInt32 ReadUInt32BE(ReadOnlySpan<Byte> data, Int32 offset) =>
+        (UInt32)((data[offset] << 24) | (data[offset + 1] << 16) | (data[offset + 2] << 8) | data[offset + 3]);
 
     /// <summary>构建采样偏移表</summary>
     private void BuildSampleTable(ReadOnlySpan<Byte> stsd, ReadOnlySpan<Byte> stts, ReadOnlySpan<Byte> stsc, ReadOnlySpan<Byte> stsz, ReadOnlySpan<Byte> stco, Int32 stcoVersion)
