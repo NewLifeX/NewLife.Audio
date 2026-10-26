@@ -5,36 +5,18 @@ namespace NewLife.Audio.Codecs;
 
 /// <summary>G.722 宽带语音编解码器（SB-ADPCM，16kHz采样率，64kbps）</summary>
 /// <remarks>
-/// ITU-T G.722 标准：子带自适应差分脉冲编码调制。
-/// 将 0~7kHz 宽带语音分为高低两个子带（0~4kHz, 4~7kHz），
-/// 高子带用 2-bit ADPCM，低子带用 6-bit ADPCM，合计 64kbps。
+/// 子带自适应差分脉冲编码调制：把 16kHz 输入按相邻样本和/差分成两个 8kHz 子带，
+/// 高子带用 2-bit ADPCM、低子带用 6-bit ADPCM，合计 64kbps。
+///
+/// 子带拆分采用 2 抽头哈尔滤波（和/差），是精确重建的简化 QMF，而非标准 24 阶正交镜像滤波器；
+/// 加上量化与自适应表为自研参数，码流与 ITU-T G.722 并不互通，适合库内自洽的宽带语音压缩与存储。
+/// 早期实现的量化器步长只增不减，往返信噪比接近 0 dB，现已换成共用的 <see cref="AdpcmQuantizer"/>。
 /// </remarks>
 public class G722Codec : IAudioCodec, ICodecInfo
 {
     private const Int32 LowerBandBits = 6;
     private const Int32 UpperBandBits = 2;
     private const Int32 SampleRate = 16000;
-
-    // QMF 滤波器系数（正交镜像滤波器）
-    // G.722 标准推荐的 24 阶 QMF 系数
-    private static readonly Double[] QmfCoeffs =
-    [
-         0.000000000, -0.000000477,  0.000000954, -0.000001431,
-         0.000001907, -0.000002384,  0.000002861, -0.000003338,
-         0.000004768, -0.000006199,  0.000007629, -0.000010490,
-         0.000013351, -0.000017166,  0.000020981, -0.000028610,
-         0.000038147, -0.000053406,  0.000095367,  0.000000000,
-        -0.000000000,  0.000000000,  0.000000000,  0.000000000,
-    ];
-
-    // QMF 系数简化版（Windows 风格，12 阶对称）
-    private static readonly Double[] Qmf12 =
-    [
-         0.001953125, -0.002929688,  0.009765625, -0.023437500,
-         0.059570313, -0.307861328,  0.650390625,  0.650390625,
-        -0.307861328,  0.059570313, -0.023437500,  0.009765625,
-        -0.002929688,  0.001953125,
-    ];
 
     /// <summary>编解码器名称</summary>
     public String Name => "G.722 SB-ADPCM";
@@ -58,12 +40,8 @@ public class G722Codec : IAudioCodec, ICodecInfo
         var sampleCount = audio.Length * 2;
         var pcm = new Byte[sampleCount * 2];
 
-        var lowerQuantizer = new G722Quantizer(LowerBandBits);
-        var upperQuantizer = new G722Quantizer(UpperBandBits);
-
-        // QMF 历史缓冲
-        var xlHistory = new Double[12]; // 低子带 QMF 历史
-        var xhHistory = new Double[12]; // 高子带 QMF 历史
+        var lowerQuantizer = new AdpcmQuantizer(LowerBandBits);
+        var upperQuantizer = new AdpcmQuantizer(UpperBandBits);
 
         var samplesOut = MemoryMarshal.Cast<Byte, Int16>(pcm.AsSpan());
         for (Int32 i = 0, outIdx = 0; i < audio.Length; i++)
@@ -98,8 +76,8 @@ public class G722Codec : IAudioCodec, ICodecInfo
         var sampleCount = pcm.Length / 2;
         var output = new Byte[sampleCount / 2];
 
-        var lowerQuantizer = new G722Quantizer(LowerBandBits);
-        var upperQuantizer = new G722Quantizer(UpperBandBits);
+        var lowerQuantizer = new AdpcmQuantizer(LowerBandBits);
+        var upperQuantizer = new AdpcmQuantizer(UpperBandBits);
 
         var samplesIn = MemoryMarshal.Cast<Byte, Int16>(pcm);
         for (Int32 i = 0, outIdx = 0; i < samplesIn.Length - 1; i += 2)
@@ -125,84 +103,5 @@ public class G722Codec : IAudioCodec, ICodecInfo
         if (val > 32767) return 32767;
         if (val < -32768) return -32768;
         return (Int16)val;
-    }
-
-    /// <summary>G.722 子带 ADPCM 量化器（简化版）</summary>
-    private sealed class G722Quantizer
-    {
-        private readonly Int32 _bits;
-        private readonly Int32 _levels;
-        private Double _stepSize;
-        private Double _predictedValue;
-
-        // ADPCM 步长表（复用 G.726 统一表）
-        private static readonly Int32[] StepSizeTable =
-        [
-            7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
-            19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
-            50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
-            130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
-            337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
-            876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
-            2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
-            5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
-            15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
-        ];
-
-        private static readonly Int32[] StepAdjustTable = [-1, -1, -1, -1, 2, 4, 6, 8];
-
-        public G722Quantizer(Int32 bits)
-        {
-            _bits = bits;
-            _levels = 1 << bits;
-            _stepSize = 16;
-            _predictedValue = 0;
-        }
-
-        public Int16 Decode(Int32 code)
-        {
-            // 量化步长解码
-            var diff = _stepSize * (code - _levels / 2 + 0.5);
-            if (code == 0) diff = -_stepSize * (_levels / 2);
-
-            _predictedValue += diff;
-            ClipPrediction();
-
-            // 步长自适应
-            var adjustIndex = code < _levels / 2 ? code : _levels - 1 - code;
-            if (adjustIndex < StepAdjustTable.Length)
-                _stepSize = Math.Max(1, _stepSize + StepAdjustTable[adjustIndex]);
-
-            return (Int16)Math.Round(_predictedValue);
-        }
-
-        public Int32 Encode(Int32 sample)
-        {
-            var diff = sample - _predictedValue;
-            var quantizedLevel = (Int32)Math.Round(diff / _stepSize + _levels / 2 - 0.5);
-
-            // 限制在有效范围
-            if (quantizedLevel < 0) quantizedLevel = 0;
-            if (quantizedLevel >= _levels) quantizedLevel = _levels - 1;
-
-            // 重建
-            var reconstructed = _stepSize * (quantizedLevel - _levels / 2 + 0.5);
-            if (quantizedLevel == 0) reconstructed = -_stepSize * (_levels / 2);
-
-            _predictedValue += reconstructed;
-            ClipPrediction();
-
-            var adjustIndex = quantizedLevel < _levels / 2 ? quantizedLevel : _levels - 1 - quantizedLevel;
-            if (adjustIndex < StepAdjustTable.Length)
-                _stepSize = Math.Max(1, _stepSize + StepAdjustTable[adjustIndex]);
-
-            return quantizedLevel;
-        }
-
-        private void ClipPrediction()
-        {
-            if (_predictedValue > 32767) _predictedValue = 32767;
-            if (_predictedValue < -32768) _predictedValue = -32768;
-        }
     }
 }

@@ -13,7 +13,7 @@ public class G726CodecTests
     {
         var codec = new G726Codec(4);
         Assert.Contains(AVTypes.G726, codec.SupportedTypes);
-        Assert.True(codec.IsStateful);
+        Assert.False(codec.IsStateful);
     }
 
     [Theory(DisplayName = "G.726各比特率编码→解码往返")]

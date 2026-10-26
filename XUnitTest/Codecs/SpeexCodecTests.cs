@@ -14,7 +14,7 @@ public class SpeexCodecTests
     {
         Assert.Equal("Speex (Narrowband)", _codec.Name);
         Assert.Equal("1.0", _codec.Version);
-        Assert.True(_codec.IsStateful);
+        Assert.False(_codec.IsStateful);
         Assert.NotEmpty(_codec.SupportedTypes);
     }
 

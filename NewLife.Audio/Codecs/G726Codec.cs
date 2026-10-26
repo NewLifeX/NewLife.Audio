@@ -5,9 +5,10 @@ namespace NewLife.Audio.Codecs;
 
 /// <summary>G.726 ADPCM 语音编解码器（16/24/32/40 kbps）</summary>
 /// <remarks>
-/// ITU-T G.726 标准：自适应差分脉冲编码调制。
-/// 支持 4 种比特率：16kbps(2bit)、24kbps(3bit)、32kbps(4bit)、40kbps(5bit)。
-/// 相比 G.711 提供更高压缩比，相比 IMA ADPCM 提供更好的语音质量。
+/// 自适应差分脉冲编码调制：2/3/4/5 bit 每样本对应 16/24/32/40 kbps。
+/// 相比 G.711 提供更高压缩比，相比 IMA ADPCM 提供可配的量化级数。
+/// 预测器为一阶积分器并使用简化步长自适应，码流与 ITU-T G.726 并不互通，
+/// 适合库内自洽的窄带语音压缩与存储；与外部 G.726 设备互通需换成标准量化与预测表。
 /// </remarks>
 public class G726Codec : IAudioCodec, ICodecInfo
 {
@@ -16,28 +17,6 @@ public class G726Codec : IAudioCodec, ICodecInfo
 
     /// <summary>量化级数</summary>
     private readonly Int32 _levels;
-
-    /// <summary>步长表索引</summary>
-    private Int32 _stepIndex;
-
-    /// <summary>预测值</summary>
-    private Int32 _predictedValue;
-
-    // 步长表
-    private static readonly Int32[] StepSizeTable =
-    [
-            7, 8, 9, 10, 11, 12, 13, 14, 16, 17,
-            19, 21, 23, 25, 28, 31, 34, 37, 41, 45,
-            50, 55, 60, 66, 73, 80, 88, 97, 107, 118,
-            130, 143, 157, 173, 190, 209, 230, 253, 279, 307,
-            337, 371, 408, 449, 494, 544, 598, 658, 724, 796,
-            876, 963, 1060, 1166, 1282, 1411, 1552, 1707, 1878, 2066,
-            2272, 2499, 2749, 3024, 3327, 3660, 4026, 4428, 4871, 5358,
-            5894, 6484, 7132, 7845, 8630, 9493, 10442, 11487, 12635, 13899,
-            15289, 16818, 18500, 20350, 22385, 24623, 27086, 29794, 32767,
-    ];
-
-    private static readonly Int32[] StepAdjustTable = [0, 0, 0, 1, 2, 4, 8, 16];
 
     /// <summary>编解码器名称</summary>
     public String Name => $"G.726-{_bitsPerSample * 8}k";
@@ -48,8 +27,8 @@ public class G726Codec : IAudioCodec, ICodecInfo
     /// <summary>支持的编码类型</summary>
     public IReadOnlyCollection<AVTypes> SupportedTypes { get; } = [AVTypes.G726];
 
-    /// <summary>有状态编解码器（每个流独立状态）</summary>
-    public Boolean IsStateful => true;
+    /// <summary>无状态编解码器（每次调用自建量化状态）</summary>
+    public Boolean IsStateful => false;
 
     /// <summary>初始化 G.726 编解码器</summary>
     /// <param name="bitsPerSample">每样本比特数：2(16kbps)、3(24kbps)、4(32kbps)、5(40kbps)，默认4</param>
@@ -60,8 +39,6 @@ public class G726Codec : IAudioCodec, ICodecInfo
 
         _bitsPerSample = bitsPerSample;
         _levels = 1 << bitsPerSample;
-        _stepIndex = 0;
-        _predictedValue = 0;
     }
 
     /// <summary>G.726音频数据转PCM</summary>
@@ -72,6 +49,9 @@ public class G726Codec : IAudioCodec, ICodecInfo
     {
         var pcm = new Byte[audio.Length * 2 * 8 / _bitsPerSample];
         var outIdx = 0;
+
+        // 每次调用自建量化状态，保证解码端与编码端从同一零点起步
+        var quantizer = new AdpcmQuantizer(_bitsPerSample);
 
         Int32 buffer = 0;
         var bitsInBuffer = 0;
@@ -86,7 +66,7 @@ public class G726Codec : IAudioCodec, ICodecInfo
                 bitsInBuffer -= _bitsPerSample;
                 var code = (buffer >> bitsInBuffer) & (_levels - 1);
 
-                var sample = DecodeSample(code);
+                var sample = quantizer.Decode(code);
                 pcm[outIdx++] = (Byte)(sample & 0xFF);
                 pcm[outIdx++] = (Byte)((sample >> 8) & 0xFF);
             }
@@ -109,10 +89,13 @@ public class G726Codec : IAudioCodec, ICodecInfo
         var buffer = 0;
         var bitsInBuffer = 0;
 
+        // 每次调用自建量化状态，保证编码端与解码端从同一零点起步
+        var quantizer = new AdpcmQuantizer(_bitsPerSample);
+
         for (var i = 0; i < pcm.Length - 1; i += 2)
         {
             var sample = (Int16)(pcm[i + 1] << 8 | pcm[i]);
-            var code = EncodeSample(sample);
+            var code = quantizer.Encode(sample);
 
             buffer = (buffer << _bitsPerSample) | code;
             bitsInBuffer += _bitsPerSample;
@@ -133,72 +116,5 @@ public class G726Codec : IAudioCodec, ICodecInfo
         }
 
         return new ArrayPacket(output);
-    }
-
-    private Int16 DecodeSample(Int32 code)
-    {
-        var ss = StepSizeTable[_stepIndex];
-
-        // 量化重建（中升量化器）
-        var diff = 0;
-        var halfLevels = _levels / 2;
-        if (code < halfLevels)
-        {
-            diff = -ss * (halfLevels - 1 - code) - ss / 2;
-        }
-        else
-        {
-            diff = ss * (code - halfLevels) + ss / 2;
-        }
-
-        _predictedValue += diff / 2; // 折半增益防止震荡
-        if (_predictedValue > 32767) _predictedValue = 32767;
-        if (_predictedValue < -32768) _predictedValue = -32768;
-
-        UpdateStepIndex(code);
-        return (Int16)_predictedValue;
-    }
-
-    private Int32 EncodeSample(Int16 sample)
-    {
-        var ss = StepSizeTable[_stepIndex];
-        var diff = sample - _predictedValue;
-
-        // 量化
-        var halfLevels = _levels / 2;
-        var absDiff = Math.Abs(diff);
-        var code = Math.Min(absDiff / ss, halfLevels - 1);
-
-        if (diff < 0)
-            code = halfLevels - 1 - code;
-        else
-            code = halfLevels + code;
-
-        if (code < 0) code = 0;
-        if (code >= _levels) code = _levels - 1;
-
-        // 本地解码（重建）
-        var reconstructedDiff = 0;
-        if (code < halfLevels)
-            reconstructedDiff = -ss * (halfLevels - 1 - code) - ss / 2;
-        else
-            reconstructedDiff = ss * (code - halfLevels) + ss / 2;
-
-        _predictedValue += reconstructedDiff / 2;
-        if (_predictedValue > 32767) _predictedValue = 32767;
-        if (_predictedValue < -32768) _predictedValue = -32768;
-
-        UpdateStepIndex(code);
-        return code;
-    }
-
-    private void UpdateStepIndex(Int32 code)
-    {
-        var halfLevels = _levels / 2;
-        var adjustIndex = code < halfLevels ? halfLevels - 1 - code : code - halfLevels;
-        _stepIndex += StepAdjustTable[Math.Min(adjustIndex, StepAdjustTable.Length - 1)];
-
-        if (_stepIndex < 0) _stepIndex = 0;
-        if (_stepIndex >= StepSizeTable.Length) _stepIndex = StepSizeTable.Length - 1;
     }
 }

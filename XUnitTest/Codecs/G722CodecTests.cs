@@ -42,21 +42,22 @@ public class G722CodecTests
         Assert.Equal(samples * 2, decoded.Total);
     }
 
-    [Fact(DisplayName = "G.722解码静音数据输出低幅度PCM")]
+    [Fact(DisplayName = "G.722静音编码往返后输出低幅度PCM")]
     public void Decode_Silence_ReturnsLowAmplitude()
     {
-        // G.722 静音编码为 0x00 重复
-        var encoded = new Byte[80];
-        var decoded = _codec.ToPcm(encoded, null);
+        // 静音必须走「编码 → 解码」往返：裸零字节在标准子带 ADPCM 里表示最大负电平，并非静音
+        var silent = new Byte[160 * 2];
+        var encoded = _codec.FromPcm(silent, null);
+        var decoded = _codec.ToPcm(encoded.GetSpan(), null);
 
         var pcmData = decoded.ReadBytes();
         var maxAbs = 0;
         for (var i = 0; i < pcmData.Length - 1; i += 2)
         {
-            var val = Math.Abs((Int16)(pcmData[i + 1] << 8 | pcmData[i]));
+            var val = Math.Abs((Int32)(Int16)(pcmData[i + 1] << 8 | pcmData[i]));
             if (val > maxAbs) maxAbs = val;
         }
-        // 静音解码后直流偏移在可接受范围
+        // 静音编码后重建幅度应保持很低
         Assert.True(maxAbs < 15000, $"maxAbs={maxAbs}");
     }
 
