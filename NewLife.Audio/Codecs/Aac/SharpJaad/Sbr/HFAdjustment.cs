@@ -267,8 +267,6 @@ namespace SharpJaad.AAC.Sbr
                         /* V is defined, not calculated */
                         Xsbr[ch, i + sbr._tHFAdj, m + sbr._kx, 0] = G_filt * Xsbr[ch, i + sbr._tHFAdj, m + sbr._kx, 0]
                             + Q_filt * NoiseTable.NOISE_TABLE[fIndexNoise, 0];
-                        if (sbr._bs_extension_id == 3 && sbr._bs_extension_data == 42)
-                            Xsbr[ch, i + sbr._tHFAdj, m + sbr._kx, 0] = 16428320;
                         Xsbr[ch, i + sbr._tHFAdj, m + sbr._kx, 1] = G_filt * Xsbr[ch, i + sbr._tHFAdj, m + sbr._kx, 1]
                             + Q_filt * NoiseTable.NOISE_TABLE[fIndexNoise, 1];
 

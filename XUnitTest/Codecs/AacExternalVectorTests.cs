@@ -8,10 +8,11 @@ namespace XUnitTest.Codecs;
 
 /// <summary>AAC 外部参考向量：aacPlusDecoderCheckPackage v2.1（LC / HE-AAC v1 / HE-AAC v2）</summary>
 /// <remarks>
-/// 码流与参考 PCM 均取自公共测试包，参考 PCM 为官方参考解码器输出（截取前 2 秒）。
+/// 码流与参考 PCM 均取自公共测试包，参考 PCM 为官方参考解码器输出（LC/HEv1 截取 2 秒，HEv2 截取 3~7 秒）。
 /// 断言口径：先按互相关对齐（编码器/解码器存在固定延迟），再比较归一化相关度与对齐后 SNR。
-/// <para>LC 与 HE-AAC v1 在该窗口内与参考几乎逐样本一致（SNR 约 62 dB），门禁守在 45 dB；
-/// HE-AAC v2（PS）稳定段 12.7/14.5 dB，残余差异集中在 PS 状态收敛与立体声像，门禁守在 11 dB。</para>
+/// <para>LC 与 HE-AAC v1 在上述窗口内与参考几乎逐样本一致（SNR 约 62 dB），门禁守在 45 dB；
+/// HE-AAC v2（PS）稳定段 12.7/14.5 dB，门禁守在 11 dB。用整段参考复测时第 4 秒后 SNR 降至 11~14 dB，
+/// 但频带能量比与时延都正常（差异在噪声/正弦分量的随机实现），详见功能清单收口记录。</para>
 /// </remarks>
 public class AacExternalVectorTests
 {
