@@ -31,7 +31,7 @@
 源码： https://github.com/NewLifeX/NewLife.Audio  
 Nuget：NewLife.Audio  
 
-📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [AOT 兼容性](Doc/AOT兼容性分析.md) | [多语言本地化](Doc/多语言本地化.md) | [各模块架构设计](Doc/)
+📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [架构设计](Doc/架构设计.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [AOT 兼容性](Doc/AOT兼容性分析.md) | [多语言本地化](Doc/多语言本地化.md) | [各模块架构设计](Doc/)
 
 > ℹ️ 本中文版与 [English README](README.md) 同批维护；若两者内容不一致，以英文版为对外口径。
 
@@ -57,6 +57,8 @@ Nuget：NewLife.Audio
 - Windows 下的 **WaveOut** / **WASAPI** / **ASIO** 后端
 - 音频采集与环回录制
 - 通过 `AudioDeviceManager` 进行多设备并发管理
+
+> ⚠️ 当前只有 Windows WaveOut/WaveIn（WinMM）是完整实现；WASAPI/ASIO 与 Linux/macOS/Android/iOS 后端的状态与排期见[架构设计](Doc/架构设计.md)。
 
 ### 🎛️ DSP 处理链（DSP）
 可组合的音频信号处理链：
