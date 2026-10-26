@@ -115,12 +115,6 @@ public class LocalizationTests
             "Not valid FLAC data.",
             "No STREAMINFO metadata block was found in the FLAC data.",
             "The bit count must be between 2 and 5.",
-            "Vorbis data is too short.",
-            "Not a Vorbis identification header.",
-            "Not valid Vorbis data.",
-            "Not a Vorbis comment header.",
-            "Not a Vorbis setup header.",
-            "Vorbis version {0} is not supported.",
             "No codec is registered for [{0}].",
             "Unsupported container format: {0}.",
             "Not a valid FLAC file.",
@@ -145,7 +139,6 @@ public class LocalizationTests
             "Error in BytesToStruct: {0}",
             "Error in StructToBytes: {0}",
             "NewLife Audio Library",
-            "Cross-platform, pure-managed .NET audio library: codecs (G.711/G.722/G.726/ADPCM/Opus/MP3/AAC/FLAC/Vorbis/Speex), device I/O (WaveOut/WASAPI/ASIO), DSP effects, speech processing (VAD/AEC/AGC/NS), container formats (WAV/Ogg/MP4/FLAC) and streaming (RTP/RTSP/HTTP/WebSocket). NativeAOT-ready, with built-in runtime localization for 31 languages; targets 3 frameworks from .NET Framework 4.6.1 to .NET Standard 2.1.",
         };
 
         var codes = new[]

@@ -12,6 +12,7 @@
   <ItemGroup>
     <Content Include="xunit.runner.json" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\mp3\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="Assets\vorbis\**" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>
@@ -20,6 +21,8 @@
     <PackageReference Include="NewLife.IoT" Version="3.1.2026.1022-beta0136" />
     <PackageReference Include="NewLife.PC" Version="1.0.2026.609" />
     <PackageReference Include="xunit.v3" Version="4.0.2" />
+    <!-- 仅测试用的独立 Vorbis 解码器，用于交叉验证编码器互操作性，不进入产品包 -->
+    <PackageReference Include="NVorbis" Version="0.10.5" />
   </ItemGroup>
 
   <!-- Windows 下验证系统语音引擎；其他平台不引入 Windows 专用包 -->

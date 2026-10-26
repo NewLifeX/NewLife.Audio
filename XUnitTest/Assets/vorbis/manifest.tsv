@@ -1,0 +1,6 @@
+name	rate	channels	totalSamples
+mono-44k-q5	44100	1	25436
+stereo-44k-q5	44100	2	25436
+stereo-48k-q8	48000	2	27776
+mono-22k-q2	22050	1	12718
+transient-44k-q5	44100	2	25436

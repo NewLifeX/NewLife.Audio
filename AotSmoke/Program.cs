@@ -215,11 +215,30 @@ Run("Speex 编解码往返", () =>
     if (decoded.Total <= 0) throw new Exception("解码输出为空");
 });
 
-Run("Vorbis 编码输出", () =>
+Run("Vorbis 编解码往返", () =>
 {
     var codec = new VorbisCodec();
-    var encoded = codec.FromPcm(new Byte[1024 * 2], null);
-    if (encoded.Total <= 0) throw new Exception("编码输出为空");
+    var pcm = MakeSinePcm(4096, 440, 44100, 12000);
+    var options = new VorbisOptions { SampleRate = 44100, Channels = 1, Quality = 5 };
+    var encoded = codec.FromPcm(pcm, options);
+    if (encoded.Total <= 0) throw new Exception("Vorbis 编码输出为空");
+
+    var decoded = codec.ToPcm(encoded.GetSpan(), null);
+    if (decoded.Total != pcm.Length) throw new Exception($"Vorbis 解码长度 {decoded.Total} != {pcm.Length}");
+
+    var output = decoded.GetSpan();
+    Double signal = 0;
+    Double error = 0;
+    for (var i = 0; i < pcm.Length / 2; i++)
+    {
+        var reference = BitConverter.ToInt16(pcm, i * 2);
+        var actual = (Int16)(output[i * 2] | output[i * 2 + 1] << 8);
+        signal += reference * (Double)reference;
+        error += (reference - actual) * (Double)(reference - actual);
+    }
+
+    var snr = error > 0 ? 10 * Math.Log10(signal / error) : 999;
+    if (snr < 15) throw new Exception($"Vorbis 往返信噪比过低 {snr:F1} dB");
 });
 
 Run("WAV 容器写入与读取", () =>
