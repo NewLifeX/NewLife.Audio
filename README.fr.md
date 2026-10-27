@@ -31,7 +31,7 @@ Bibliothèque de traitement audio .NET multiplateforme et entièrement managée,
 Source : https://github.com/NewLifeX/NewLife.Audio  
 NuGet : `NewLife.Audio`
 
-> 📖 Documentation détaillée (en chinois) : [Cahier des charges](Doc/需求文档.md) | [Liste des modules fonctionnels](Doc/功能模块清单.md) | [Cahier des charges du client](Doc/需求文档-客户端.md) | [Liste des fonctionnalités du client](Doc/功能模块清单-客户端.md) | [Analyse concurrentielle](Doc/竞品分析报告.md) | [Compatibilité AOT](Doc/AOT兼容性分析.md) | [Localisation multilingue](Doc/多语言本地化.md) | [Conceptions d'architecture par module](Doc/)
+> 📖 Documentation détaillée (en chinois) : [Cahier des charges](Doc/需求文档.md) | [Liste des modules fonctionnels](Doc/模块清单.md) | [Cahier des charges du client](Doc/需求文档-客户端.md) | [Liste des fonctionnalités du client](Doc/功能模块清单-客户端.md) | [Analyse concurrentielle](Doc/竞品分析报告.md) | [Compatibilité AOT](Doc/AOT兼容性分析.md) | [Localisation multilingue](Doc/多语言本地化.md) | [Conceptions d'architecture par module](Doc/)
 
 ## Fonctionnalités
 

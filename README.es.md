@@ -31,7 +31,7 @@ Una biblioteca de procesamiento de audio .NET multiplataforma y totalmente admin
 Fuente: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
 
-> 📖 Documentación detallada (en chino): [Requisitos](Doc/需求文档.md) | [Lista de módulos funcionales](Doc/功能模块清单.md) | [Requisitos del cliente](Doc/需求文档-客户端.md) | [Lista de funciones del cliente](Doc/功能模块清单-客户端.md) | [Análisis de la competencia](Doc/竞品分析报告.md) | [Compatibilidad con AOT](Doc/AOT兼容性分析.md) | [Localización](Doc/多语言本地化.md) | [Diseños de arquitectura de los módulos](Doc/)
+> 📖 Documentación detallada (en chino): [Requisitos](Doc/需求文档.md) | [Lista de módulos funcionales](Doc/模块清单.md) | [Requisitos del cliente](Doc/需求文档-客户端.md) | [Lista de funciones del cliente](Doc/功能模块清单-客户端.md) | [Análisis de la competencia](Doc/竞品分析报告.md) | [Compatibilidad con AOT](Doc/AOT兼容性分析.md) | [Localización](Doc/多语言本地化.md) | [Diseños de arquitectura de los módulos](Doc/)
 
 ## Características
 

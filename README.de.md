@@ -31,7 +31,7 @@ Eine plattformübergreifende .NET-Bibliothek für Audioverarbeitung, vollständi
 Quellcode: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
 
-> 📖 Ausführliche Dokumentation (Chinesisch): [Anforderungen](Doc/需求文档.md) | [Funktionsmodulliste](Doc/功能模块清单.md) | [Client-Anforderungen](Doc/需求文档-客户端.md) | [Client-Funktionsliste](Doc/功能模块清单-客户端.md) | [Wettbewerbsanalyse](Doc/竞品分析报告.md) | [AOT-Kompatibilität](Doc/AOT兼容性分析.md) | [Lokalisierung](Doc/多语言本地化.md) | [Architekturdesigns der Module](Doc/)
+> 📖 Ausführliche Dokumentation (Chinesisch): [Anforderungen](Doc/需求文档.md) | [Funktionsmodulliste](Doc/模块清单.md) | [Client-Anforderungen](Doc/需求文档-客户端.md) | [Client-Funktionsliste](Doc/功能模块清单-客户端.md) | [Wettbewerbsanalyse](Doc/竞品分析报告.md) | [AOT-Kompatibilität](Doc/AOT兼容性分析.md) | [Lokalisierung](Doc/多语言本地化.md) | [Architekturdesigns der Module](Doc/)
 
 ## Funktionen
 

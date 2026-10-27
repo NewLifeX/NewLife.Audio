@@ -31,7 +31,7 @@ A cross-platform, pure-managed .NET audio processing library supporting codecs, 
 Source: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
 
-> 📖 Detailed documentation (Chinese): [Requirements](Doc/需求文档.md) | [Feature module list](Doc/功能模块清单.md) | [Architecture](Doc/架构设计.md) | [Client requirements](Doc/需求文档-客户端.md) | [Client feature list](Doc/功能模块清单-客户端.md) | [Competitive analysis](Doc/竞品分析报告.md) | [AOT compatibility](Doc/AOT兼容性分析.md) | [Localization](Doc/多语言本地化.md) | [Module architecture designs](Doc/)
+> 📖 Detailed documentation (Chinese): [Requirements](Doc/需求文档.md) | [Feature module list](Doc/模块清单.md) | [Architecture](Doc/架构设计.md) | [Client requirements](Doc/需求文档-客户端.md) | [Client feature list](Doc/功能模块清单-客户端.md) | [Competitive analysis](Doc/竞品分析报告.md) | [AOT compatibility](Doc/AOT兼容性分析.md) | [Localization](Doc/多语言本地化.md) | [Module architecture designs](Doc/)
 
 ## Features
 

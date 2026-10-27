@@ -31,7 +31,7 @@
 源码： https://github.com/NewLifeX/NewLife.Audio  
 Nuget：NewLife.Audio  
 
-📖 详细文档：[需求文档](Doc/需求文档.md) | [功能模块清单](Doc/功能模块清单.md) | [架构设计](Doc/架构设计.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [AOT 兼容性](Doc/AOT兼容性分析.md) | [多语言本地化](Doc/多语言本地化.md) | [各模块架构设计](Doc/)
+📖 详细文档：[需求文档](Doc/需求文档.md) | [模块清单](Doc/模块清单.md) | [架构设计](Doc/架构设计.md) | [客户端需求文档](Doc/需求文档-客户端.md) | [客户端功能清单](Doc/功能模块清单-客户端.md) | [竞品分析](Doc/竞品分析报告.md) | [AOT 兼容性](Doc/AOT兼容性分析.md) | [多语言本地化](Doc/多语言本地化.md) | [各模块架构设计](Doc/)
 
 > ℹ️ 本中文版与 [English README](README.md) 同批维护；若两者内容不一致，以英文版为对外口径。
 
