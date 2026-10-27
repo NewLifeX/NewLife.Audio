@@ -22,12 +22,27 @@ public class LoopbackRecorder : IAudioRecorder
     private readonly WasapiRecorder _recorder = new(true);
     private AudioFormat _format;
 
+    private EventHandler<Byte[]> _handler;
+
     /// <summary>数据可用事件（请求格式的 PCM 字节）</summary>
     public event EventHandler<Byte[]> DataAvailable
     {
-        add => _recorder.DataAvailable += value;
-        remove => _recorder.DataAvailable -= value;
+        add
+        {
+            _handler += value;
+            _recorder.DataAvailable += value;
+        }
+        remove
+        {
+            _handler -= value;
+            _recorder.DataAvailable -= value;
+        }
     }
+
+    /// <summary>触发一次数据可用回调</summary>
+    /// <param name="pcm">请求格式的 PCM 字节</param>
+    /// <remarks>保留自早期版本的公开入口，供自定义采集循环拿到 PCM 后主动分发。</remarks>
+    public void OnDataAvailable(Byte[] pcm) => _handler?.Invoke(this, pcm);
 
     /// <summary>音频格式</summary>
     public AudioFormat Format => _format ?? _recorder.Format;
