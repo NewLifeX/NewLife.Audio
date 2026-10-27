@@ -83,7 +83,7 @@ public class DeviceHardwareTests
         player.Stop();
     }
 
-    [Fact(DisplayName = "默认驱动真机采集麦克风数据")]
+    [Fact(DisplayName = "默认驱动真机持续采集麦克风数据")]
     public void DefaultDriver_RealDevice_InputCaptures()
     {
         Assert.SkipUnless(AudioDriverFactory.IsWindows, "仅 Windows 有 WaveIn 后端");
@@ -111,10 +111,16 @@ public class DeviceHardwareTests
 
         // 条件轮询等待首个数据块，最多 5 秒
         for (var i = 0; i < 100 && Interlocked.Read(ref bytes) == 0; i++) Thread.Sleep(50);
+        Assert.SkipWhen(Interlocked.Read(ref bytes) == 0, "没有拿到采集数据（无输入源或端点静默）");
+
+        // 预投递的 4 个缓冲播完之后必须继续产出：
+        // 曾经在重投递时把 WHDR_PREPARED 一起清掉，waveInAddBuffer 失败，采完首轮 80ms 就静默停采
+        var first = Interlocked.Read(ref bytes);
+        for (var i = 0; i < 40 && Interlocked.Read(ref bytes) <= first; i++) Thread.Sleep(50);
+        var total = Interlocked.Read(ref bytes);
         recorder.StopRecording();
 
-        Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
-        Assert.True(bytes > 0);
+        Assert.True(total > first, "首轮缓冲之后不再产出数据，采集未能持续");
     }
 
     [Fact(DisplayName = "WASAPI loopback回采能拿到系统声音")]
@@ -163,6 +169,53 @@ public class DeviceHardwareTests
 
         Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
         Assert.True(bytes > 0);
+    }
+
+    [Fact(DisplayName = "WASAPI采集在格式转换下仍能产出数据")]
+    public void Wasapi_RealDevice_FormatConversionCaptures()
+    {
+        Assert.SkipUnless(WasapiDriver.IsPlatformSupported, "仅 Windows 有 WASAPI 后端");
+
+        var driver = new WasapiDriver();
+        var input = driver.EnumerateDevices().FirstOrDefault(d => d.IsInput);
+        Assert.SkipWhen(input == null, "本机没有输入设备");
+
+        // 先用端点友好格式确认采集通路本身可用；拿不到数据视为环境缺失
+        var native = CaptureBytes(driver, Format, input.Id);
+        Assert.SkipWhen(native <= 0, "没有拿到采集数据（无输入源、端点静默或设备被占用）");
+
+        // 44.1k 单声道通常与端点混音格式不同，覆盖声道映射 + 重采样路径。
+        // 曾经映射后仍按源声道数重采样而越界，转换路径完全拿不到数据，属代码缺陷，这里不跳过
+        var converted = CaptureBytes(driver, new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 }, input.Id);
+        Assert.True(converted > 0, "格式转换路径没有产出数据");
+    }
+
+    /// <summary>用指定格式采集一段时间，返回拿到的字节数；设备打不开时返回 -1</summary>
+    /// <param name="driver">音频驱动</param>
+    /// <param name="format">采集格式</param>
+    /// <param name="deviceId">输入设备编号</param>
+    /// <param name="waitMs">等待首个数据块的超时（毫秒）</param>
+    /// <returns>采集到的字节数</returns>
+    private static Int64 CaptureBytes(IAudioDriver driver, AudioFormat format, String deviceId, Int32 waitMs = 3000)
+    {
+        using var recorder = driver.CreateRecorder();
+        var bytes = 0L;
+        recorder.DataAvailable += (s, data) => Interlocked.Add(ref bytes, data.Length);
+        recorder.Init(format, deviceId);
+
+        try
+        {
+            recorder.StartRecording();
+        }
+        catch (InvalidOperationException)
+        {
+            return -1;
+        }
+
+        for (var i = 0; i < waitMs / 50 && Interlocked.Read(ref bytes) == 0; i++) Thread.Sleep(50);
+        recorder.StopRecording();
+
+        return bytes;
     }
 
     [Fact(DisplayName = "设备热插拔观察器注册成功并返回活动端点")]

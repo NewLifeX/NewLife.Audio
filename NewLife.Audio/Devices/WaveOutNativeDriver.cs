@@ -433,11 +433,13 @@ internal class WaveInRecorder : IAudioRecorder
                         (chunks ??= []).Add(data);
                     }
 
-                    // 重置头部后重新投递，形成循环采集
-                    hdr.dwFlags = 0;
+                    // 只清 WHDR_DONE 再重新投递，必须保留驱动设置的 WHDR_PREPARED，
+                    // 否则 waveInAddBuffer 会因未准备而失败，导致采完首轮缓冲后静默停采
+                    hdr.dwFlags &= ~NativeMethods.WHDR_DONE;
                     hdr.dwBytesRecorded = 0;
                     Marshal.StructureToPtr(hdr, ptr, false);
-                    NativeMethods.waveInAddBuffer(_hWaveIn, ptr, (UInt32)headerSize);
+                    var hr = NativeMethods.waveInAddBuffer(_hWaveIn, ptr, (UInt32)headerSize);
+                    if (hr != 0) XTrace.Log.InfoPrefixed("WaveInRecorder: ", "waveInAddBuffer returned {0}", hr);
                 }
             }
 
