@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Linux ALSA 后端真机冒烟：跨平台发布后拷到目标机运行，例如
+       dotnet publish Samples/AlsaSmoke/AlsaSmoke.csproj -c Release -r linux-arm64 (自包含) -o out
+       ./AlsaSmoke all
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>AlsaSmoke</AssemblyName>
+    <RootNamespace>AlsaSmoke</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NewLife.Audio\NewLife.Audio.csproj" />
+  </ItemGroup>
+
+</Project>

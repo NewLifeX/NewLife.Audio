@@ -12,7 +12,7 @@
 | 设备发现 | 枚举系统音频输入/输出设备，获取名称、通道数、格式支持等元数据 |
 | 音频播放 | 将 PCM/编码数据推送到音频输出设备 |
 | 音频录制 | 从音频输入设备采集原始 PCM 数据 |
-| 驱动适配 | 目标平台：Windows（WaveOut/WASAPI/ASIO）、Linux（ALSA）、macOS（CoreAudio）、Android（AAudio）、iOS（AVAudioEngine）；**Windows WaveOut/WaveIn（WinMM）与 WASAPI 为完整实现**，Linux ALSA 已落地（🟡 待 Linux 真机验证），ASIO 明确不支持，macOS/移动端未开始 |
+| 驱动适配 | 目标平台：Windows（WaveOut/WASAPI/ASIO）、Linux（ALSA）、macOS（CoreAudio）、Android（AAudio）、iOS（AVAudioEngine）；**Windows WaveOut/WaveIn（WinMM）与 WASAPI 为完整实现**，Linux ALSA 已在 ARM64 真机验证播放与设备枚举（采集待有输入源的机器复验），ASIO 明确不支持，macOS/移动端未开始 |
 | 生命周期管理 | 播放/录制会话的启停、暂停、恢复、缓冲区管理 |
 
 ---
@@ -30,7 +30,7 @@
 | `WaveOutNativeDriver` | Windows WaveOut API 驱动实现（WaveOut 播放 + WaveIn 录制，真实 P/Invoke） |
 | `WasapiDriver` | WASAPI 真实实现：`IMMDeviceEnumerator` + `IPropertyStore` 枚举端点并读取友好名称；`IAudioClient` 共享模式播放/采集；渲染端点加 `AUDCLNT_STREAMFLAGS_LOOPBACK` 回采；支持事件回调低延迟（20 ms 缓冲，失败回落轮询）与设备丢失后在新默认设备重连（`ReconnectCount`） |
 | `AsioDriver` | 明确未实现：`EnumerateDevices` 返回空，`CreatePlayer`/`CreateRecorder` 抛 `NotSupportedException`；需 ASIO SDK 后立项 |
-| `AlsaDriver` | Linux ALSA：`snd_device_name_hint` 枚举 PCM 设备，`snd_pcm_open` + `snd_pcm_set_params`（S16_LE 交错）后 `snd_pcm_writei`/`snd_pcm_readi` 播放与采集，xrun（`-EPIPE`/`-ESTRPIPE`）重新 `prepare` 后重试；`IsAvailable` 在非 Linux 或加载不到 `libasound.so.2` 时为 false，此时枚举返回空、默认设备返回 null、`Init` 抛 `NotSupportedException`。**尚未在真实 Linux 声卡验证** |
+| `AlsaDriver` | Linux ALSA：`snd_device_name_hint` 枚举 PCM 设备，`snd_pcm_open` + `snd_pcm_set_params`（S16_LE 交错）后 `snd_pcm_writei`/`snd_pcm_readi` 播放与采集，xrun（`-EPIPE`/`-ESTRPIPE`）重新 `prepare` 后重试；`IsAvailable` 在非 Linux 或加载不到 `libasound.so.2` 时为 false，此时枚举返回空、默认设备返回 null、`Init` 抛 `NotSupportedException`。**已在 Linux ARM64 真机验证**：枚举 17 个设备、默认与 `hw:` 直连播放、`null` 设备采集通路；真实采集受该机 USB 输入端点无数据限制未复验。真机冒烟程序见 `Samples/AlsaSmoke` |
 | `LoopbackRecorder` | 系统音频回路录制：走 WASAPI loopback 真实回采，按请求格式转换 |
 | `AudioDeviceWatcher` | 经 `IMMNotificationClient` 上报设备增删、状态变化与默认设备切换，并提供活动端点快照 |
 | `AudioDeviceInfo` | 音频设备元数据：名称、ID、输入/输出、支持格式 |
