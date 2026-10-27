@@ -12,8 +12,8 @@ namespace XUnitTest.Codecs;
 /// 后段门禁用 5~6 秒各 1 秒切片）。
 /// 断言口径：先按互相关对齐（编码器/解码器存在固定延迟），再比较归一化相关度与对齐后 SNR。
 /// <para>TNS 反向滤波（FIX-010）补齐后，LC 与 HEv1 与参考解码几乎逐样本一致（SNR 82~87 dB、相关度 1.0000），
-/// 门禁守在 60 dB；HE-AAC v2（PS）稳定段 21.2/19.5 dB，门禁守在 18 dB。PS 右声道在混合带 22 以上整体低 1.7 dB
-/// （FIX-011，建议级），该区间门禁只防退化。</para>
+/// 门禁守在 60 dB；HE-AAC v2（PS）在去相关器 Phi_Fract 旋转修正后稳定段 43.3/65.4 dB、后段 85.0/81.9 dB，
+/// 相关度全部 1.0000，门禁分别守在 35 dB 与 60 dB。</para>
 /// </remarks>
 public class AacExternalVectorTests
 {
@@ -41,17 +41,17 @@ public class AacExternalVectorTests
         Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
-    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 18 dB")]
+    [Fact(DisplayName = "HE-AAC v2（SBR+PS）外部向量：双声道稳定段 SNR ≥ 35 dB")]
     public void HeAacV2_ExternalVector()
     {
         // 参考向量取自 3~7 秒：PS 状态在开头数秒需收敛（已知），稳定段才具备可比性。
-        // TNS 反向滤波补齐后（FIX-010），PS 稳定段由 12.7/14.5 dB 提升到 21.2/19.5 dB。
+        // TNS 补齐后为 21.2/19.5 dB；修正去相关器 Phi_Fract 复数旋转的实部后升到 43.3/65.4 dB。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.ref.wav", skipSeconds: 3);
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(2, format.Channels);
-        Assert.True(snr >= 18, $"SNR {snr:F2} dB 低于门禁 18 dB");
-        Assert.True(corr >= 0.99, $"相关度 {corr:F4} 低于门禁 0.99");
+        Assert.True(snr >= 35, $"SNR {snr:F2} dB 低于门禁 35 dB");
+        Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
     [Fact(DisplayName = "HE-AAC v1 后段（5~6 秒）外部向量：SNR ≥ 60 dB")]
@@ -65,17 +65,16 @@ public class AacExternalVectorTests
         Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
-    [Fact(DisplayName = "HE-AAC v2 后段（5~6 秒）外部向量：双声道 SNR ≥ 10 dB")]
+    [Fact(DisplayName = "HE-AAC v2 后段（5~6 秒）外部向量：双声道 SNR ≥ 60 dB")]
     public void HeAacV2_LateSegment()
     {
-        // 右声道在混合带 22（约 4.1 kHz）以上整体低 1.7 dB，左声道正常（FIX-011，建议级）；
-        // 门禁只防继续退化，不代表该区间已与参考一致。
+        // 修正去相关器 Phi_Fract 旋转后，该区间由 20.8/11.2 dB 提升到 85.0/81.9 dB，右声道偏差消失。
         var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.late.ref.wav", skipSeconds: 5);
 
         Assert.Equal(44100, format.SampleRate);
         Assert.Equal(2, format.Channels);
-        Assert.True(snr >= 10, $"SNR {snr:F2} dB 低于门禁 10 dB");
-        Assert.True(corr >= 0.96, $"相关度 {corr:F4} 低于门禁 0.96");
+        Assert.True(snr >= 60, $"SNR {snr:F2} dB 低于门禁 60 dB");
+        Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
     [Fact(DisplayName = "AAC 解码可复现：同一码流连续解码两次逐字节一致")]

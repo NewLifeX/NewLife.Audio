@@ -925,7 +925,8 @@ namespace SharpJaad.AAC.Ps
                             }
 
                             /* z^(-2) * Phi_Fract[k] */
-                            tmp[0] = tmp[0] * Phi_Fract[0] + tmp0[1] * Phi_Fract[1];
+                            /* ComplexMult：实部 x1*c1 + x2*c2，虚部 x2*c1 - x1*c2（与 FAAD2 一致） */
+                            tmp[0] = tmp0[0] * Phi_Fract[0] + tmp0[1] * Phi_Fract[1];
                             tmp[1] = tmp0[1] * Phi_Fract[0] - tmp0[0] * Phi_Fract[1];
 
                             R0[0] = tmp[0];
