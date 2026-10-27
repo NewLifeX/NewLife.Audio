@@ -29,7 +29,7 @@ New-Item -ItemType Directory -Force -Path $out | Out-Null
 Write-Host "1/4 打包 NewLife.Audio ..."
 # 每次用唯一版本号，避免 NuGet 全局缓存命中上一次同版本包
 if (!$Version) {
-    $prefix = ([xml](Get-Content -LiteralPath (Join-Path $root "NewLife.Audio\NewLife.Audio.csproj"))).Project.PropertyGroup.VersionPrefix |
+    $prefix = ([xml](Get-Content -LiteralPath (Join-Path $root "NewLife.Audio\NewLife.Audio.csproj") -Raw -Encoding UTF8)).Project.PropertyGroup.VersionPrefix |
         Where-Object { $_ } | Select-Object -First 1
     $Version = "$prefix." + (Get-Date -Format "yyyy.MMdd") + "-beta" + (Get-Date -Format "HHmmss")
 }
@@ -89,9 +89,9 @@ using NewLife;
 using NewLife.Audio.Codecs;
 
 Localization.Culture = CultureInfo.GetCultureInfo("zh-Hans");
-if (Localization.Translate("Default device") != "默认设备")
+if (Localization.Translate("Default audio device") != "默认音频设备")
 {
-    Console.Error.WriteLine("词表未生效: " + Localization.Translate("Default device"));
+    Console.Error.WriteLine("词表未生效: " + Localization.Translate("Default audio device"));
     return 1;
 }
 

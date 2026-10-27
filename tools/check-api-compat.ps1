@@ -15,7 +15,7 @@ Set-Location $root
 
 if (-not $BaselineVersion) {
     # 基线跟随 csproj 版本线自动前移；当前版本线尚未发版时（如刚升小版本）回退到已发布的最高版本
-    $prefix = ([xml](Get-Content -LiteralPath "NewLife.Audio\NewLife.Audio.csproj")).Project.PropertyGroup.VersionPrefix |
+    $prefix = ([xml](Get-Content -LiteralPath "NewLife.Audio\NewLife.Audio.csproj" -Raw -Encoding UTF8)).Project.PropertyGroup.VersionPrefix |
         Where-Object { $_ } | Select-Object -First 1
     $v = (Invoke-RestMethod "https://api.nuget.org/v3-flatcontainer/newlife.audio/index.json").versions
     $BaselineVersion = $v | Where-Object { $_ -like "$prefix.*" } | Select-Object -Last 1

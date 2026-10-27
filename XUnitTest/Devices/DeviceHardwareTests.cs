@@ -8,11 +8,18 @@ using Xunit;
 
 namespace XUnitTest.Devices;
 
+/// <summary>音频硬件测试集合：独占音频端点，避免多个采集用例并行争抢麦克风</summary>
+[CollectionDefinition("AudioHardware", DisableParallelization = true)]
+public class AudioHardwareCollection
+{
+}
+
 /// <summary>真机硬件通路测试：无音频端点（CI 容器）时自动跳过，不做失败断言</summary>
 /// <remarks>
 /// 这些用例在开发机（有声卡）上验证「真的把数据送进/取出驱动」，
 /// 在无声卡的 CI 机器上因取不到端点或无数据而静默返回，避免把环境缺失当缺陷。
 /// </remarks>
+[Collection("AudioHardware")]
 public class DeviceHardwareTests
 {
     private static AudioFormat Format => new() { SampleRate = 48000, Channels = 2, BitsPerSample = 16 };
@@ -46,8 +53,11 @@ public class DeviceHardwareTests
         player.Play();
         player.Write(BuildTone(0.3));
 
+        // 写入后应立即统计到待播放数据；为空说明数据没有进入驱动
+        Assert.True(player.BufferedBytes > 0);
+
         // 等待播放线程消化缓冲；无声卡时 BufferedBytes 会停在原值，视为环境缺失
-        for (var i = 0; i < 40 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
+        for (var i = 0; i < 100 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
 
         Assert.SkipWhen(player.BufferedBytes > 0, "端点未消化缓冲（无声卡或设备被占用）");
         player.Stop();
@@ -64,10 +74,47 @@ public class DeviceHardwareTests
         player.Play();
         player.Write(BuildTone(0.3));
 
-        for (var i = 0; i < 40 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
+        // 写入后应立即可见待播放数据
+        Assert.True(player.BufferedBytes > 0);
+
+        for (var i = 0; i < 100 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
 
         Assert.SkipWhen(player.BufferedBytes > 0, "端点未消化缓冲（无声卡或设备被占用）");
         player.Stop();
+    }
+
+    [Fact(DisplayName = "默认驱动真机采集麦克风数据")]
+    public void DefaultDriver_RealDevice_InputCaptures()
+    {
+        Assert.SkipUnless(AudioDriverFactory.IsWindows, "仅 Windows 有 WaveIn 后端");
+
+        var driver = AudioDriverFactory.Create();
+        var input = driver.GetDefaultInputDevice();
+        Assert.SkipWhen(input == null, "本机没有输入设备");
+
+        // 16k 单声道是麦克风最通用的采集格式
+        var format = new AudioFormat { SampleRate = 16000, Channels = 1, BitsPerSample = 16 };
+        using var recorder = driver.CreateRecorder();
+        var bytes = 0L;
+        recorder.DataAvailable += (s, data) => Interlocked.Add(ref bytes, data.Length);
+        recorder.Init(format, input.Id);
+
+        try
+        {
+            recorder.StartRecording();
+        }
+        catch (InvalidOperationException ex)
+        {
+            Assert.Skip($"无法打开输入设备：{ex.Message}");
+            return;
+        }
+
+        // 条件轮询等待首个数据块，最多 5 秒
+        for (var i = 0; i < 100 && Interlocked.Read(ref bytes) == 0; i++) Thread.Sleep(50);
+        recorder.StopRecording();
+
+        Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
+        Assert.True(bytes > 0);
     }
 
     [Fact(DisplayName = "WASAPI loopback回采能拿到系统声音")]
@@ -109,7 +156,9 @@ public class DeviceHardwareTests
         recorder.DataAvailable += (s, data) => Interlocked.Add(ref bytes, data.Length);
         recorder.Init(Format, input.Id);
         recorder.StartRecording();
-        Thread.Sleep(500);
+
+        // 条件轮询等待首个数据块，最多 5 秒
+        for (var i = 0; i < 100 && Interlocked.Read(ref bytes) == 0; i++) Thread.Sleep(50);
         recorder.StopRecording();
 
         Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
