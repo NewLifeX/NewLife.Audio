@@ -62,8 +62,11 @@ public class FlacFileWriter : IAudioContainerWriter
     private Int64 _frameNumber;
     private Int64 _streamInfoOffset;
     private Int64 _seekTableOffset;
+    private Int64 _firstFrameOffset = -1;
     private Int64 _minFrameSize;
     private Int64 _maxFrameSize;
+    private Int32 _minBlockSize;
+    private Int32 _maxBlockSize;
     private Boolean _headerWritten;
     private Boolean _closed;
     #endregion
@@ -182,7 +185,7 @@ public class FlacFileWriter : IAudioContainerWriter
     private void WriteStreamInfo()
     {
         var block = new Byte[34];
-        FillStreamInfo(block, _format, (UInt16)_options.BlockSize, 0, 0, 0, null);
+        FillStreamInfo(block, _format, (UInt16)_options.BlockSize, (UInt16)_options.BlockSize, 0, 0, 0, null);
 
         WriteBlockHeader(BlockTypeStreamInfo, 34, false);
         _stream.Write(block, 0, block.Length);
@@ -240,8 +243,12 @@ public class FlacFileWriter : IAudioContainerWriter
     {
         var end = _stream.Position;
 
+        // 末帧通常不足一整块，STREAMINFO 的块长极值必须反映真实帧块长
+        var minBlock = _minBlockSize > 0 ? (UInt16)_minBlockSize : (UInt16)_options.BlockSize;
+        var maxBlock = _maxBlockSize > 0 ? (UInt16)_maxBlockSize : (UInt16)_options.BlockSize;
+
         var block = new Byte[34];
-        FillStreamInfo(block, _format, (UInt16)_options.BlockSize, _minFrameSize, _maxFrameSize, _totalSamples, hash);
+        FillStreamInfo(block, _format, minBlock, maxBlock, _minFrameSize, _maxFrameSize, _totalSamples, hash);
 
         _stream.Seek(_streamInfoOffset + 4, SeekOrigin.Begin);
         _stream.Write(block, 0, block.Length);
@@ -251,10 +258,10 @@ public class FlacFileWriter : IAudioContainerWriter
         _stream.Seek(end, SeekOrigin.Begin);
     }
 
-    private static void FillStreamInfo(Byte[] block, AudioFormat format, UInt16 blockSize, Int64 minFrame, Int64 maxFrame, Int64 totalSamples, Byte[] md5)
+    private static void FillStreamInfo(Byte[] block, AudioFormat format, UInt16 minBlock, UInt16 maxBlock, Int64 minFrame, Int64 maxFrame, Int64 totalSamples, Byte[] md5)
     {
-        WriteBE16(block, 0, blockSize);
-        WriteBE16(block, 2, blockSize);
+        WriteBE16(block, 0, minBlock);
+        WriteBE16(block, 2, maxBlock);
         WriteBE24(block, 4, (Int32)Math.Min(minFrame, 0xFFFFFF));
         WriteBE24(block, 7, (Int32)Math.Min(maxFrame, 0xFFFFFF));
 
@@ -308,13 +315,19 @@ public class FlacFileWriter : IAudioContainerWriter
             return;
         }
 
+        var frameStart = _stream.CanSeek ? _stream.Position : 0;
+
+        // 定位点偏移按规范相对首帧起点，而非文件起点
+        if (_firstFrameOffset < 0) _firstFrameOffset = frameStart;
         if (_options.WriteSeekTable && _seekSamples.Count < Math.Max(1, _options.SeekPointCount))
         {
             _seekSamples.Add(_totalSamples);
-            _seekOffsets.Add(_stream.CanSeek ? _stream.Position : -1);
+            _seekOffsets.Add(_stream.CanSeek ? frameStart - _firstFrameOffset : -1);
         }
 
-        var frameStart = _stream.CanSeek ? _stream.Position : 0;
+        if (_minBlockSize == 0 || samples < _minBlockSize) _minBlockSize = samples;
+        if (samples > _maxBlockSize) _maxBlockSize = samples;
+
         var writer = new FlacBitWriter();
 
         // 帧头
@@ -416,7 +429,8 @@ public class FlacFileWriter : IAudioContainerWriter
 
         for (var i = 0; i < bestOrder; i++) writer.WriteSigned(samples[i], _format.BitsPerSample);
 
-        writer.Write(0, 2);       // 分区数 = 1
+        writer.Write(0, 2);       // 残差编码方法：分区 Rice（4 位参数）
+        writer.Write(0, 4);       // 分区阶：0，单分区
         writer.Write(bestK, 4);   // Rice 参数
         for (var i = bestOrder; i < bestResidual.Length; i++)
         {
