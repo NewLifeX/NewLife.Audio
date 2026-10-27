@@ -27,7 +27,7 @@
 | `IAudioRecorder` | 录音器接口：`StartRecording()`/`StopRecording()`/`DataAvailable` 事件 |
 | `IAudioDriver` | 音频驱动统一接口：枚举设备、创建播放器/录制器 |
 | `AudioFormat` | 音频格式描述：采样率、位深、声道数、编码类型 |
-| `WaveOutNativeDriver` | Windows WaveOut API 驱动实现（WaveOut 播放 + WaveIn 录制，真实 P/Invoke） |
+| `WaveOutNativeDriver` | Windows WinMM 驱动实现（WaveOut 播放 + WaveIn 录制，真实 P/Invoke）；WaveIn 预投递 4 个 20 ms 缓冲并在后台线程轮询 `WHDR_DONE` 回收，持续触发 `DataAvailable` |
 | `WasapiDriver` | WASAPI 真实实现：`IMMDeviceEnumerator` + `IPropertyStore` 枚举端点并读取友好名称；`IAudioClient` 共享模式播放/采集；渲染端点加 `AUDCLNT_STREAMFLAGS_LOOPBACK` 回采；支持事件回调低延迟（20 ms 缓冲，失败回落轮询）与设备丢失后在新默认设备重连（`ReconnectCount`） |
 | `AsioDriver` | 明确未实现：`EnumerateDevices` 返回空，`CreatePlayer`/`CreateRecorder` 抛 `NotSupportedException`；需 ASIO SDK 后立项 |
 | `AlsaDriver` | Linux ALSA：`snd_device_name_hint` 枚举 PCM 设备，`snd_pcm_open` + `snd_pcm_set_params`（S16_LE 交错）后 `snd_pcm_writei`/`snd_pcm_readi` 播放与采集，xrun（`-EPIPE`/`-ESTRPIPE`）重新 `prepare` 后重试；`IsAvailable` 在非 Linux 或加载不到 `libasound.so.2` 时为 false，此时枚举返回空、默认设备返回 null、`Init` 抛 `NotSupportedException`。**已在 Linux ARM64 真机验证**：枚举 17 个设备、默认与 `hw:` 直连播放、`null` 设备采集通路；真实采集受该机 USB 输入端点无数据限制未复验。真机冒烟程序见 `Samples/AlsaSmoke` |
