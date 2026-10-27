@@ -115,4 +115,22 @@ public class DeviceHardwareTests
         if (bytes == 0) return;
         Assert.True(bytes > 0);
     }
+
+    [Fact(DisplayName = "设备热插拔观察器注册成功并返回活动端点")]
+    public void DeviceWatcher_RegistersAndListsActiveEndpoints()
+    {
+        using var watcher = new AudioDeviceWatcher();
+        if (!watcher.IsSupported) return;
+
+        Assert.True(watcher.IsRegistered);
+
+        var render = watcher.GetRenderDeviceIds();
+        var capture = watcher.GetCaptureDeviceIds();
+        Assert.NotNull(render);
+        Assert.NotNull(capture);
+
+        // 有播放端点的机器上，活动端点列表必须非空
+        var outputs = new WasapiDriver().EnumerateDevices().Count(d => !d.IsInput);
+        if (outputs > 0) Assert.NotEmpty(render);
+    }
 }
