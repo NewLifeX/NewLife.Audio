@@ -207,6 +207,14 @@ public static class OpusProcessCodec
         var resolved = ResolveExecutable(configured);
         if (resolved != null) return resolved;
 
+        // 随应用分发：程序目录下的 ffmpeg（或 ffmpeg/bin/ffmpeg），便于免安装直接运行
+        var name = Path.DirectorySeparatorChar == '\\' ? "ffmpeg.exe" : "ffmpeg";
+        resolved = ResolveExecutable(Path.Combine(AppContext.BaseDirectory, name));
+        if (resolved != null) return resolved;
+
+        resolved = ResolveExecutable(Path.Combine(AppContext.BaseDirectory, "ffmpeg", "bin", name));
+        if (resolved != null) return resolved;
+
         return ResolveExecutable("ffmpeg");
     }
 

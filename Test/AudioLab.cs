@@ -32,6 +32,7 @@ internal static class AudioLab
         {
             Console.WriteLine("用法：Test [录音秒数]，默认 5 秒。");
             Console.WriteLine("流程：列出设备 → 按回车开始录音 → 导出各格式 → 回读校验 → 逐个回放。");
+            Console.WriteLine("Opus 需要 ffmpeg(libopus)：依次查找 OPUS_FFMPEG、程序目录、PATH 与本机常见安装位置。");
             return 0;
         }
 
@@ -40,6 +41,8 @@ internal static class AudioLab
 
         try
         {
+            EnsureFFmpeg();
+
             var driver = AudioDriverFactory.Create();
             ListDevices(driver);
             WaitForEnter($"准备好后按回车开始录音（{seconds} 秒）");
@@ -97,6 +100,56 @@ internal static class AudioLab
             Console.WriteLine("（检测到输入重定向，直接开始）");
         else
             Console.ReadLine();
+    }
+
+    /// <summary>ffmpeg 不在环境变量与 PATH 中时，尝试本机常见安装位置并设入进程环境</summary>
+    /// <remarks>环境变量只在进程启动时读取一次，修改后需要重启终端/编辑器才生效；
+    /// 这里直接改进程内变量，避免为了加 Opus 支持被迫重启开发环境。</remarks>
+    private static void EnsureFFmpeg()
+    {
+        if (OpusCodec.IsAvailable) return;
+
+        foreach (var candidate in GetFFmpegCandidates())
+        {
+            if (!File.Exists(candidate)) continue;
+
+            Environment.SetEnvironmentVariable("OPUS_FFMPEG", candidate);
+            OpusProcessCodec.ResetAvailability();
+            if (OpusCodec.IsAvailable) return;
+
+            Environment.SetEnvironmentVariable("OPUS_FFMPEG", null);
+        }
+    }
+
+    /// <summary>枚举 ffmpeg 的常见安装位置</summary>
+    /// <returns>候选可执行文件路径</returns>
+    private static IEnumerable<String> GetFFmpegCandidates()
+    {
+        var name = Path.DirectorySeparatorChar == '\\' ? "ffmpeg.exe" : "ffmpeg";
+
+        // 程序目录及向上若干层：覆盖仓库根的 tools/ffmpeg 与随应用分发的 ffmpeg 目录
+        var dir = new DirectoryInfo(AppContext.BaseDirectory);
+        for (var i = 0; i < 4 && dir != null; i++, dir = dir.Parent)
+        {
+            yield return Path.Combine(dir.FullName, name);
+            yield return Path.Combine(dir.FullName, "ffmpeg", "bin", name);
+            yield return Path.Combine(dir.FullName, "tools", "ffmpeg", name);
+        }
+
+        var profile = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        if (!String.IsNullOrEmpty(profile))
+        {
+            yield return Path.Combine(profile, "Apps", "ffmpeg", name);
+            yield return Path.Combine(profile, "ffmpeg", "bin", name);
+            yield return Path.Combine(profile, "scoop", "shims", name);
+        }
+
+        var localAppData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        if (!String.IsNullOrEmpty(localAppData))
+            yield return Path.Combine(localAppData, "Microsoft", "WinGet", "Links", name);
+
+        yield return Path.Combine(Path.GetPathRoot(AppContext.BaseDirectory) ?? "C:\\", "ffmpeg", "bin", name);
+        yield return Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles), "ffmpeg", "bin", name);
     }
     #endregion
 
