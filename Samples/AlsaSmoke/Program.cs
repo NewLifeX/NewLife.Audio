@@ -54,9 +54,8 @@ void Play(String deviceId)
     if (left != 0) throw new InvalidOperationException($"缓冲区未消化完（{left} 字节）");
 }
 
-void Capture(String deviceId)
+Int32 TryCapture(String deviceId, AudioFormat format)
 {
-    var format = new AudioFormat { SampleRate = 48000, Channels = 2, BitsPerSample = 16 };
     using var recorder = AudioDriverFactory.Create().CreateRecorder();
     var bytes = 0L;
     var blocks = 0;
@@ -72,7 +71,62 @@ void Capture(String deviceId)
     recorder.StopRecording();
 
     Console.WriteLine($"       device={deviceId ?? "default"} blocks={blocks} bytes={bytes}");
-    if (bytes <= 0) throw new InvalidOperationException("没有采集到数据");
+    return (Int32)Math.Min(bytes, Int32.MaxValue);
+}
+
+void Capture(String deviceId)
+{
+    var format = new AudioFormat { SampleRate = 48000, Channels = 2, BitsPerSample = 16 };
+    if (TryCapture(deviceId, format) <= 0) throw new InvalidOperationException("没有采集到数据");
+}
+
+// 自动挑选真正能出数据的采集设备与格式：
+// 设备侧先试枚举到的输入设备与 hw→plughw（软件转换）变体，格式侧从立体声 48k 退到单声道 48k / 44.1k
+void CaptureAuto()
+{
+    var formats = new[]
+    {
+        new AudioFormat { SampleRate = 48000, Channels = 2, BitsPerSample = 16 },
+        new AudioFormat { SampleRate = 48000, Channels = 1, BitsPerSample = 16 },
+        new AudioFormat { SampleRate = 44100, Channels = 1, BitsPerSample = 16 },
+    };
+
+    var driver = new AlsaDriver();
+    var tried = new List<String>();
+    foreach (var d in driver.EnumerateDevices())
+    {
+        if (!d.IsInput) continue;
+
+        var candidates = new List<String> { d.Id };
+        if (d.Id != null && d.Id.StartsWith("hw:", StringComparison.Ordinal)) candidates.Add("plughw:" + d.Id.Substring(3));
+        foreach (var id in candidates)
+        {
+            if (id == null || tried.Contains(id)) continue;
+            tried.Add(id);
+
+            foreach (var format in formats)
+            {
+                Int32 bytes;
+                try
+                {
+                    bytes = TryCapture(id, format);
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"       skip {id} {format.SampleRate}Hz/{format.Channels}ch: {ex.Message}");
+                    continue;
+                }
+
+                if (bytes > 0)
+                {
+                    Console.WriteLine($"       capture device = {id} {format.SampleRate}Hz/{format.Channels}ch");
+                    return;
+                }
+            }
+        }
+    }
+
+    throw new InvalidOperationException($"所有采集设备均无数据（{String.Join(",", tried)}）");
 }
 
 Console.WriteLine($"linux={AlsaDriver.IsLinux} available={AlsaDriver.IsAvailable} supported={AudioDriverFactory.IsSupported}");
@@ -109,6 +163,7 @@ if (mode is "all" or "play")
 }
 
 if (mode is "all" or "rec") Step("采集 0.5 秒（默认设备）", () => Capture(null));
+if (mode is "all" or "rec-auto") Step("采集 0.5 秒（自动挑选可出数据的输入设备）", CaptureAuto);
 if (mode is "all" or "rec" or "rec-null") Step("采集 0.5 秒（null 设备，验证读取→事件通路）", () => Capture("null"));
 
 Console.WriteLine(failed == 0 ? "=== ALL PASS ===" : $"=== {failed} FAILED ===");
