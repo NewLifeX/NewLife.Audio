@@ -113,13 +113,16 @@ Nuget：NewLife.Audio
 
 ### 🎼 MIDI 音序（MIDI）
 纯托管标准 MIDI 文件读写与波形渲染：
-- SMF 1.0 读写（Format 0/1/2、PPQ/SMPTE、VLQ、running status、Meta/SysEx 透传）
+- SMF 1.0 读写（Format 0/1/2、PPQ/SMPTE、VLQ、running status、Meta/SysEx 透传）；Format 2 按独立序列渲染
 - 纯托管合成器：GM 音色分组、带限波表、ADSR、力度/音量/表情/声像/弯音/延音、复音上限、软限幅
+- 可选 SoundFont 2（`.sf2`）与 DLS Level 1/2（`.dls`）采样音源，通过 `MidiRenderOptions.SoundBank` 加载
+- MPE 连续弯音/通道压力，MIDI 2.0 UMP 包与 SysEx7 解析
+- Windows 实时 MIDI 输出（WinMM `midiOut`/`midiIn`、设备枚举、按 tempo 调度的 `MidiOutputSequencer`）
 - 渲染为 16 位 PCM，复用 `AudioFile.WritePcm` 输出 WAV/MP3/FLAC
-- AudioStudio **MIDI 音序**页：渐变 min/max 波形、RMS 响度线、节拍网格、发光播放头、只读迷你钢琴卷
+- AudioStudio **MIDI 音序**页：渐变 min/max 波形、RMS 响度线、节拍网格、发光播放头、只读迷你钢琴卷、采样音源加载、MIDI 输出面板
 - 内置公有领域示例（欢乐颂、绿袖子、卡农、茉莉花），位于 `AudioStudio/Assets/Midi`
-- 控制台示例 `Samples/MidiDemo`：`info` / `render` / `play` / `gen`
-- MIDI 是乐谱/事件流，不是采样音频；SoundFont 与实时 MIDI 输入输出不在范围内
+- 控制台示例 `Samples/MidiDemo`：`info` / `render` / `play` / `gen`，可附加 `.sf2`/`.dls` 音源
+- MIDI 是乐谱/事件流，不是采样音频；USB-MIDI/BLE-MIDI 与 MIDI 2.0 原生设备传输不在范围内
 
 ### 🔈 语音合成（TTS）
 把文字变成声音，普通用户三行代码可用：

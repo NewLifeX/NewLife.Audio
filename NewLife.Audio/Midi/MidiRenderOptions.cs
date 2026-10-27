@@ -19,4 +19,8 @@ public sealed class MidiRenderOptions
 
     /// <summary>末尾释放尾巴（秒），避免最后一个音符被截断</summary>
     public Double ReleaseTail { get; set; } = 0.5;
+
+    /// <summary>采样音源；为 null 时使用内置波形合成</summary>
+    /// <remarks>可传入 <see cref="SoundFont"/> 或 <see cref="DlsSoundBank"/>，按 GM bank/program 选择采样。</remarks>
+    public SoundBank SoundBank { get; set; }
 }

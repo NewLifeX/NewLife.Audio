@@ -91,6 +91,33 @@ public class MidiSynthesizerTests
         Assert.Equal(44100, pcm.Format.SampleRate);
     }
 
+    [Fact(DisplayName = "MIDI MPE 按通道弯音渲染")]
+    public void Render_MpePitchBend_ChangesFrequency()
+    {
+        var midi = MidiFile.Create(MidiFileFormat.SingleTrack, 480);
+        var track = new MidiTrack();
+        midi.Tracks.Add(track);
+        track.Add(MidiEvent.Tempo(0, 500000));
+        track.Add(MidiEvent.ProgramChange(0, 1, 73));
+        track.Add(MidiEvent.ControlChange(0, 1, 101, 6));
+        track.Add(MidiEvent.ControlChange(0, 1, 100, 0));
+        track.Add(MidiEvent.ControlChange(0, 1, 6, 1));
+        track.Add(MidiEvent.ControlChange(0, 1, 101, 0));
+        track.Add(MidiEvent.ControlChange(0, 1, 100, 0));
+        track.Add(MidiEvent.ControlChange(0, 1, 6, 12));
+        track.Add(MidiEvent.PitchBend(0, 1, 8191));
+        track.Add(MidiEvent.NoteOn(0, 1, 69, 127));
+        track.Add(MidiEvent.NoteOff(480, 1, 69));
+
+        Assert.True(midi.IsMpe);
+
+        var pcm = MidiSynthesizer.Render(midi, new MidiRenderOptions { SampleRate = 44100, Channels = 1, ReleaseTail = 0.1 });
+        var samples = ToSamples(pcm);
+        var frequency = EstimateFrequency(samples, 44100, 0.1, 0.4);
+
+        Assert.InRange(frequency, 860, 900);
+    }
+
     [Fact(DisplayName = "MIDI 鼓通道输出打击乐")]
     public void Render_DrumChannel_ProducesSound()
     {

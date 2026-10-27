@@ -36,6 +36,29 @@ public sealed class MidiTrack
         Events.Add(e);
     }
 
+    /// <summary>克隆轨道（事件深拷贝）</summary>
+    /// <returns>新轨道</returns>
+    public MidiTrack Clone()
+    {
+        var track = new MidiTrack { Name = Name };
+        foreach (var item in Events)
+        {
+            track.Events.Add(new MidiEvent
+            {
+                Tick = item.Tick,
+                Type = item.Type,
+                Status = item.Status,
+                Channel = item.Channel,
+                Data1 = item.Data1,
+                Data2 = item.Data2,
+                MetaType = item.MetaType,
+                Data = item.Data == null ? [] : (Byte[])item.Data.Clone(),
+            });
+        }
+
+        return track;
+    }
+
     /// <summary>配对 Note On/Note Off，返回音符列表</summary>
     /// <returns>音符列表，按起始 tick 排序</returns>
     /// <remarks>同通道同音高的重叠音符按先进先出配对；未闭合音符在轨道结束时截断。</remarks>

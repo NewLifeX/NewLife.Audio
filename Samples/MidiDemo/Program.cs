@@ -22,10 +22,10 @@ internal class Program
                     ShowInfo(Require(args, 1, "file.mid"));
                     break;
                 case "render":
-                    Render(Require(args, 1, "file.mid"), Require(args, 2, "out.wav"));
+                    Render(Require(args, 1, "file.mid"), Require(args, 2, "out.wav"), args.Length > 3 ? Int32.Parse(args[3]) : -1, args.Length > 4 ? args[4] : null);
                     break;
                 case "play":
-                    Play(Require(args, 1, "file.mid"));
+                    Play(Require(args, 1, "file.mid"), args.Length > 2 ? Int32.Parse(args[2]) : -1, args.Length > 3 ? args[3] : null);
                     break;
                 case "gen":
                     Generate(args.Length > 1 ? args[1] : "AudioStudio/Assets/Midi");
@@ -46,8 +46,8 @@ internal class Program
     {
         Console.WriteLine("MIDI demo");
         Console.WriteLine("  MidiDemo info <file.mid>");
-        Console.WriteLine("  MidiDemo render <file.mid> <out.wav|out.mp3|out.flac>");
-        Console.WriteLine("  MidiDemo play <file.mid>");
+        Console.WriteLine("  MidiDemo render <file.mid> <out.wav|out.mp3|out.flac> [sequence] [bank.sf2|bank.dls]");
+        Console.WriteLine("  MidiDemo play <file.mid> [sequence] [bank.sf2|bank.dls]");
         Console.WriteLine("  MidiDemo gen <dir>");
     }
 
@@ -78,6 +78,7 @@ internal class Program
         Console.WriteLine($"File      : {Path.GetFullPath(path)}");
         Console.WriteLine($"Size      : {new FileInfo(path).Length:n0} bytes");
         Console.WriteLine($"Format    : {midi.Format}");
+        Console.WriteLine($"Sequences : {midi.SequenceCount}");
         Console.WriteLine($"Division  : {(midi.IsSmpte ? $"{midi.SmpteTicksPerSecond:n0} ticks/s (SMPTE)" : $"{midi.TicksPerQuarterNote} PPQ")}");
         Console.WriteLine($"Tempo     : {tempo.BpmAt(0):n1} BPM");
         Console.WriteLine($"Duration  : {midi.Duration:n2} s");
@@ -105,18 +106,23 @@ internal class Program
         }
     }
 
-    private static void Render(String path, String output)
+    private static void Render(String path, String output, Int32 sequence, String bankPath)
     {
         var midi = MidiFile.Read(path);
-        var pcm = MidiSynthesizer.Render(midi);
+        var bank = LoadBank(bankPath);
+        var options = new MidiRenderOptions { SoundBank = bank };
+        var pcm = sequence >= 0 ? MidiSynthesizer.RenderSequence(midi, sequence, options) : MidiSynthesizer.Render(midi, options);
         AudioFile.WritePcm(output, pcm);
-        Console.WriteLine($"Rendered {midi.Duration:n2}s -> {output} ({new FileInfo(output).Length:n0} bytes)");
+        var source = bank == null ? "built-in waveform" : $"{Path.GetFileName(bankPath)} ({bank.Presets.Count} presets)";
+        Console.WriteLine($"Rendered {pcm.Duration:n2}s -> {output} ({new FileInfo(output).Length:n0} bytes), source: {source}");
     }
 
-    private static void Play(String path)
+    private static void Play(String path, Int32 sequence, String bankPath)
     {
         var midi = MidiFile.Read(path);
-        var pcm = MidiSynthesizer.Render(midi);
+        var bank = LoadBank(bankPath);
+        var options = new MidiRenderOptions { SoundBank = bank };
+        var pcm = sequence >= 0 ? MidiSynthesizer.RenderSequence(midi, sequence, options) : MidiSynthesizer.Render(midi, options);
         if (pcm.Data.Length == 0)
         {
             Console.WriteLine("No notes to play.");
@@ -144,6 +150,16 @@ internal class Program
         while (player.BufferedBytes > 0) Thread.Sleep(50);
         player.Stop();
         Console.WriteLine($"Played {midi.Duration:n2}s.");
+    }
+
+    private static SoundBank LoadBank(String path)
+    {
+        if (String.IsNullOrWhiteSpace(path)) return null;
+
+        var extension = Path.GetExtension(path);
+        return String.Equals(extension, ".dls", StringComparison.OrdinalIgnoreCase)
+            ? DlsSoundBank.Read(path)
+            : (SoundBank)SoundFont.Read(path);
     }
 
     private static void Generate(String directory)

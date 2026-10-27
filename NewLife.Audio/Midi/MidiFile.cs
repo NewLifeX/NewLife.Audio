@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 
 namespace NewLife.Audio.Midi;
 
@@ -47,6 +48,69 @@ public sealed class MidiFile
             var ticksPerFrame = Division & 0xFF;
             return frames * ticksPerFrame;
         }
+    }
+
+    /// <summary>是否为 MPE（MIDI Polyphonic Expression）文件</summary>
+    /// <remarks>检测 RPN 6（MPE Configuration）是否被设置为 1（Lower Zone）或 2（Upper Zone）。</remarks>
+    public Boolean IsMpe
+    {
+        get
+        {
+            var rpnMsb = new Int32[16];
+            var rpnLsb = new Int32[16];
+            for (var i = 0; i < 16; i++)
+            {
+                rpnMsb[i] = 127;
+                rpnLsb[i] = 127;
+            }
+
+            var events = new List<MidiEvent>();
+            foreach (var track in Tracks) events.AddRange(track.Events);
+            foreach (var item in events.OrderBy(e => e.Tick))
+            {
+                if (item.Type != MidiEventType.ControlChange || item.Channel < 0 || item.Channel > 15) continue;
+
+                var channel = item.Channel;
+                switch (item.Controller)
+                {
+                    case 101:
+                        rpnMsb[channel] = item.ControllerValue;
+                        break;
+                    case 100:
+                        rpnLsb[channel] = item.ControllerValue;
+                        break;
+                    case 6:
+                        if (rpnMsb[channel] == 6 && rpnLsb[channel] == 0 && (item.ControllerValue == 1 || item.ControllerValue == 2))
+                            return true;
+                        break;
+                }
+            }
+
+            return false;
+        }
+    }
+
+    /// <summary>独立序列数（Format 2 为轨道数，其余为 1）</summary>
+    public Int32 SequenceCount => Format == MidiFileFormat.MultiSong ? Tracks.Count : 1;
+
+    /// <summary>获取独立序列（Format 2 按轨道拆分为独立文件）</summary>
+    /// <param name="index">序列索引（0 基）</param>
+    /// <returns>只包含该序列的 MIDI 文件</returns>
+    /// <exception cref="ArgumentOutOfRangeException">索引越界</exception>
+    public MidiFile GetSequence(Int32 index)
+    {
+        if (index < 0 || index >= SequenceCount)
+            throw new ArgumentOutOfRangeException(nameof(index), "The MIDI sequence index is out of range.");
+
+        if (Format != MidiFileFormat.MultiSong) return this;
+
+        var file = new MidiFile
+        {
+            Format = MidiFileFormat.MultiTrack,
+            Division = Division,
+        };
+        file.Tracks.Add(Tracks[index].Clone());
+        return file;
     }
 
     /// <summary>总时长（秒）</summary>

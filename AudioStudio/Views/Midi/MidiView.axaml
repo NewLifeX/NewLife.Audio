@@ -11,7 +11,7 @@
         <converters:PlayPauseConverter x:Key="PlayPauseConverter" />
     </UserControl.Resources>
 
-    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="8">
+    <Grid RowDefinitions="Auto,Auto,Auto,*,Auto,Auto" Margin="8">
 
         <!-- 顶部工具栏 -->
         <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
@@ -39,9 +39,19 @@
                     </ComboBox>
                     <Button Content="加载示例" Command="{Binding LoadDemoCommand}" />
                     <Button Content="打开 MIDI" Command="{Binding OpenFileCommand}" />
+                    <Button Content="加载音源" Command="{Binding LoadSoundBankCommand}" />
+                    <Button Content="合成音源" Command="{Binding ClearSoundBankCommand}" IsVisible="{Binding HasSoundBank}" />
+                    <TextBlock Text="{Binding SoundBankName}" FontSize="11" MaxWidth="180"
+                               TextTrimming="CharacterEllipsis" VerticalAlignment="Center"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
                     <Border Width="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="4,2" />
                     <Button Content="另存 WAV" Command="{Binding SaveWavCommand}" IsEnabled="{Binding HasFile}" />
                     <Button Content="另存 MP3" Command="{Binding SaveMp3Command}" IsEnabled="{Binding HasFile}" />
+                    <StackPanel Orientation="Horizontal" Spacing="4" IsVisible="{Binding HasMultipleSequences}">
+                        <TextBlock Text="序列" VerticalAlignment="Center" FontSize="12" Margin="8,0,0,0" />
+                        <ComboBox Width="70" ItemsSource="{Binding Sequences}" SelectedItem="{Binding SelectedSequence}" />
+                        <Button Content="加载序列" Command="{Binding LoadSequenceCommand}" />
+                    </StackPanel>
                     <ProgressBar Width="90" Height="4" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
                 </StackPanel>
             </Grid>
@@ -58,8 +68,29 @@
             </StackPanel>
         </Border>
 
+        <!-- MIDI 输出设备 -->
+        <Border Grid.Row="2" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="6">
+                    <TextBlock Text="MIDI 输出" FontSize="12" VerticalAlignment="Center" FontWeight="SemiBold" />
+                    <ComboBox Width="220" ItemsSource="{Binding OutputDevices}" SelectedItem="{Binding SelectedOutputDevice}"
+                              IsEnabled="{Binding HasMidiOutput}" />
+                    <Button Content="刷新" Command="{Binding RefreshDevicesCommand}" />
+                    <Button Content="测试音" Command="{Binding TestMidiOutputCommand}" IsEnabled="{Binding HasMidiOutput}" />
+                    <Button Content="发送到设备" Command="{Binding PlayToDeviceCommand}" IsEnabled="{Binding HasMidiOutput}" />
+                    <Button Content="停止发送" Command="{Binding StopDevicePlaybackCommand}" />
+                </StackPanel>
+                <TextBlock Grid.Column="1" Text="{Binding MidiOutputStatus}" FontSize="11"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                           HorizontalAlignment="Right" VerticalAlignment="Center"
+                           TextTrimming="CharacterEllipsis" Margin="12,0,2,0" />
+            </Grid>
+        </Border>
+
         <!-- 波形 -->
-        <Border Grid.Row="2" Background="#0B1020"
+        <Border Grid.Row="3" Background="#0B1020"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                 CornerRadius="6" Padding="0" Margin="0,0,0,8" MinHeight="240">
             <controls:MidiWaveformControl x:Name="Waveform"
@@ -75,7 +106,7 @@
         </Border>
 
         <!-- 播放控制 -->
-        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+        <Border Grid.Row="4" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
                 BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
                 CornerRadius="4" Padding="8" Margin="0,0,0,8">
             <Grid ColumnDefinitions="Auto,*,Auto">
@@ -111,7 +142,7 @@
         </Border>
 
         <!-- 状态栏 -->
-        <TextBlock Grid.Row="4" Text="{Binding StatusText}" FontSize="12"
+        <TextBlock Grid.Row="5" Text="{Binding StatusText}" FontSize="12"
                    Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
                    TextTrimming="CharacterEllipsis" Margin="2,0" />
     </Grid>

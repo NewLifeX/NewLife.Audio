@@ -113,13 +113,16 @@ Network audio streaming:
 
 ### 🎼 MIDI Sequencing (MIDI)
 Pure-managed Standard MIDI File read/write and waveform rendering:
-- Parse/write SMF 1.0 (Format 0/1/2, PPQ/SMPTE, VLQ, running status, Meta/SysEx passthrough)
+- Parse/write SMF 1.0 (Format 0/1/2, PPQ/SMPTE, VLQ, running status, Meta/SysEx passthrough); Format 2 sequences render independently
 - Pure-managed synthesizer: GM program groups, band-limited wavetables, ADSR, velocity/volume/expression/pan/pitch bend/sustain, polyphony limit, soft limiting
+- Optional SoundFont 2 (`.sf2`) and DLS Level 1/2 (`.dls`) sampling via `MidiRenderOptions.SoundBank`
+- MPE continuous pitch bend/channel pressure and MIDI 2.0 UMP packet/SysEx7 parsing
+- Windows real-time MIDI output (WinMM `midiOut`/`midiIn`, device enumeration, tempo-based `MidiOutputSequencer`)
 - Render to 16-bit PCM and reuse `AudioFile.WritePcm` for WAV/MP3/FLAC
-- AudioStudio **MIDI Sequencing** page: gradient min/max waveform, RMS line, beat grid, glowing playhead, read-only mini piano roll
+- AudioStudio **MIDI Sequencing** page: gradient min/max waveform, RMS line, beat grid, glowing playhead, read-only mini piano roll, sound-bank loading, MIDI output panel
 - Built-in public-domain demos (`Ode to Joy`, `Greensleeves`, `Canon in D`, `Jasmine Flower`) under `AudioStudio/Assets/Midi`
-- Console demo `Samples/MidiDemo`: `info` / `render` / `play` / `gen`
-- MIDI is a score/event stream, not sampled audio; SoundFont and real-time MIDI I/O are out of scope
+- Console demo `Samples/MidiDemo`: `info` / `render` / `play` / `gen`, with optional `.sf2`/`.dls` source
+- MIDI is a score/event stream, not sampled audio; USB-MIDI/BLE-MIDI and native MIDI 2.0 transport are out of scope
 
 ### 🔈 Text-to-Speech (TTS)
 Turn text into sound with three lines of code:

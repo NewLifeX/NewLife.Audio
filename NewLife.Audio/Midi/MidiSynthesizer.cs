@@ -39,6 +39,8 @@ public static class MidiSynthesizer
         var tempo = file.GetTempoMap();
         var notes = file.GetNotes();
         var automation = BuildAutomation(file, tempo);
+        var isMpe = file.IsMpe;
+        var soundBank = options.SoundBank;
 
         var endSeconds = file.Duration;
         var voices = new List<Voice>(notes.Count);
@@ -63,7 +65,7 @@ public static class MidiSynthesizer
             var volume = FindValue(state.Volume, note.StartTick, 100);
             var expression = FindValue(state.Expression, note.StartTick, 127);
             var pan = FindValue(state.Pan, note.StartTick, 64);
-            var bend = FindValue(state.PitchBend, note.StartTick, 0);
+            var bendRange = FindValueAtSeconds(state.PitchBendRange, note.StartSeconds, isMpe ? 48 : 2);
 
             voices.Add(new Voice
             {
@@ -72,11 +74,27 @@ public static class MidiSynthesizer
                 Volume = volume,
                 Expression = expression,
                 Pan = pan,
-                Bend = bend,
+                PitchBend = state.PitchBend,
+                ChannelPressure = state.ChannelPressure,
+                BendRange = bendRange,
                 EndSeconds = noteEnd,
             });
 
             if (noteEnd > endSeconds) endSeconds = noteEnd;
+
+            if (soundBank != null)
+            {
+                var preset = soundBank.FindPreset((note.Channel & 0x0F) == 9 ? 128 : 0, program);
+                if (preset != null)
+                {
+                    foreach (var region in preset.Regions)
+                    {
+                        if (!region.Matches(note.Number, note.Velocity)) continue;
+                        var tail = noteEnd + Math.Max(0.001, region.Release);
+                        if (tail > endSeconds) endSeconds = tail;
+                    }
+                }
+            }
         }
 
         if (voices.Count == 0) return CreateEmpty(sampleRate, channels);
@@ -108,8 +126,8 @@ public static class MidiSynthesizer
 
             active.Add(voice);
 
-            if ((voice.Note.Channel & 0x0F) == 9) RenderDrum(voice, left, right, sampleRate, options.MasterVolume);
-            else RenderMelodic(voice, left, right, sampleRate, options.MasterVolume);
+            if ((voice.Note.Channel & 0x0F) == 9) RenderDrum(voice, left, right, sampleRate, options.MasterVolume, soundBank);
+            else RenderMelodic(voice, left, right, sampleRate, options.MasterVolume, soundBank);
         }
 
         var data = ToPcm16(left, right, sampleRate, channels);
@@ -128,6 +146,22 @@ public static class MidiSynthesizer
         };
     }
 
+    /// <summary>渲染 Format 2 的单个独立序列</summary>
+    /// <param name="file">MIDI 文件</param>
+    /// <param name="sequenceIndex">序列索引（0 基；Format 0/1 只能为 0）</param>
+    /// <param name="options">渲染选项，null 使用默认值</param>
+    /// <returns>16 位 PCM 音频</returns>
+    /// <exception cref="ArgumentNullException">文件为空</exception>
+    /// <exception cref="ArgumentOutOfRangeException">序列索引越界</exception>
+    public static AudioPcm RenderSequence(MidiFile file, Int32 sequenceIndex, MidiRenderOptions options = null)
+    {
+        if (file == null) throw new ArgumentNullException(nameof(file));
+        if (sequenceIndex < 0 || sequenceIndex >= file.SequenceCount)
+            throw new ArgumentOutOfRangeException(nameof(sequenceIndex), "The MIDI sequence index is out of range.");
+
+        return Render(file.GetSequence(sequenceIndex), options);
+    }
+
     private static AudioPcm CreateEmpty(Int32 sampleRate, Int32 channels) => new()
     {
         Format = new AudioFormat
@@ -142,13 +176,13 @@ public static class MidiSynthesizer
         Data = [],
     };
 
-    private static void RenderMelodic(Voice voice, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume)
+    private static void RenderMelodic(Voice voice, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume, SoundBank soundBank)
     {
+        if (TryRenderSample(voice, left, right, sampleRate, masterVolume, soundBank, false)) return;
+
         var note = voice.Note;
         var instrument = GeneralMidi.GetInstrument(voice.Program);
         var table = WaveTable.Get(instrument.Waveform, note.Number);
-        var bendRatio = Math.Pow(2.0, (voice.Bend / 8192.0) * 2.0 / 12.0);
-        var frequency = note.Frequency * bendRatio;
         var duration = voice.EndSeconds - note.StartSeconds;
         var total = duration + Math.Max(0.01, instrument.Release);
 
@@ -169,8 +203,11 @@ public static class MidiSynthesizer
 
         var (panLeft, panRight) = GetPan(voice.Pan);
         var phase = 0.0;
-        var increment = frequency / sampleRate * table.Length;
         var tableLength = table.Length;
+        var bendIndex = -1;
+        var bendRatio = 1.0;
+        var pressureIndex = -1;
+        var pressureGain = 1.0;
 
         for (var sample = startSample; sample < endSample; sample++)
         {
@@ -178,13 +215,31 @@ public static class MidiSynthesizer
             var envelope = GetEnvelope(t, duration, instrument);
             if (envelope <= 0 && t > duration) break;
 
+            var absoluteSeconds = note.StartSeconds + t;
+            var nextBend = AdvanceIndex(voice.PitchBend, bendIndex, absoluteSeconds);
+            if (nextBend != bendIndex)
+            {
+                bendIndex = nextBend;
+                bendRatio = bendIndex >= 0
+                    ? Math.Pow(2.0, (voice.PitchBend[bendIndex].Value / 8192.0) * voice.BendRange / 12.0)
+                    : 1.0;
+            }
+
+            var nextPressure = AdvanceIndex(voice.ChannelPressure, pressureIndex, absoluteSeconds);
+            if (nextPressure != pressureIndex)
+            {
+                pressureIndex = nextPressure;
+                pressureGain = pressureIndex >= 0 ? 0.7 + 0.3 * (voice.ChannelPressure[pressureIndex].Value / 127.0) : 1.0;
+            }
+
+            var increment = note.Frequency * bendRatio / sampleRate * tableLength;
             var index = (Int32)phase;
             var fraction = phase - index;
             index %= tableLength;
             var next = (index + 1) % tableLength;
             var value = table[index] + (table[next] - table[index]) * fraction;
 
-            var output = (Single)(value * envelope * amplitude);
+            var output = (Single)(value * envelope * amplitude * pressureGain);
             left[sample] += output * (Single)panLeft;
             if (right != null) right[sample] += output * (Single)panRight;
 
@@ -193,8 +248,10 @@ public static class MidiSynthesizer
         }
     }
 
-    private static void RenderDrum(Voice voice, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume)
+    private static void RenderDrum(Voice voice, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume, SoundBank soundBank)
     {
+        if (TryRenderSample(voice, left, right, sampleRate, masterVolume, soundBank, true)) return;
+
         var note = voice.Note;
         var velocity = Math.Pow(Clamp01(note.Velocity / 127.0), 1.3);
         var amplitude = velocity * Clamp01(voice.Volume / 127.0) * Clamp01(voice.Expression / 127.0) * masterVolume;
@@ -283,6 +340,144 @@ public static class MidiSynthesizer
             left[sample] += output * (Single)panLeft;
             if (right != null) right[sample] += output * (Single)panRight;
         }
+    }
+
+    private static Boolean TryRenderSample(Voice voice, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume, SoundBank soundBank, Boolean drum)
+    {
+        if (soundBank == null) return false;
+
+        var preset = soundBank.FindPreset(drum ? 128 : 0, voice.Program);
+        if (preset == null || preset.Regions.Count == 0) return false;
+
+        var rendered = false;
+        foreach (var region in preset.Regions)
+        {
+            if (!region.Matches(voice.Note.Number, voice.Note.Velocity)) continue;
+            if (region.Sample == null || region.Sample.Data.Length == 0) continue;
+
+            RenderSampleRegion(voice, region, left, right, sampleRate, masterVolume);
+            rendered = true;
+        }
+
+        return rendered;
+    }
+
+    private static void RenderSampleRegion(Voice voice, SoundBankRegion region, Single[] left, Single[] right, Int32 sampleRate, Double masterVolume)
+    {
+        var note = voice.Note;
+        var sample = region.Sample;
+        var data = sample.Data;
+        var sampleStart = Math.Max(0, Math.Min(region.SampleStart, data.Length - 1));
+        var sampleEnd = region.SampleEnd > 0 ? Math.Min(region.SampleEnd, data.Length) : data.Length;
+        if (sampleEnd <= sampleStart) return;
+
+        var loopStart = region.LoopStart >= 0 ? region.LoopStart : sample.LoopStart;
+        var loopEnd = region.LoopEnd > 0 ? region.LoopEnd : sample.LoopEnd;
+        if (loopStart < sampleStart) loopStart = sampleStart;
+        if (loopEnd > sampleEnd) loopEnd = sampleEnd;
+        var loop = region.Loop && loopEnd > loopStart;
+
+        var rootKey = region.RootKey >= 0 ? region.RootKey : sample.RootKey;
+        var pitch = note.Number - rootKey + region.CoarseTune + region.FineTune / 100.0 - sample.PitchCorrection / 100.0;
+        var ratio = Math.Pow(2.0, pitch / 12.0) * sample.SampleRate / sampleRate;
+        if (ratio <= 0) return;
+
+        var duration = voice.EndSeconds - note.StartSeconds;
+        var release = Math.Max(0.001, region.Release);
+        var total = duration + release + 0.01;
+        var startSample = (Int32)Math.Round(note.StartSeconds * sampleRate);
+        var sampleCount = (Int32)Math.Ceiling(total * sampleRate);
+        var endSample = startSample + sampleCount;
+        if (startSample >= left.Length || startSample < 0) return;
+        if (endSample > left.Length) endSample = left.Length;
+
+        var velocity = Math.Pow(Clamp01(note.Velocity / 127.0), 1.5);
+        var gain = Math.Pow(10.0, -region.Attenuation / 20.0) * 0.8;
+        var amplitude = velocity
+            * Clamp01(voice.Volume / 127.0)
+            * Clamp01(voice.Expression / 127.0)
+            * gain
+            * masterVolume;
+        if (amplitude <= 0) return;
+
+        var pan = voice.Pan + (region.Pan - 64);
+        if (pan < 0) pan = 0;
+        if (pan > 127) pan = 127;
+        var (panLeft, panRight) = GetPan(pan);
+
+        var attack = Math.Max(0.001, region.Attack);
+        var hold = Math.Max(0, region.Hold);
+        var decay = Math.Max(0.001, region.Decay);
+        var sustain = Clamp01(region.Sustain);
+        var position = (Double)sampleStart;
+        var bendIndex = -1;
+        var bendRatio = 1.0;
+        var pressureIndex = -1;
+        var pressureGain = 1.0;
+
+        for (var output = startSample; output < endSample; output++)
+        {
+            var t = (output - startSample) / (Double)sampleRate;
+            var envelope = GetSampleEnvelope(t, duration, attack, hold, decay, sustain, release);
+            if (envelope <= 0 && t > duration) break;
+
+            var absoluteSeconds = note.StartSeconds + t;
+            var nextBend = AdvanceIndex(voice.PitchBend, bendIndex, absoluteSeconds);
+            if (nextBend != bendIndex)
+            {
+                bendIndex = nextBend;
+                bendRatio = bendIndex >= 0
+                    ? Math.Pow(2.0, (voice.PitchBend[bendIndex].Value / 8192.0) * voice.BendRange / 12.0)
+                    : 1.0;
+            }
+
+            var nextPressure = AdvanceIndex(voice.ChannelPressure, pressureIndex, absoluteSeconds);
+            if (nextPressure != pressureIndex)
+            {
+                pressureIndex = nextPressure;
+                pressureGain = pressureIndex >= 0 ? 0.7 + 0.3 * (voice.ChannelPressure[pressureIndex].Value / 127.0) : 1.0;
+            }
+
+            var index = (Int32)position;
+            if (index < sampleStart) index = sampleStart;
+            if (index >= sampleEnd) break;
+
+            var fraction = position - index;
+            var next = index + 1;
+            if (next >= sampleEnd) next = loop ? loopStart : sampleEnd - 1;
+
+            var value = data[index] + (data[next] - data[index]) * fraction;
+            var outputValue = (Single)(value * envelope * amplitude * pressureGain);
+            left[output] += outputValue * (Single)panLeft;
+            if (right != null) right[output] += outputValue * (Single)panRight;
+
+            position += ratio * bendRatio;
+            if (loop)
+            {
+                var loopLength = loopEnd - loopStart;
+                if (position >= loopEnd) position = loopStart + (position - loopStart) % loopLength;
+            }
+            else if (position >= sampleEnd) break;
+        }
+    }
+
+    private static Double GetSampleEnvelope(Double t, Double duration, Double attack, Double hold, Double decay, Double sustain, Double release)
+    {
+        var level = GetSampleLevel(t, attack, hold, decay, sustain);
+        if (t <= duration) return level;
+
+        var releaseLevel = GetSampleLevel(duration, attack, hold, decay, sustain);
+        var rt = t - duration;
+        return rt >= release ? 0 : releaseLevel * (1.0 - rt / release);
+    }
+
+    private static Double GetSampleLevel(Double t, Double attack, Double hold, Double decay, Double sustain)
+    {
+        if (t <= 0) return 0;
+        if (t < attack) return t / attack;
+        if (t < attack + hold) return 1.0;
+        if (t < attack + hold + decay) return 1.0 - (1.0 - sustain) * (t - attack - hold) / decay;
+        return sustain;
     }
 
     private static Double GetEnvelope(Double t, Double duration, MidiInstrument instrument)
@@ -403,28 +598,42 @@ public static class MidiSynthesizer
             if (item.Channel < 0 || item.Channel > 15) continue;
 
             var state = states[item.Channel];
+            var seconds = tempo.TickToSeconds(item.Tick);
             switch (item.Type)
             {
                 case MidiEventType.ProgramChange:
-                    state.Program.Add(new AutomationPoint(item.Tick, item.Program));
+                    state.Program.Add(new AutomationPoint(item.Tick, seconds, item.Program));
                     break;
                 case MidiEventType.PitchBend:
-                    state.PitchBend.Add(new AutomationPoint(item.Tick, item.PitchBendValue));
+                    state.PitchBend.Add(new AutomationPoint(item.Tick, seconds, item.PitchBendValue));
+                    break;
+                case MidiEventType.ChannelPressure:
+                    state.ChannelPressure.Add(new AutomationPoint(item.Tick, seconds, item.Data1 & 0x7F));
                     break;
                 case MidiEventType.ControlChange:
                     switch (item.Controller)
                     {
                         case 7:
-                            state.Volume.Add(new AutomationPoint(item.Tick, item.ControllerValue));
+                            state.Volume.Add(new AutomationPoint(item.Tick, seconds, item.ControllerValue));
                             break;
                         case 10:
-                            state.Pan.Add(new AutomationPoint(item.Tick, item.ControllerValue));
+                            state.Pan.Add(new AutomationPoint(item.Tick, seconds, item.ControllerValue));
                             break;
                         case 11:
-                            state.Expression.Add(new AutomationPoint(item.Tick, item.ControllerValue));
+                            state.Expression.Add(new AutomationPoint(item.Tick, seconds, item.ControllerValue));
                             break;
                         case 64:
-                            state.Sustain.Add(new AutomationPoint(item.Tick, item.ControllerValue));
+                            state.Sustain.Add(new AutomationPoint(item.Tick, seconds, item.ControllerValue));
+                            break;
+                        case 100:
+                            state.RpnLsb = item.ControllerValue;
+                            break;
+                        case 101:
+                            state.RpnMsb = item.ControllerValue;
+                            break;
+                        case 6:
+                            if (state.RpnMsb == 0 && state.RpnLsb == 0)
+                                state.PitchBendRange.Add(new AutomationPoint(item.Tick, seconds, item.ControllerValue));
                             break;
                     }
                     break;
@@ -438,6 +647,41 @@ public static class MidiSynthesizer
     {
         var index = FindIndex(points, tick);
         return index >= 0 ? points[index].Value : defaultValue;
+    }
+
+    private static Int32 FindValueAtSeconds(List<AutomationPoint> points, Double seconds, Int32 defaultValue)
+    {
+        var index = FindIndexBySeconds(points, seconds);
+        return index >= 0 ? points[index].Value : defaultValue;
+    }
+
+    private static Int32 AdvanceIndex(List<AutomationPoint> points, Int32 index, Double seconds)
+    {
+        var next = index + 1;
+        while (next < points.Count && points[next].Seconds <= seconds) next++;
+        return next - 1;
+    }
+
+    private static Int32 FindIndexBySeconds(List<AutomationPoint> points, Double seconds)
+    {
+        var low = 0;
+        var high = points.Count - 1;
+        var result = -1;
+        while (low <= high)
+        {
+            var mid = (low + high) / 2;
+            if (points[mid].Seconds <= seconds)
+            {
+                result = mid;
+                low = mid + 1;
+            }
+            else
+            {
+                high = mid - 1;
+            }
+        }
+
+        return result;
     }
 
     private static Int64 FindNextSustainOff(List<AutomationPoint> points, Int64 tick)
@@ -486,17 +730,28 @@ public static class MidiSynthesizer
         public List<AutomationPoint> Sustain { get; } = [];
 
         public List<AutomationPoint> PitchBend { get; } = [];
+
+        public List<AutomationPoint> ChannelPressure { get; } = [];
+
+        public List<AutomationPoint> PitchBendRange { get; } = [];
+
+        public Int32 RpnMsb { get; set; } = 127;
+
+        public Int32 RpnLsb { get; set; } = 127;
     }
 
     private readonly struct AutomationPoint
     {
         public Int64 Tick { get; }
 
+        public Double Seconds { get; }
+
         public Int32 Value { get; }
 
-        public AutomationPoint(Int64 tick, Int32 value)
+        public AutomationPoint(Int64 tick, Double seconds, Int32 value)
         {
             Tick = tick;
+            Seconds = seconds;
             Value = value;
         }
     }
@@ -513,7 +768,11 @@ public static class MidiSynthesizer
 
         public Int32 Pan { get; set; }
 
-        public Int32 Bend { get; set; }
+        public List<AutomationPoint> PitchBend { get; set; }
+
+        public List<AutomationPoint> ChannelPressure { get; set; }
+
+        public Double BendRange { get; set; }
 
         public Double EndSeconds { get; set; }
     }
