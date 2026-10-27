@@ -45,23 +45,31 @@ internal static class AudioLab
             WaitForEnter($"准备好后按回车开始录音（{seconds} 秒）");
 
             var pcm = Record(driver, seconds);
-            Console.WriteLine($"采集 {pcm.Data.Length:N0} 字节 / {pcm.Duration:F2} 秒，峰值 {GetPeak(pcm.Data)}，RMS {GetRms(pcm.Data):F0}");
+            var peak = GetPeak(pcm.Data);
+            Console.WriteLine($"采集 {pcm.Data.Length:N0} 字节 / {pcm.Duration:F2} 秒，峰值 {peak}，RMS {GetRms(pcm.Data):F0}");
+
+            // 没录到声音时比对时长/电平没有意义，直接提示而不是把每个格式都报成失败
+            var silent = peak < 100;
+            if (silent) Console.WriteLine("警告：几乎没有采集到声音，请检查麦克风是否被静音或占用；本次跳过回读校验");
 
             Directory.CreateDirectory(outDir);
             var saved = ExportAll(pcm, outDir, $"record-{DateTime.Now:yyyyMMdd-HHmmss}", out var failed);
 
             if (saved.Count > 0)
             {
-                Console.WriteLine();
-                Console.WriteLine("== 回读校验（时长与电平与源一致即通过）==");
-                foreach (var item in saved)
+                if (!silent)
                 {
-                    if (Verify(pcm, item, out var message))
-                        Console.WriteLine($"[PASS] {item.Spec.Name}：{message}");
-                    else
+                    Console.WriteLine();
+                    Console.WriteLine("== 回读校验（时长与电平与源一致即通过）==");
+                    foreach (var item in saved)
                     {
-                        failed++;
-                        Console.WriteLine($"[FAIL] {item.Spec.Name}：{message}");
+                        if (Verify(pcm, item, out var message))
+                            Console.WriteLine($"[PASS] {item.Spec.Name}：{message}");
+                        else
+                        {
+                            failed++;
+                            Console.WriteLine($"[FAIL] {item.Spec.Name}：{message}");
+                        }
                     }
                 }
 
@@ -206,7 +214,10 @@ internal static class AudioLab
     {
         Console.WriteLine();
         Console.WriteLine("== 导出各格式 ==");
-        if (!OpusCodec.IsAvailable) Console.WriteLine("[SKIP] Ogg Opus：未找到 ffmpeg/libopus，可用 OPUS_FFMPEG 环境变量或 PATH 提供 ffmpeg");
+        if (OpusCodec.IsAvailable)
+            Console.WriteLine($"[OK]   ffmpeg/libopus：{OpusProcessCodec.FFmpegPath}");
+        else
+            Console.WriteLine("[SKIP] Ogg Opus：未找到 ffmpeg/libopus，可用 OPUS_FFMPEG 环境变量或 PATH 提供 ffmpeg");
 
         var saved = new List<SavedFile>();
         failed = 0;
