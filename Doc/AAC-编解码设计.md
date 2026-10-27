@@ -224,7 +224,7 @@ flowchart TD
 - 用 ffmpeg（需 `libfdk_aac` 或等价编码器）生成 HE-AAC v1/v2 向量；
 - 输出采样率、声道数、时长正确；与参考解码 PCM 的 SNR ≥ 45 dB（SBR 高频允许更大误差）；
 - 不支持时明确报错，不输出错误采样率。
-- **跨架构复验**：`Samples/CodecSmoke` 把同一组外部向量与 espeak 合成放到目标机跑（`dotnet publish Samples/CodecSmoke -c Release -o out`，把 `XUnitTest/Assets/aacplus` 拷到 `out/aacplus`，再 `./CodecSmoke all`）。Linux ARM64（aarch64，.NET 10 运行库）实测与 x64 逐位一致：LC 86.69 dB、HEv1 87.26 dB、HEv1 后段 83.89 dB、PS 稳定段 43.34/65.44 dB、PS 后段 85.03/81.86 dB，说明整条浮点解码链（QMF/SBR/PS/TNS）没有架构相关分支。
+- **跨架构复验**：`Samples/CodecSmoke` 把同一组外部向量、MP3/Opus 往返与 espeak 合成放到目标机跑（`dotnet publish Samples/CodecSmoke -c Release -o out`，把 `XUnitTest/Assets/aacplus` 拷到 `out/aacplus`，再 `./CodecSmoke all`）。Linux ARM64（aarch64，.NET 10 运行库）实测与 x64 逐位一致：LC 86.69 dB、HEv1 87.26 dB、HEv1 后段 83.89 dB、PS 稳定段 43.34/65.44 dB、PS 后段 85.03/81.86 dB，说明整条浮点解码链（QMF/SBR/PS/TNS）没有架构相关分支；同为浮点实现的 MP3 编码器往返同为 37.96 dB，Opus 的 ffmpeg 进程回退在 Linux 上同样跑通。
 
 ---
 

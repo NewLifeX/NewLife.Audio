@@ -1,13 +1,15 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
 using System.Threading;
 using NewLife.Audio;
+using NewLife.Audio.Codecs;
 using NewLife.Audio.DSP;
 using NewLife.Audio.Tts;
 
-// 编解码真机冒烟：在目标机上复验 AAC 外部参考向量的 SNR 与 espeak 语音合成，
+// 编解码真机冒烟：在目标机上复验 AAC 外部参考向量的 SNR、MP3/Opus 往返与 espeak 语音合成，
 // 用于确认跨架构（x64 / aarch64）行为一致——同一码流应给出同一组 SNR。
-// 用法：CodecSmoke [all|aac|tts] [资产目录]，任一失败返回非 0。
+// 用法：CodecSmoke [all|aac|mp3|opus|tts] [资产目录]，任一失败返回非 0。
 
 var mode = args.Length > 0 ? args[0] : "all";
 var assets = args.Length > 1 ? args[1] : Path.Combine(AppContext.BaseDirectory, "aacplus");
@@ -74,13 +76,67 @@ if (mode is "all" or "aac")
     }
 }
 
+if (mode is "all" or "mp3")
+{
+    // 纯托管 MP3 编码器：整段一次编码（逐帧调用会重置 MDCT/多相历史），再解回对齐比波形。
+    const Int32 frames = 38;
+    var rate = 44100;
+    var pcm = Tone(1152 * frames, rate);
+    var codec = new Mp3Codec();
+
+    var encoded = codec.FromPcm(pcm, new Mp3EncoderOptions { SampleRate = rate, Channels = 1, Bitrate = 320 }).GetSpan().ToArray();
+    var decoded = codec.ToPcm(encoded, null).GetSpan().ToArray();
+    var snr = AlignedSnr(ToDoubles(pcm), ToDoubles(decoded), 1152);
+    Console.WriteLine($"[mp3] bytes={encoded.Length} decoded={decoded.Length} snr={snr:F2}dB");
+    if (snr >= 35)
+        Pass($"MP3 往返（1 kHz 正弦，{frames} 帧）: SNR {snr:F2} dB");
+    else
+        Fail($"MP3 往返 SNR {snr:F2} dB 低于门禁 35 dB");
+}
+
+if (mode is "all" or "opus")
+{
+    // Opus 走 ffmpeg(libopus) 进程回退，缺 ffmpeg 时只提示跳过。
+    // 逐包解码时帧间重叠（2.5 ms）会丢，波形 SNR 不是有效指标，这里只验通路与音调。
+    if (!OpusProcessCodec.IsAvailable)
+    {
+        Console.WriteLine("[SKIP] 未找到 ffmpeg/libopus，跳过 Opus 往返");
+    }
+    else
+    {
+        const Int32 rate = 48000;
+        var options = new OpusOptions { SampleRate = rate };
+        var pcm = Tone(options.SamplesPerFrame * 50, rate);
+        using var codec = new OpusCodec();
+
+        var packets = codec.Encode(pcm);
+        var decoded = new List<Byte>();
+        var badFrame = 0;
+        foreach (var packet in packets)
+        {
+            var frame = codec.ToPcm(packet.GetSpan(), options).GetSpan().ToArray();
+            if (frame.Length != options.SamplesPerFrame * 2) badFrame++;
+            decoded.AddRange(frame);
+        }
+
+        var samples = ToDoubles(decoded.ToArray());
+        var tone = Goertzel(samples, 0, samples.Length / 2, 1000, rate);
+        var other = Goertzel(samples, 0, samples.Length / 2, 3000, rate);
+        Console.WriteLine($"[opus] packets={packets.Count} decoded={decoded.Count} bad={badFrame} tone1k={tone:F0} tone3k={other:F0}");
+        if (packets.Count == 50 && badFrame == 0 && tone > 100 && tone > other * 5)
+            Pass($"Opus 进程往返（1 kHz 正弦，{packets.Count} 包）: 帧长一致、1 kHz 能量 {tone:F0}");
+        else
+            Fail($"Opus 进程往返不正常：packets={packets.Count} bad={badFrame} tone1k={tone:F0} tone3k={other:F0}");
+    }
+}
+
 if (mode is "all" or "tts")
 {
     var engine = new EspeakTtsEngine();
     Console.WriteLine($"[tts] engine={engine.Name} available={engine.IsAvailable}");
     if (!engine.IsAvailable)
     {
-        Fail("espeak-ng 不可用（apt install espeak-ng）");
+        Console.WriteLine("[SKIP] espeak-ng 不可用（apt install espeak-ng）");
     }
     else
     {
@@ -137,6 +193,86 @@ static Double[] ToDoubles(Byte[] data)
     for (var i = 0; i < samples.Length; i++) samples[i] = BitConverter.ToInt16(data, i * 2);
 
     return samples;
+}
+
+static Byte[] Tone(Int32 samples, Int32 sampleRate)
+{
+    var pcm = new Byte[samples * 2];
+    for (var i = 0; i < samples; i++)
+    {
+        var value = (Int16)(12000 * Math.Sin(2 * Math.PI * 1000 * i / sampleRate));
+        pcm[i * 2] = (Byte)(value & 0xFF);
+        pcm[i * 2 + 1] = (Byte)((value >> 8) & 0xFF);
+    }
+
+    return pcm;
+}
+
+// Goertzel：测单个频点的能量，用于确认解码出来的确实是那段音调而不是噪声。
+static Double Goertzel(Double[] data, Int32 start, Int32 count, Double frequency, Int32 sampleRate)
+{
+    var w = 2 * Math.PI * frequency / sampleRate;
+    var coeff = 2 * Math.Cos(w);
+    var s0 = 0.0;
+    var s1 = 0.0;
+    var s2 = 0.0;
+    var end = Math.Min(start + count, data.Length);
+    for (var i = start; i < end; i++)
+    {
+        s0 = data[i] + coeff * s1 - s2;
+        s2 = s1;
+        s1 = s0;
+    }
+
+    var real = s1 - s2 * Math.Cos(w);
+    var imag = s2 * Math.Sin(w);
+
+    return Math.Sqrt(real * real + imag * imag) * 2.0 / Math.Max(count, 1);
+}
+
+// 编解码器有固定算法延迟，先按互相关定粗偏移，再在附近逐样本找 SNR 最高的偏移（编码器可能整体改电平，
+// 故每个候选偏移都用最小二乘增益对齐）。纯正弦的互相关有多个等高峰值，只靠互相关定不准。
+static Double AlignedSnr(Double[] ours, Double[] reference, Int32 trim)
+{
+    var center = FindLag(ours, reference, 200);
+
+    var best = -999.0;
+    for (var lag = center - 64; lag <= center + 64; lag++)
+    {
+        var snr = SnrAt(ours, reference, lag, trim);
+        if (snr > best) best = snr;
+    }
+
+    return best;
+}
+
+static Double SnrAt(Double[] ours, Double[] reference, Int32 lag, Int32 trim)
+{
+    var sumAB = 0.0;
+    var sumBB = 0.0;
+    for (var i = trim; i < ours.Length - trim; i++)
+    {
+        var j = i + lag;
+        if (j < 0 || j >= reference.Length) continue;
+
+        sumAB += ours[i] * reference[j];
+        sumBB += reference[j] * reference[j];
+    }
+    var gain = sumBB <= 0 ? 1 : sumAB / sumBB;
+
+    var sumAA = 0.0;
+    var sumErr = 0.0;
+    for (var i = trim; i < ours.Length - trim; i++)
+    {
+        var j = i + lag;
+        if (j < 0 || j >= reference.Length) continue;
+
+        sumAA += ours[i] * ours[i];
+        var error = ours[i] - gain * reference[j];
+        sumErr += error * error;
+    }
+
+    return sumErr <= 0 || sumAA <= 0 ? 99 : 10 * Math.Log10(sumAA / sumErr);
 }
 
 static Double[] Extract(Double[] interleaved, Int32 channels, Int32 ch)
