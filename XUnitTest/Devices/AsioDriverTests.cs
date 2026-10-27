@@ -11,6 +11,10 @@ public class AsioDriverTests
     {
         var driver = AudioDriverFactory.Create("asio");
         Assert.NotNull(driver);
+
+        // 工厂在非 Windows 平台忽略驱动名，返回该平台的默认后端（Linux 为 ALSA）
+        if (!AudioDriverFactory.IsWindows) return;
+
         Assert.Contains("ASIO", driver.Name);
     }
 

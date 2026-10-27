@@ -13,16 +13,20 @@ public class WasapiDriverTests
     [Fact(DisplayName = "WASAPI驱动创建成功")]
     public void WasapiDriver_CreatesInstances()
     {
+        // 工厂在非 Windows 平台忽略驱动名，返回该平台的默认后端（Linux 为 ALSA）
+        if (!WasapiDriver.IsPlatformSupported)
+        {
+            Assert.NotEqual("WASAPI", AudioDriverFactory.Create("wasapi").Name);
+
+            var unsupported = new WasapiDriver();
+            Assert.Throws<PlatformNotSupportedException>(() => unsupported.CreatePlayer());
+            Assert.Throws<PlatformNotSupportedException>(() => unsupported.CreateRecorder());
+            return;
+        }
+
         var driver = AudioDriverFactory.Create("wasapi");
         Assert.NotNull(driver);
         Assert.Contains("WASAPI", driver.Name);
-
-        if (!WasapiDriver.IsPlatformSupported)
-        {
-            Assert.Throws<PlatformNotSupportedException>(() => driver.CreatePlayer());
-            Assert.Throws<PlatformNotSupportedException>(() => driver.CreateRecorder());
-            return;
-        }
 
         using var player = driver.CreatePlayer();
         Assert.NotNull(player);
@@ -113,16 +117,14 @@ public class WasapiDriverTests
         Assert.True(player.BufferedBytes >= 0);
     }
 
-    [Fact(DisplayName = "WASAPI录制器在无采集端点时明确抛异常")]    public void WasapiRecorder_StartStop()
+    [Fact(DisplayName = "WASAPI录制器在无采集端点时明确抛异常")]
+    public void WasapiRecorder_StartStop()
     {
+        // 非 Windows 平台 CreateRecorder 直接抛 PlatformNotSupportedException（由 CreateInstances 覆盖）
+        if (!WasapiDriver.IsPlatformSupported) return;
+
         var driver = new WasapiDriver();
         using var recorder = driver.CreateRecorder();
-
-        if (!WasapiDriver.IsPlatformSupported)
-        {
-            Assert.Throws<PlatformNotSupportedException>(() => recorder.StartRecording());
-            return;
-        }
 
         if (driver.GetDefaultInputDevice() == null)
         {
