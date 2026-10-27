@@ -14,6 +14,7 @@
     <Content Include="Assets\mp3\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\vorbis\**" CopyToOutputDirectory="PreserveNewest" />
     <Content Include="Assets\aacplus\**" CopyToOutputDirectory="PreserveNewest" />
+    <Content Include="..\AudioStudio\Assets\Midi\*.mid" Link="Assets\Midi\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
   <ItemGroup>

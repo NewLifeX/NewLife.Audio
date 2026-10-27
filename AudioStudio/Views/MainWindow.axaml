@@ -2,6 +2,7 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:vm="using:AudioStudio.ViewModels"
         xmlns:player="using:AudioStudio.Views.Player"
+        xmlns:midi="using:AudioStudio.Views.Midi"
         xmlns:convert="using:AudioStudio.Views.Convert"
         xmlns:devices="using:AudioStudio.Views.Devices"
         xmlns:record="using:AudioStudio.Views.Record"
@@ -31,6 +32,9 @@
                     Margin="8,0,8,8">
             <TabItem Header="🎵 播放器">
                 <player:PlaybackView DataContext="{Binding Playback}" />
+            </TabItem>
+            <TabItem Header="🎼 MIDI 音序">
+                <midi:MidiView DataContext="{Binding Midi}" />
             </TabItem>
             <TabItem Header="🔄 格式转换">
                 <convert:ConversionView DataContext="{Binding Conversion}" />

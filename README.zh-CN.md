@@ -24,9 +24,9 @@
 
 [English](README.md) | 简体中文
 
-跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成、ASR 语音识别、音频文件门面（打开→解码→编辑→保存）、容器格式读写（WAV/Ogg/MP4/FLAC/MP3/AIFF/CAF）、流媒体传输（RTP/RTSP/HTTP/WebSocket）一站式音频能力。
+跨平台 .NET 全功能音频处理库，纯托管优先，提供编解码（G.711/ADPCM/AAC/Opus/MP3/FLAC/Vorbis/Speex/G.722/G.726）、设备 I/O（WaveOut/WASAPI/ASIO）、DSP 信号链处理、语音处理（VAD/AEC/AGC/NS）、TTS 语音合成、ASR 语音识别、音频文件门面（打开→解码→编辑→保存）、容器格式读写（WAV/Ogg/MP4/FLAC/MP3/AIFF/CAF）、流媒体传输（RTP/RTSP/HTTP/WebSocket）与 MIDI 音序渲染一站式音频能力。
 
-🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、转换、设备、录制、DSP、诊断、语音合成七大工具模块。
+🎧 附带 [AudioStudio](AudioStudio/) 跨平台桌面演示客户端（Avalonia），提供播放、MIDI 音序、转换、设备、录制、DSP、诊断、语音合成八大工具模块。
 
 源码： https://github.com/NewLifeX/NewLife.Audio  
 Nuget：NewLife.Audio  
@@ -110,6 +110,16 @@ Nuget：NewLife.Audio
 - **RTSP** 客户端（TCP：OPTIONS→DESCRIBE→SETUP→PLAY→TEARDOWN，SDP 解析）
 - **HTTP** 音频流（Icecast/SHOUTcast）
 - **WebSocket** 双向音频管道（5 字节帧头）
+
+### 🎼 MIDI 音序（MIDI）
+纯托管标准 MIDI 文件读写与波形渲染：
+- SMF 1.0 读写（Format 0/1/2、PPQ/SMPTE、VLQ、running status、Meta/SysEx 透传）
+- 纯托管合成器：GM 音色分组、带限波表、ADSR、力度/音量/表情/声像/弯音/延音、复音上限、软限幅
+- 渲染为 16 位 PCM，复用 `AudioFile.WritePcm` 输出 WAV/MP3/FLAC
+- AudioStudio **MIDI 音序**页：渐变 min/max 波形、RMS 响度线、节拍网格、发光播放头、只读迷你钢琴卷
+- 内置公有领域示例（欢乐颂、绿袖子、卡农、茉莉花），位于 `AudioStudio/Assets/Midi`
+- 控制台示例 `Samples/MidiDemo`：`info` / `render` / `play` / `gen`
+- MIDI 是乐谱/事件流，不是采样音频；SoundFont 与实时 MIDI 输入输出不在范围内
 
 ### 🔈 语音合成（TTS）
 把文字变成声音，普通用户三行代码可用：

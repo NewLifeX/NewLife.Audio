@@ -26,9 +26,9 @@
 
 [简体中文](https://github.com/NewLifeX/NewLife.Audio/blob/master/README.zh-CN.md) | English
 
-A cross-platform, pure-managed .NET audio processing library supporting codecs, device I/O, DSP effects, speech processing, text-to-speech, speech recognition, audio file read/edit/write, container format I/O, and streaming — all in one NuGet package.
+A cross-platform, pure-managed .NET audio processing library supporting codecs, device I/O, DSP effects, speech processing, text-to-speech, speech recognition, audio file read/edit/write, container format I/O, streaming, and MIDI sequencing/rendering — all in one NuGet package.
 
-🎧 Bundled [AudioStudio](https://github.com/NewLifeX/NewLife.Audio/blob/master/AudioStudio/) cross-platform desktop demo client (Avalonia) with seven tool modules: playback, conversion, devices, recording, DSP, diagnostics, and speech synthesis.
+🎧 Bundled [AudioStudio](https://github.com/NewLifeX/NewLife.Audio/blob/master/AudioStudio/) cross-platform desktop demo client (Avalonia) with eight tool modules: playback, MIDI sequencing, conversion, devices, recording, DSP, diagnostics, and speech synthesis.
 
 Source: https://github.com/NewLifeX/NewLife.Audio  
 NuGet: `NewLife.Audio`
@@ -110,6 +110,16 @@ Network audio streaming:
 - **RTSP** client (TCP: OPTIONS→DESCRIBE→SETUP→PLAY→TEARDOWN, SDP parsing)
 - **HTTP** audio streaming (Icecast/SHOUTcast)
 - **WebSocket** bidirectional audio pipe (5-byte frame header)
+
+### 🎼 MIDI Sequencing (MIDI)
+Pure-managed Standard MIDI File read/write and waveform rendering:
+- Parse/write SMF 1.0 (Format 0/1/2, PPQ/SMPTE, VLQ, running status, Meta/SysEx passthrough)
+- Pure-managed synthesizer: GM program groups, band-limited wavetables, ADSR, velocity/volume/expression/pan/pitch bend/sustain, polyphony limit, soft limiting
+- Render to 16-bit PCM and reuse `AudioFile.WritePcm` for WAV/MP3/FLAC
+- AudioStudio **MIDI Sequencing** page: gradient min/max waveform, RMS line, beat grid, glowing playhead, read-only mini piano roll
+- Built-in public-domain demos (`Ode to Joy`, `Greensleeves`, `Canon in D`, `Jasmine Flower`) under `AudioStudio/Assets/Midi`
+- Console demo `Samples/MidiDemo`: `info` / `render` / `play` / `gen`
+- MIDI is a score/event stream, not sampled audio; SoundFont and real-time MIDI I/O are out of scope
 
 ### 🔈 Text-to-Speech (TTS)
 Turn text into sound with three lines of code:

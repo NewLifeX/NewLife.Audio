@@ -1,0 +1,118 @@
+<UserControl xmlns="https://github.com/avaloniaui"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="using:AudioStudio.ViewModels.Midi"
+             xmlns:converters="using:AudioStudio.Converters"
+             xmlns:controls="using:AudioStudio.Controls"
+             x:Class="AudioStudio.Views.Midi.MidiView"
+             x:DataType="vm:MidiViewModel">
+
+    <UserControl.Resources>
+        <converters:TimeSpanConverter x:Key="TimeSpanConverter" />
+        <converters:PlayPauseConverter x:Key="PlayPauseConverter" />
+    </UserControl.Resources>
+
+    <Grid RowDefinitions="Auto,Auto,*,Auto,Auto" Margin="8">
+
+        <!-- 顶部工具栏 -->
+        <Border Grid.Row="0" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <Grid RowDefinitions="Auto,Auto">
+                <StackPanel Grid.Row="0" Orientation="Horizontal" Spacing="8">
+                    <TextBlock Text="🎼 MIDI 音序" FontSize="18" FontWeight="SemiBold" VerticalAlignment="Center" />
+                    <TextBlock Text="乐谱事件 → 纯托管波形合成 → PCM" FontSize="12"
+                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                               VerticalAlignment="Center" Margin="8,0,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Spacing="8" Margin="0,10,0,0">
+                    <ComboBox Width="220" ItemsSource="{Binding Demos}" SelectedItem="{Binding SelectedDemo}">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate x:DataType="vm:MidiDemoItem">
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <TextBlock Text="{Binding Name}" FontWeight="SemiBold" />
+                                    <TextBlock Text="{Binding Description}" FontSize="11"
+                                               Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
+                    </ComboBox>
+                    <Button Content="加载示例" Command="{Binding LoadDemoCommand}" />
+                    <Button Content="打开 MIDI" Command="{Binding OpenFileCommand}" />
+                    <Border Width="1" Background="{DynamicResource SystemControlForegroundBaseLowBrush}" Margin="4,2" />
+                    <Button Content="另存 WAV" Command="{Binding SaveWavCommand}" IsEnabled="{Binding HasFile}" />
+                    <Button Content="另存 MP3" Command="{Binding SaveMp3Command}" IsEnabled="{Binding HasFile}" />
+                    <ProgressBar Width="90" Height="4" IsIndeterminate="True" IsVisible="{Binding IsBusy}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 信息卡 -->
+        <Border Grid.Row="1" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="12" Margin="0,0,0,8">
+            <StackPanel Spacing="4">
+                <TextBlock Text="{Binding FileName}" FontSize="16" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" />
+                <TextBlock Text="{Binding InfoText}" FontSize="12" TextWrapping="Wrap"
+                           Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}" />
+            </StackPanel>
+        </Border>
+
+        <!-- 波形 -->
+        <Border Grid.Row="2" Background="#0B1020"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="6" Padding="0" Margin="0,0,0,8" MinHeight="240">
+            <controls:MidiWaveformControl x:Name="Waveform"
+                                          PcmData="{Binding WaveformData}"
+                                          Channels="{Binding Channels}"
+                                          SampleRate="{Binding SampleRate}"
+                                          Duration="{Binding Duration}"
+                                          Position="{Binding Position}"
+                                          Notes="{Binding Notes}"
+                                          BeatTimes="{Binding BeatTimes}"
+                                          BarTimes="{Binding BarTimes}"
+                                          SeekRequested="OnSeekRequested" />
+        </Border>
+
+        <!-- 播放控制 -->
+        <Border Grid.Row="3" Background="{DynamicResource SystemControlBackgroundChromeMediumLowBrush}"
+                BorderBrush="{DynamicResource SystemControlForegroundBaseLowBrush}" BorderThickness="1"
+                CornerRadius="4" Padding="8" Margin="0,0,0,8">
+            <Grid ColumnDefinitions="Auto,*,Auto">
+                <StackPanel Grid.Column="0" Orientation="Horizontal" Spacing="4">
+                    <Button Content="{Binding State, Converter={StaticResource PlayPauseConverter}}"
+                            Width="48" Height="32" FontSize="16"
+                            Command="{Binding PlayPauseCommand}"
+                            IsEnabled="{Binding HasFile}" />
+                    <Button Content="⏹" Width="36" Height="32" FontSize="14"
+                            Command="{Binding StopCommand}"
+                            IsEnabled="{Binding HasFile}" />
+                </StackPanel>
+
+                <Grid Grid.Column="1" ColumnDefinitions="Auto,*,Auto" Margin="12,0">
+                    <TextBlock Grid.Column="0" Text="{Binding Position, Converter={StaticResource TimeSpanConverter}}"
+                               VerticalAlignment="Center" FontSize="12" Margin="0,0,8,0" />
+                    <Slider Grid.Column="1" x:Name="PositionSlider"
+                            Minimum="0" Maximum="{Binding Duration}"
+                            Value="{Binding Position, Mode=OneWay}"
+                            IsEnabled="{Binding HasFile}"
+                            PointerReleased="OnPositionSliderReleased"
+                            VerticalAlignment="Center" />
+                    <TextBlock Grid.Column="2" Text="{Binding Duration, Converter={StaticResource TimeSpanConverter}}"
+                               VerticalAlignment="Center" FontSize="12" Margin="8,0,0,0" />
+                </Grid>
+
+                <StackPanel Grid.Column="2" Orientation="Horizontal" Spacing="4">
+                    <TextBlock Text="🔊" VerticalAlignment="Center" FontSize="14" />
+                    <Slider Width="100" Minimum="0" Maximum="1" SmallChange="0.05"
+                            Value="{Binding Player.Volume}" VerticalAlignment="Center" />
+                </StackPanel>
+            </Grid>
+        </Border>
+
+        <!-- 状态栏 -->
+        <TextBlock Grid.Row="4" Text="{Binding StatusText}" FontSize="12"
+                   Foreground="{DynamicResource SystemControlForegroundBaseMediumBrush}"
+                   TextTrimming="CharacterEllipsis" Margin="2,0" />
+    </Grid>
+</UserControl>

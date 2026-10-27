@@ -4,6 +4,7 @@ using AudioStudio.ViewModels.Convert;
 using AudioStudio.ViewModels.Devices;
 using AudioStudio.ViewModels.Record;
 using AudioStudio.ViewModels.Dsp;
+using AudioStudio.ViewModels.Midi;
 using AudioStudio.ViewModels.Speech;
 using AudioStudio.ViewModels.Tools;
 
@@ -14,6 +15,9 @@ public partial class MainViewModel : ViewModelBase
 {
     /// <summary>播放器</summary>
     public PlaybackViewModel Playback { get; }
+
+    /// <summary>MIDI 音序</summary>
+    public MidiViewModel Midi { get; }
 
     /// <summary>格式转换</summary>
     public ConversionViewModel Conversion { get; }
@@ -40,6 +44,7 @@ public partial class MainViewModel : ViewModelBase
     public MainViewModel()
     {
         Playback = new PlaybackViewModel();
+        Midi = new MidiViewModel();
         Conversion = new ConversionViewModel();
         Device = new DeviceViewModel();
         Recording = new RecordingViewModel();
