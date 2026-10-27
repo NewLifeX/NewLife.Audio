@@ -1,0 +1,21 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 编解码真机冒烟：把外部参考向量与 espeak 合成放到目标机（含 aarch64）复验，验证跨架构行为一致。
+       dotnet publish Samples/CodecSmoke/CodecSmoke.csproj -c Release -o out
+       把 XUnitTest/Assets/aacplus 拷到 out/aacplus，然后 ./CodecSmoke all
+  -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <InvariantGlobalization>true</InvariantGlobalization>
+    <AssemblyName>CodecSmoke</AssemblyName>
+    <RootNamespace>CodecSmoke</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NewLife.Audio\NewLife.Audio.csproj" />
+  </ItemGroup>
+
+</Project>
