@@ -38,7 +38,7 @@ public class DeviceHardwareTests
     [Fact(DisplayName = "WaveOut真机播放能把缓冲区写空")]
     public void WaveOut_RealDevice_PlaybackDrains()
     {
-        if (!OperatingSystem.IsWindows()) return;
+        Assert.SkipUnless(OperatingSystem.IsWindows(), "仅 Windows 有 WaveOut 后端");
 
         var driver = AudioDriverFactory.Create("waveout");
         using var player = driver.CreatePlayer();
@@ -49,14 +49,14 @@ public class DeviceHardwareTests
         // 等待播放线程消化缓冲；无声卡时 BufferedBytes 会停在原值，视为环境缺失
         for (var i = 0; i < 40 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
 
-        if (player.BufferedBytes > 0) return;
+        Assert.SkipWhen(player.BufferedBytes > 0, "端点未消化缓冲（无声卡或设备被占用）");
         player.Stop();
     }
 
     [Fact(DisplayName = "WASAPI共享模式真机播放能把缓冲区写空")]
     public void Wasapi_RealDevice_PlaybackDrains()
     {
-        if (!WasapiDriver.IsPlatformSupported) return;
+        Assert.SkipUnless(WasapiDriver.IsPlatformSupported, "仅 Windows 有 WASAPI 后端");
 
         var driver = AudioDriverFactory.Create("wasapi");
         using var player = driver.CreatePlayer();
@@ -66,14 +66,14 @@ public class DeviceHardwareTests
 
         for (var i = 0; i < 40 && player.BufferedBytes > 0; i++) Thread.Sleep(50);
 
-        if (player.BufferedBytes > 0) return;
+        Assert.SkipWhen(player.BufferedBytes > 0, "端点未消化缓冲（无声卡或设备被占用）");
         player.Stop();
     }
 
     [Fact(DisplayName = "WASAPI loopback回采能拿到系统声音")]
     public void Wasapi_RealDevice_LoopbackCaptureGetsData()
     {
-        if (!WasapiDriver.IsPlatformSupported) return;
+        Assert.SkipUnless(WasapiDriver.IsPlatformSupported, "仅 Windows 有 WASAPI 后端");
 
         var driver = new WasapiDriver();
         using var recorder = driver.CreateLoopbackRecorder();
@@ -91,18 +91,18 @@ public class DeviceHardwareTests
         recorder.StopRecording();
 
         // 无音频端点的环境拿不到数据，跳过而非失败
-        if (bytes == 0) return;
+        Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
         Assert.True(bytes > 0);
     }
 
     [Fact(DisplayName = "WASAPI默认输入设备采集通路可用")]
     public void Wasapi_RealDevice_DefaultInputCaptures()
     {
-        if (!WasapiDriver.IsPlatformSupported) return;
+        Assert.SkipUnless(WasapiDriver.IsPlatformSupported, "仅 Windows 有 WASAPI 后端");
 
         var driver = new WasapiDriver();
         var input = driver.EnumerateDevices().FirstOrDefault(d => d.IsInput);
-        if (input == null) return;
+        Assert.SkipWhen(input == null, "本机没有输入设备");
 
         using var recorder = driver.CreateRecorder();
         var bytes = 0L;
@@ -112,7 +112,7 @@ public class DeviceHardwareTests
         Thread.Sleep(500);
         recorder.StopRecording();
 
-        if (bytes == 0) return;
+        Assert.SkipWhen(bytes == 0, "没有拿到采集数据（无输入源或端点静默）");
         Assert.True(bytes > 0);
     }
 
@@ -120,7 +120,7 @@ public class DeviceHardwareTests
     public void DeviceWatcher_RegistersAndListsActiveEndpoints()
     {
         using var watcher = new AudioDeviceWatcher();
-        if (!watcher.IsSupported) return;
+        Assert.SkipUnless(watcher.IsSupported, "本机不支持设备通知");
 
         Assert.True(watcher.IsRegistered);
 
