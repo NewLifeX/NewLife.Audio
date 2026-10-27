@@ -376,7 +376,14 @@ public class FlacCodec : IAudioCodec, ICodecInfo
 
     private static Boolean DecodeResidual(FlacBitReader reader, Int32[] residual, Int32 blockSize, Int32 predictorOrder)
     {
-        var partitionOrder = (Int32)reader.ReadBits(2);
+        // RFC 9639：2 位编码方法（0=4 位 Rice 参数，1=5 位 Rice 参数），随后 4 位分区阶
+        var method = (Int32)reader.ReadBits(2);
+        if (method > 1) return false;
+
+        var paramBits = method == 0 ? 4 : 5;
+        var escape = method == 0 ? 15 : 31;
+
+        var partitionOrder = (Int32)reader.ReadBits(4);
         var partitions = 1 << partitionOrder;
         var partitionSamples = blockSize >> partitionOrder;
         if (partitionSamples <= 0 || (partitionSamples < predictorOrder && partitionOrder > 0)) return false;
@@ -387,9 +394,9 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             var count = partitionSamples - (p == 0 ? predictorOrder : 0);
             if (count < 0) return false;
 
-            var riceParam = (Int32)reader.ReadBits(4);
+            var riceParam = (Int32)reader.ReadBits(paramBits);
 
-            if (riceParam == 15)
+            if (riceParam == escape)
             {
                 var rawBits = (Int32)reader.ReadBits(5);
                 for (var i = 0; i < count; i++)
@@ -414,7 +421,7 @@ public class FlacCodec : IAudioCodec, ICodecInfo
             }
         }
 
-        return index <= residual.Length;
+        return index == residual.Length;
     }
 
     private static Boolean TryReadUtf8Number(FlacBitReader reader, out Int64 value)

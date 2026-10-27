@@ -536,10 +536,11 @@ internal sealed class WasapiPcmConverter
         // 2) 声道映射
         var mapped = MapChannels(src, srcFrames, _source.Channels, _target.Channels);
 
-        // 3) 采样率转换
+        // 3) 采样率转换。mapped 已按目标声道数重排，重采样必须按目标声道数取样本，
+        // 否则目标为单声道时仍按源声道步进，越界读取导致采集中断
         var frames = _source.SampleRate == _target.SampleRate
             ? mapped
-            : Resample(mapped, srcFrames, _source.Channels, _target.Channels);
+            : Resample(mapped, srcFrames, _target.Channels, _target.Channels);
         var outFrames = frames.Length / _target.Channels;
         if (outFrames == 0) return [];
 

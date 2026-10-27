@@ -191,7 +191,92 @@ public class FlacFileWriterTests
         Assert.Throws<InvalidOperationException>(() => writer.WriteMetadata(new AudioMetadata { Title = "x" }));
     }
 
+    [Fact(DisplayName = "FLAC帧残差按规范写入编码方法与分区阶")]
+    public void Writer_ResidualHeader_FollowsSpec()
+    {
+        var format = new AudioFormat { SampleRate = 8000, Channels = 1, BitsPerSample = 16 };
+        var pcm = BuildSine(format, 440, 0.01);
+
+        Byte[] data;
+        using (var ms = new MemoryStream())
+        {
+            using (var writer = new FlacFileWriter(ms, format, new FlacWriterOptions { PaddingBytes = 0, WriteSeekTable = false }))
+            {
+                writer.WriteFrame(pcm);
+                writer.Flush();
+            }
+            data = ms.ToArray();
+        }
+
+        // 跳过元数据块，定位首个音频帧
+        var pos = 4;
+        while (true)
+        {
+            var header = data[pos];
+            var length = data[pos + 1] << 16 | data[pos + 2] << 8 | data[pos + 3];
+            pos += 4 + length;
+            if ((header & 0x80) != 0) break;
+        }
+
+        var reader = new BitReader(data, pos * 8);
+        Assert.Equal(0x3FFE, reader.Read(14));  // 同步码
+        reader.Read(1);                         // reserved
+        reader.Read(1);                         // blocking strategy
+        var blockCode = reader.Read(4);
+        var rateCode = reader.Read(4);
+        reader.Read(4);                         // 声道分配
+        reader.Read(3);                         // 样本位深
+        reader.Read(1);                         // reserved
+
+        // UTF-8 编码的帧号
+        var first = reader.Read(8);
+        if ((first & 0x80) != 0)
+        {
+            var count = 0;
+            for (var mask = 0x80; (first & mask) != 0; mask >>= 1) count++;
+            for (var i = 1; i < count; i++) reader.Read(8);
+        }
+
+        if (blockCode == 6) reader.Read(8);
+        else if (blockCode == 7) reader.Read(16);
+        if (rateCode == 12) reader.Read(8);
+        else if (rateCode is 13 or 14) reader.Read(16);
+
+        reader.Read(8);                         // 帧头 CRC-8
+
+        Assert.Equal(0, reader.Read(1));        // 子帧零位
+        var type = reader.Read(6);
+        Assert.InRange(type, 8, 12);            // 固定预测子帧
+        reader.Read(1);                         // wasted bits 标志
+
+        var order = type - 8;
+        for (var i = 0; i < order; i++) reader.Read(16);
+
+        // 曾漏写分区阶：只写 2 位方法就紧跟 Rice 参数，VLC/libFLAC 无法解析整帧
+        Assert.Equal(0, reader.Read(2));        // 残差编码方法：分区 Rice
+        Assert.Equal(0, reader.Read(4));        // 分区阶
+        Assert.InRange(reader.Read(4), 0, 14);  // Rice 参数（15 为逃逸）
+    }
+
     #region 辅助
+    /// <summary>按位读取 FLAC 帧头的辅助器（高位在前）</summary>
+    private sealed class BitReader(Byte[] data, Int32 bitOffset)
+    {
+        private Int32 _pos = bitOffset;
+
+        public Int32 Read(Int32 count)
+        {
+            var value = 0;
+            for (var i = 0; i < count; i++)
+            {
+                value = (value << 1) | ((data[_pos >> 3] >> (7 - (_pos & 7))) & 1);
+                _pos++;
+            }
+
+            return value;
+        }
+    }
+
     private static Byte[] WriteFile(Byte[] pcm, AudioFormat format)
     {
         var ms = new MemoryStream();
