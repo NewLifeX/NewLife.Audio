@@ -77,6 +77,20 @@ public class AacExternalVectorTests
         Assert.True(corr >= 0.9999, $"相关度 {corr:F5} 低于门禁 0.9999");
     }
 
+    [Fact(DisplayName = "HE-AAC v2 瞬态后段（4.6~5.0 秒）外部向量：双声道 SNR ≥ 30 dB")]
+    public void HeAacV2_TransientSegment()
+    {
+        // 该区间有一处短窗瞬态（3 个 EIGHT_SHORT 帧之一，4.69 s 起）。
+        // 瞬态后的第一帧仍有约 27 dB 的残差（FIX-012，SBR 频段 2.75 kHz 以上），其余帧 74~89 dB。
+        // 门禁锁住现状，避免整段退化到修复前的 20 dB 量级。
+        var (snr, corr, format) = Compare("heaac-v2-ps-44k.mp4", "heaac-v2-ps-44k.pulse.ref.wav", skipSeconds: 4.6);
+
+        Assert.Equal(44100, format.SampleRate);
+        Assert.Equal(2, format.Channels);
+        Assert.True(snr >= 30, $"SNR {snr:F2} dB 低于门禁 30 dB");
+        Assert.True(corr >= 0.999, $"相关度 {corr:F4} 低于门禁 0.999");
+    }
+
     [Fact(DisplayName = "AAC 解码可复现：同一码流连续解码两次逐字节一致")]
     public void Decode_IsDeterministic()
     {

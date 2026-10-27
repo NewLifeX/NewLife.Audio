@@ -20,6 +20,7 @@ namespace SharpJaad.AAC.Syntax
         private int[] _sfbCB;
         private int[] _sectEnd;
         private float[] _data;
+        private Int32[] _quant;
         private float[] _scaleFactors;
         private int _globalGain;
         private bool _pulseDataPresent, _tnsDataPresent, _gainControlPresent;
@@ -49,6 +50,7 @@ namespace SharpJaad.AAC.Syntax
             _sfbCB = new int[Constants.MAX_SECTIONS];
             _sectEnd = new int[Constants.MAX_SECTIONS];
             _data = new float[_frameLength];
+            _quant = new Int32[_frameLength];
             _scaleFactors = new float[Constants.MAX_SECTIONS];
             _randomState = noiseSeed;
         }
@@ -227,6 +229,7 @@ namespace SharpJaad.AAC.Syntax
         private void DecodeSpectralData(BitStream input)
         {
             Arrays.Fill(_data, 0);
+            Arrays.Fill(_quant, 0);
             int maxSFB = _info.GetMaxSFB();
             int windowGroups = _info.GetWindowGroupCount();
             int[] offsets = _info.GetSWBOffsets();
@@ -284,6 +287,7 @@ namespace SharpJaad.AAC.Syntax
                                 //inverse quantization & scaling
                                 for (j = 0; j < num; j++)
                                 {
+                                    _quant[off + k + j] = buf[j];
                                     _data[off + k + j] = buf[j] > 0 ? IQTable.IQ_TABLE[buf[j]] : -IQTable.IQ_TABLE[-buf[j]];
                                     _data[off + k + j] *= _scaleFactors[idx];
                                 }
@@ -292,6 +296,45 @@ namespace SharpJaad.AAC.Syntax
                     }
                 }
                 groupOff += groupLen << 7;
+            }
+
+            // 脉冲数据要加在"量化后、反量化前"的谱线上（ISO/IEC 14496-3 §4.6.3），加完再按所在缩放因子带重新反量化
+            if (_pulseDataPresent) ApplyPulseData();
+        }
+
+        /// <summary>把脉冲幅度叠加到量化谱线上，并按所在缩放因子带重新反量化</summary>
+        /// <remarks>
+        /// 脉冲编码只用于长窗（短窗出现即按非法码流抛出），因此这里只有单窗口组，
+        /// 缩放因子索引就是带序号。参考解码器（FAAD2 `pulse_decode`）只叠加幅度，符号沿用原系数的符号。
+        /// </remarks>
+        private void ApplyPulseData()
+        {
+            if (_pulseOffset == null || _pulseAmp == null || _pulseCount <= 0) return;
+
+            var offsets = _info.GetSWBOffsets();
+            var maxSFB = _info.GetMaxSFB();
+            var length = _quant.Length;
+
+            for (var i = 0; i < _pulseCount && i < _pulseOffset.Length; i++)
+            {
+                var k = _pulseOffset[i];
+                if (k < 0 || k >= length) continue;
+
+                var amp = _pulseAmp[i];
+                if (_quant[k] > 0) _quant[k] += amp;
+                else _quant[k] -= amp;
+
+                // 找到该谱线所属的缩放因子带，用它的缩放因子重新反量化
+                var sfb = -1;
+                for (var s = 0; s < maxSFB && s + 1 < offsets.Length; s++)
+                {
+                    if (offsets[s] <= k && k < offsets[s + 1]) { sfb = s; break; }
+                }
+                if (sfb < 0) continue;
+
+                var q = _quant[k];
+                _data[k] = q > 0 ? IQTable.IQ_TABLE[q] : -IQTable.IQ_TABLE[-q];
+                _data[k] *= _scaleFactors[sfb];
             }
         }
 

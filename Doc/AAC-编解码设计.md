@@ -13,7 +13,7 @@
 |---|---|---|
 | AAC-LC 解码（MPEG-2/MPEG-4） | ✅ | ADTS / raw+ASC / MP4-M4A；SCE/CPE；mono/stereo；8–96 kHz；1024/960 帧 |
 | 长块/短块/START/STOP 窗切换 | ✅ | 缺一项都不算完整解码 |
-| TNS、PNS、M/S、强度立体声、pulse data | ✅ | 按 ISO 14496-3 完整实现 |
+| TNS、PNS、M/S、强度立体声、pulse data | ✅ | 按 ISO 14496-3 完整实现（pulse data 见 4.4 末尾：本机 7 组向量均为 `pulse_data_present=0`，实现按 FAAD2 对照但无向量覆盖） |
 | HE-AAC v1（SBR）解码 | ✅ | 低码率流、广播场景 |
 | HE-AAC v2（SBR+PS）解码 | ✅ | 单声道核心 → 立体声输出 |
 | AAC-LC 编码 | ✅ | CBR/VBR；mono/stereo；ADTS/raw；MP4 封装 |
@@ -154,6 +154,7 @@ flowchart TD
 - PNS：`NOISE_HCB` 频带用确定性 PRNG 生成单位能量噪声，再按 `noise_nrg` 缩放；CPE 在 `ms_used` 时两声道共用噪声向量。
 - 强度立体声：`INTENSITY_HCB/HCB2` 频带按位置缩放左声道频谱；符号依 `ms_used` 规则处理。
 - 顺序：Huffman → 反量化（含 PNS/IS）→ M/S → TNS → IMDCT。S2 落地时再对照 ISO 图 4.1 复核一次。
+- 脉冲数据（`pulse_data`）：原先只解析不应用，谱线因此少了一次时域噪声整形的修正。按 ISO 14496-3 §4.6.3 与 FAAD2 `pulse_decode`，脉冲要加在**量化域**（反量化前）：`k` 从 `swb_offset[pulse_start_sfb]` 起按 `pulse_offset` 累加，`x_quant[k] > 0` 则 `+pulse_amp`，否则 `-pulse_amp`（幅度沿用原系数符号），加完再按所在缩放因子带重新反量化。脉冲只允许出现在长窗帧。
 
 ### 4.5 TNS
 
@@ -217,7 +218,7 @@ flowchart TD
 - 去相关器：`Phi_Fract` / `Q_Fract_allpass` 的复数乘必须用 `ComplexMult` 口径（实部 `x1*c1 + x2*c2`、虚部 `x2*c1 - x1*c2`）。第一步 `z^(-2) * Phi_Fract` 的实部曾误写成累加变量 `tmp[0]`（每次迭代初值 0），丢掉输入的 `x1*c1` 项，导致去相关分量整体失真、右声道 4.1 kHz 以上恒低 1.7 dB。
 - 去相关 + 混合：单声道核心 → 立体声。
 - PS 依赖 SBR；HE-AAC v2 = SBR + PS。
-- 当前质量（外部参考向量）：LC 86.7 dB、HE-AAC v1 87.3 dB（相关度均 1.0000，与官方参考解码几乎逐样本一致）；HE-AAC v1 后段（5~6 秒）84 dB。HE-AAC v2（PS）稳定段 43.3/65.4 dB、后段（5~6 秒）85.0/81.9 dB，相关度全部 1.0000。
+- 当前质量（外部参考向量）：LC 86.7 dB、HE-AAC v1 87.3 dB（相关度均 1.0000，与官方参考解码几乎逐样本一致）；HE-AAC v1 后段（5~6 秒）84 dB。HE-AAC v2（PS）稳定段 43.3/65.4 dB、后段（5~6 秒）85.0/81.9 dB、瞬态段（4.6~5.0 秒）35.4/46.8 dB，相关度全部 ≥0.999。逐秒看 PS：3~4 秒 67.7/67.8、4~5 秒 38.2/60.3、5~6 秒 85.0/81.9、6~7 秒 84.0/86.5 dB——4~5 秒偏低是**单帧残差**所致（FIX-012：短窗瞬态之后的第一帧在 SBR 频段偏 27 dB）。
 
 ### 5.3 验收
 
