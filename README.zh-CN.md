@@ -103,6 +103,9 @@ Nuget：NewLife.Audio
 - MP3/AAC/WAV/Ogg Opus 参数一致时帧级复制/重封装，否则明确回退重编码
 - 批量转换，支持进度回调与取消
 - `StreamPcm` 流式解码 16 位 PCM 分块：WAV/AIFF/CAF/M4A 逐帧解码，MP3/FLAC/Ogg 整段解码后分块；流式路径内存只与分块大小相关
+- `AudioRecorder` 一行录音：`Capture`/`RecordToFile`/`StreamAsync`，有界队列与丢帧统计
+- `AudioPlayer` 一行播放：文件/PCM/流、音量、背压、`Seek` 与 PCM 观察事件
+- `AudioConverter` 一行转码：按扩展名选容器，逐帧重采样/声道转换/编码，进度、取消与原子替换
 
 ### 📡 流媒体与传输（STRM）
 网络音频流传输：

@@ -103,6 +103,9 @@ One call chain for open → decode → edit → save:
 - Frame-level copy/remux for MP3/AAC/WAV/Ogg Opus when parameters match; explicit re-encode fallback
 - Batch conversion with progress callbacks and cancellation
 - `StreamPcm` streams decoded 16-bit PCM chunks: frame-by-frame for WAV/AIFF/CAF/M4A, whole-file decode then chunking for MP3/FLAC/Ogg (memory scales with `chunkBytes`, not file size, for the streaming path)
+- `AudioRecorder` one-line recording: `Capture` / `RecordToFile` / `StreamAsync`, bounded queue with drop statistics
+- `AudioPlayer` one-line playback: file/PCM/stream, volume, backpressure, `Seek` and PCM observation events
+- `AudioConverter` one-line transcoding: container by extension, per-frame resample/channel conversion/encode, progress, cancellation and atomic replace
 
 ### 📡 Streaming & Transport (STRM)
 Network audio streaming:
