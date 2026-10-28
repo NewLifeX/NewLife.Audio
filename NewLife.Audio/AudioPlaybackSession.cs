@@ -23,6 +23,9 @@ internal sealed class AudioPlaybackSession : IDisposable
     private readonly IAudioRender _render;
     private readonly IAudioContainerReader _reader;
     private readonly IAudioCodec _codec;
+    private readonly Object _decodeOption;
+    private readonly VorbisDecoder _vorbisDecoder;
+    private readonly Single[] _vorbisSamples;
     private readonly Object _sync = new();
 
     private Int64 _skipRemaining;
@@ -46,6 +49,17 @@ internal sealed class AudioPlaybackSession : IDisposable
 
         var codecType = _reader.CodecType;
         if (codecType != AVTypes.LPCM && _factory.Registry.IsSupported(codecType)) _codec = _factory.Registry.GetCodec(codecType);
+
+        // MP4/M4A 的 AAC 帧没有 ADTS 头，必须把 esds 中的 AudioSpecificConfig 交给解码器
+        if (_reader is Mp4FileReader mp4 && mp4.AacConfig != null) _decodeOption = mp4.AacConfig;
+
+        // Ogg Vorbis 的音频包是裸 Vorbis 包，需要三头包初始化的有状态解码器
+        if (_reader is OggFileReader ogg && ogg.CodecType == AVTypes.Vorbis &&
+            ogg.VorbisIdentification != null && ogg.VorbisComment != null && ogg.VorbisSetup != null)
+        {
+            _vorbisDecoder = new VorbisDecoder(ogg.VorbisIdentification, ogg.VorbisComment, ogg.VorbisSetup);
+            _vorbisSamples = new Single[_vorbisDecoder.MaxPacketSamples * _vorbisDecoder.Channels];
+        }
 
         Format = _reader.Format ?? AudioFormat.Default;
         Duration = _reader.Duration;
@@ -102,6 +116,7 @@ internal sealed class AudioPlaybackSession : IDisposable
 
             // 有状态编解码器必须复位，否则会带着旧状态解码
             if (_codec is OpusCodec opus) opus.Reset();
+            _vorbisDecoder?.Reset();
 
             ResetTrim();
 
@@ -149,24 +164,13 @@ internal sealed class AudioPlaybackSession : IDisposable
 
                 if (pcm == null || pcm.Length == 0) continue;
 
-                // 频谱/波形订阅者拿独立数组，后续写入不再改动它
-                PcmDataAvailable?.Invoke(this, pcm);
-
-                for (var offset = 0; offset < pcm.Length; offset += chunkBytes)
-                {
-                    cancellationToken.ThrowIfCancellationRequested();
-
-                    var count = Math.Min(chunkBytes, pcm.Length - offset);
-                    var span = pcm.AsSpan(offset, count);
-
-                    while (!_render.WaitForSpace(watermark, 500))
-                        cancellationToken.ThrowIfCancellationRequested();
-
-                    _render.Write(span);
-
-                    lock (_sync) _samplesSinceBase += count / frameBytes;
-                }
+                WritePcm(pcm, chunkBytes, watermark, frameBytes, cancellationToken);
             }
+
+            // Vorbis 解码器还缓存最后一个重叠块，播放结束前补出
+            var flush = DecodeFlush();
+            if (flush != null && flush.Length > 0 && !cancellationToken.IsCancellationRequested)
+                WritePcm(flush, chunkBytes, watermark, frameBytes, cancellationToken);
 
             // 等驱动把缓冲区播完
             while (_render.BufferedBytes > 0 && !cancellationToken.IsCancellationRequested) Thread.Sleep(20);
@@ -189,7 +193,49 @@ internal sealed class AudioPlaybackSession : IDisposable
     /// <summary>解码一帧并做音量/裁剪处理（需在锁内调用）</summary>
     private Byte[] Decode(IPacket packet)
     {
-        var pcm = _codec != null ? _codec.ToPcm(packet.GetSpan(), null).GetSpan().ToArray() : packet.GetSpan().ToArray();
+        var pcm = _vorbisDecoder != null
+            ? ConvertVorbis(_vorbisDecoder.DecodePacket(packet.GetSpan(), _vorbisSamples), _vorbisDecoder.Channels)
+            : _codec != null ? _codec.ToPcm(packet.GetSpan(), _decodeOption).GetSpan().ToArray() : packet.GetSpan().ToArray();
+
+        return ProcessPcm(pcm);
+    }
+
+    /// <summary>取出 Vorbis 解码器缓存的尾块</summary>
+    /// <returns>处理后的 PCM；没有尾块时返回 null</returns>
+    private Byte[] DecodeFlush()
+    {
+        if (_vorbisDecoder == null) return null;
+
+        var count = _vorbisDecoder.Flush(_vorbisSamples);
+        if (count <= 0) return null;
+
+        return ProcessPcm(ConvertVorbis(count, _vorbisDecoder.Channels));
+    }
+
+    /// <summary>把 Vorbis 浮点样本转换为 16 位小端 PCM</summary>
+    /// <param name="count">每声道样本数</param>
+    /// <param name="channels">声道数</param>
+    /// <returns>PCM 字节</returns>
+    private Byte[] ConvertVorbis(Int32 count, Int32 channels)
+    {
+        var total = count * channels;
+        var pcm = new Byte[total * 2];
+        for (var i = 0; i < total; i++)
+        {
+            var value = _vorbisSamples[i] * 32767f;
+            var sample = value <= -32768f ? Int16.MinValue : value >= 32767f ? Int16.MaxValue : (Int16)Math.Round(value);
+            pcm[i * 2] = (Byte)(sample & 0xFF);
+            pcm[i * 2 + 1] = (Byte)((sample >> 8) & 0xFF);
+        }
+
+        return pcm;
+    }
+
+    /// <summary>对解码后的 PCM 做裁剪与音量处理</summary>
+    /// <param name="pcm">PCM 字节</param>
+    /// <returns>处理后的 PCM</returns>
+    private Byte[] ProcessPcm(Byte[] pcm)
+    {
         if (pcm.Length == 0) return pcm;
 
         pcm = Trim(pcm);
@@ -199,6 +245,28 @@ internal sealed class AudioPlaybackSession : IDisposable
         if (volume >= 0 && Math.Abs(volume - 1) > 0.0001) ApplyVolume(pcm, volume);
 
         return pcm;
+    }
+
+    /// <summary>把 PCM 按水位写入播放器</summary>
+    private void WritePcm(Byte[] pcm, Int32 chunkBytes, Int32 watermark, Int32 frameBytes, CancellationToken cancellationToken)
+    {
+        // 频谱/波形订阅者拿独立数组，后续写入不再改动它
+        PcmDataAvailable?.Invoke(this, pcm);
+
+        for (var offset = 0; offset < pcm.Length; offset += chunkBytes)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var count = Math.Min(chunkBytes, pcm.Length - offset);
+            var span = pcm.AsSpan(offset, count);
+
+            while (!_render.WaitForSpace(watermark, 500))
+                cancellationToken.ThrowIfCancellationRequested();
+
+            _render.Write(span);
+
+            lock (_sync) _samplesSinceBase += count / frameBytes;
+        }
     }
 
     /// <summary>按容器信息裁剪 pre-skip 与尾部填充</summary>

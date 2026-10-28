@@ -20,6 +20,9 @@ public class AudioRecorderTests
         private readonly System.Diagnostics.Stopwatch _watch = new();
         private Int64 _emitted;
 
+        /// <summary>模拟设备启动延迟：该时间内原生读取返回 0</summary>
+        public Int32 StartupDelayMilliseconds { get; set; }
+
         protected override void Open()
         {
             _emitted = 0;
@@ -30,6 +33,12 @@ public class AudioRecorderTests
 
         protected override Int32 ReadNative(Span<Byte> buffer, Int32 timeoutMilliseconds, CancellationToken cancellationToken)
         {
+            if (_watch.ElapsedMilliseconds < StartupDelayMilliseconds)
+            {
+                Thread.Sleep(Math.Min(timeoutMilliseconds, 20));
+                return 0;
+            }
+
             var format = Format;
             var frameBytes = Math.Max(1, format.Channels * format.BytesPerSample);
             var count = buffer.Length / frameBytes * frameBytes;
@@ -124,6 +133,20 @@ public class AudioRecorderTests
         Assert.InRange(pcm.Duration, 0.18, 0.22);
         Assert.True(recorder.Peak > 0.1);
         Assert.True(recorder.Rms > 0.05);
+    }
+
+    [Fact(DisplayName = "录音：设备启动慢于首读超时仍能录到数据")]
+    public void Capture_ToleratesStartupDelay()
+    {
+        var driver = new FakeDriver { Recorder = new SineRecorder { StartupDelayMilliseconds = 500 } };
+        using var recorder = new AudioRecorder(new AudioRecordOptions
+        {
+            Format = new AudioFormat { SampleRate = 16000, Channels = 1, BitsPerSample = 16 },
+        }, driver);
+
+        var pcm = recorder.Capture(TimeSpan.FromMilliseconds(300));
+
+        Assert.True(pcm.Data.Length > 0, "设备启动延迟后应继续等待并录到数据");
     }
 
     [Fact(DisplayName = "录音：异步录制与同步录制结果一致")]

@@ -1,6 +1,7 @@
 using System;
 using System.Buffers;
 using System.Collections.Generic;
+using System.Diagnostics;
 using System.IO;
 using System.Threading;
 using System.Threading.Tasks;
@@ -117,6 +118,7 @@ public class AudioRecorder : IDisposable
         var offset = 0;
 
         _recorder.StartRecording();
+        var idle = Stopwatch.StartNew();
         try
         {
             while (offset < total)
@@ -127,10 +129,17 @@ public class AudioRecorder : IDisposable
                 if (want <= 0) break;
 
                 var read = _recorder.Read(buffer.AsSpan(offset, want), 200, cancellationToken);
-                if (read <= 0) break;
-
-                UpdateLevel(buffer.AsSpan(offset, read));
-                offset += read;
+                if (read > 0)
+                {
+                    UpdateLevel(buffer.AsSpan(offset, read));
+                    offset += read;
+                    idle.Restart();
+                }
+                else if (!_recorder.IsRecording || idle.Elapsed >= TimeSpan.FromSeconds(2))
+                {
+                    // 设备启动或静音期间首读可能超时；给 2 秒宽限，避免刚打开就判定失败
+                    break;
+                }
             }
         }
         finally
@@ -180,6 +189,7 @@ public class AudioRecorder : IDisposable
             using var pipeline = new AudioEncodePipeline(stream, Format, options);
 
             _recorder.StartRecording();
+            var idle = Stopwatch.StartNew();
             try
             {
                 while (offset < total)
@@ -188,11 +198,18 @@ public class AudioRecorder : IDisposable
 
                     var want = (Int32)Math.Min(buffer.Length, total - offset);
                     var read = _recorder.Read(buffer.AsSpan(0, want), 200, cancellationToken);
-                    if (read <= 0) break;
-
-                    UpdateLevel(buffer.AsSpan(0, read));
-                    pipeline.Write(buffer.AsSpan(0, read));
-                    offset += read;
+                    if (read > 0)
+                    {
+                        UpdateLevel(buffer.AsSpan(0, read));
+                        pipeline.Write(buffer.AsSpan(0, read));
+                        offset += read;
+                        idle.Restart();
+                    }
+                    else if (!_recorder.IsRecording || idle.Elapsed >= TimeSpan.FromSeconds(2))
+                    {
+                        // 设备启动或静音期间首读可能超时；给 2 秒宽限，避免刚打开就写出空文件
+                        break;
+                    }
                 }
             }
             finally

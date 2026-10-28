@@ -161,6 +161,33 @@ public class AudioPlayerTests
         Assert.Equal(pcm.Data.Length, received);
     }
 
+    [Theory(DisplayName = "播放：M4A/Ogg 容器格式可解码回放")]
+    [InlineData(".m4a")]
+    [InlineData(".ogg")]
+    public async Task PlayFile_ContainerFormats(String extension)
+    {
+        var source = Path.Combine(Path.GetTempPath(), $"play-src-{Guid.NewGuid():N}.wav");
+        var target = Path.Combine(Path.GetTempPath(), $"play-dst-{Guid.NewGuid():N}{extension}");
+        AudioFile.WritePcm(source, CreatePcm(300));
+
+        try
+        {
+            AudioConverter.Convert(source, target);
+
+            var driver = new FakeDriver();
+            using var player = new AudioPlayer(driver);
+
+            await player.PlayFileAsync(target);
+
+            Assert.True(driver.Player.Total > 0, $"{extension} 播放未产生 PCM");
+        }
+        finally
+        {
+            if (File.Exists(source)) File.Delete(source);
+            if (File.Exists(target)) File.Delete(target);
+        }
+    }
+
     [Fact(DisplayName = "播放：文件播放可跳转且位置随之前进")]
     public async Task PlayFile_SeekWorks()
     {
