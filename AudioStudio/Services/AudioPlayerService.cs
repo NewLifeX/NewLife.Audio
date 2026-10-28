@@ -1,14 +1,12 @@
 using System;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Threading;
-using NewLife.Audio;
-using NewLife.Audio.Codecs;
-using NewLife.Audio.Containers;
-using NewLife.Audio.Devices;
-using NewLife.Audio.DSP;
-using NewLife.Data;
+using System.Threading.Tasks;
+using Avalonia.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
+using NewLife.Audio;
+using NewLife.Audio.Containers;
+using NewLife.Audio.DSP;
 
 namespace AudioStudio.Services;
 
@@ -25,21 +23,25 @@ public enum PlaybackState
     Paused
 }
 
-/// <summary>音频播放服务。封装 NewLife.Audio 的播放管线</summary>
+/// <summary>音频播放服务。解码、分块与背压全部交给 <see cref="AudioPlayer"/>，这里只维护 UI 状态</summary>
+/// <remarks>
+/// 位置刷新用 UI 定时器读取 <see cref="AudioPlayer.Position"/>，避免播放线程直接碰观察属性；
+/// 文件信息（格式/编码/标签/时长）来自 <see cref="AudioProbe"/>，跳转由 <see cref="AudioPlayer.Seek"/> 完成。
+/// </remarks>
 public partial class AudioPlayerService : ObservableObject, IDisposable
 {
-    #region 属性
-    private IAudioPlayer? _player;
-    private IAudioContainerReader? _reader;
-    private IAudioCodec? _codec;
-    private CancellationTokenSource? _cts;
-    private Thread? _playbackThread;
-    private Int64 _currentFrame;
-    private Int32 _pcmSkipRemaining;
-    private Int64 _pcmSamplesWritten;
-    private Int64 _pcmTotalSamples;
+    private readonly DispatcherTimer _timer;
+    private CancellationTokenSource _cts;
+    private AudioPlayer _player;
     private Boolean _disposed;
 
+    /// <summary>构造播放服务</summary>
+    public AudioPlayerService()
+    {
+        _timer = new DispatcherTimer(TimeSpan.FromMilliseconds(250), DispatcherPriority.Background, (s, e) => RefreshPosition());
+    }
+
+    #region 属性
     /// <summary>播放状态</summary>
     [ObservableProperty]
     private PlaybackState _state = PlaybackState.Stopped;
@@ -58,29 +60,29 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
 
     /// <summary>当前文件路径</summary>
     [ObservableProperty]
-    private String? _filePath;
+    private String _filePath;
 
     /// <summary>当前文件名</summary>
     [ObservableProperty]
-    private String? _fileName;
+    private String _fileName;
 
     /// <summary>音频格式</summary>
     [ObservableProperty]
-    private AudioFormat? _audioFormat;
+    private AudioFormat _audioFormat;
 
     /// <summary>元数据</summary>
     [ObservableProperty]
-    private AudioMetadata? _metadata;
+    private AudioMetadata _metadata;
 
     /// <summary>编码类型</summary>
     [ObservableProperty]
     private AVTypes _codecType;
 
-    /// <summary>总帧数</summary>
+    /// <summary>总帧数（容器帧数，未知时为 0）</summary>
     [ObservableProperty]
     private Int64 _totalFrames;
 
-    /// <summary>当前帧索引</summary>
+    /// <summary>当前帧索引（当前实现只汇报时间位置，保持为 0）</summary>
     [ObservableProperty]
     private Int64 _currentFrameIndex;
 
@@ -94,10 +96,10 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
     public Boolean CanStop => State != PlaybackState.Stopped;
 
     /// <summary>是否有文件打开</summary>
-    public Boolean IsFileOpen => _reader != null;
+    public Boolean IsFileOpen => FilePath != null;
 
     /// <summary>PCM 数据可用事件（用于频谱分析等外部消费）</summary>
-    public event EventHandler<Byte[]>? PcmDataAvailable;
+    public event EventHandler<Byte[]> PcmDataAvailable;
 
     partial void OnStateChanged(PlaybackState value)
     {
@@ -105,84 +107,94 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         OnPropertyChanged(nameof(CanPause));
         OnPropertyChanged(nameof(CanStop));
     }
+
+    partial void OnVolumeChanged(Double value)
+    {
+        if (_player != null) _player.Volume = value;
+    }
+
+    partial void OnFilePathChanged(String value)
+    {
+        FileName = value == null ? null : Path.GetFileName(value);
+        OnPropertyChanged(nameof(IsFileOpen));
+    }
     #endregion
 
     #region 方法
-    /// <summary>打开音频文件</summary>
+    /// <summary>打开音频文件（只读信息，不开始播放）</summary>
+    /// <param name="filePath">文件路径</param>
     public void Open(String filePath)
     {
-        Stop();
-
-        CloseReader();
+        StopPlayback();
 
         try
         {
-            _reader = AudioContainerFactory.CreateReader(filePath);
-            _audioFormat = _reader.Format;
-            _codecType = _reader.CodecType;
-            _duration = _reader.Duration;
-            _totalFrames = _reader.TotalFrames;
-            _metadata = _reader.Metadata;
-            _filePath = filePath;
-            _fileName = Path.GetFileName(filePath);
-            _currentFrame = 0;
-            _currentFrameIndex = 0;
-            _position = 0;
-            _pcmSamplesWritten = 0;
-            _pcmSkipRemaining = 0;
-            _pcmTotalSamples = 0;
+            var info = AudioProbe.Probe(filePath);
 
-            if (_reader is OggFileReader ogg)
-            {
-                _pcmSkipRemaining = ogg.PreSkip;
-                _pcmTotalSamples = ogg.TotalSamples;
-            }
-
-            // 获取编解码器
-            if (AudioServiceHelper.CodecRegistry.IsSupported(_codecType))
-                _codec = AudioServiceHelper.CodecRegistry.GetCodec(_codecType);
-            else
-                _codec = null;
+            AudioFormat = info.Format;
+            CodecType = info.Codec;
+            Duration = info.Duration;
+            Metadata = info.Metadata;
+            TotalFrames = 0;
+            CurrentFrameIndex = 0;
+            Position = 0;
+            FilePath = filePath;
         }
         catch (Exception ex)
         {
-            CloseReader();
+            CloseFile();
             throw new InvalidOperationException($"无法打开音频文件: {filePath}", ex);
         }
     }
 
-    /// <summary>开始播放</summary>
+    /// <summary>开始播放（暂停时继续）</summary>
     public void Play()
     {
-        if (_reader == null) return;
+        if (FilePath == null) return;
 
-        if (State == PlaybackState.Paused)
+        if (State == PlaybackState.Paused && _player != null)
         {
-            _player?.Play();
+            _player.Resume();
             State = PlaybackState.Playing;
+            _timer.Start();
             return;
         }
 
         if (State == PlaybackState.Playing) return;
 
-        // 创建播放器
-        var driver = AudioDriverFactory.Create();
-        _player = driver.CreatePlayer();
-        _player.Init(_audioFormat!);
-        _player.PlaybackStopped += OnPlaybackStopped;
+        var path = FilePath;
+        var player = new AudioPlayer { Volume = Volume };
+        player.PcmDataAvailable += OnPcmData;
+        _player = player;
 
-        _player.Play();
+        _cts = new CancellationTokenSource();
+        var token = _cts.Token;
 
         State = PlaybackState.Playing;
+        _timer.Start();
 
-        // 启动后台播放线程
-        _cts = new CancellationTokenSource();
-        _playbackThread = new Thread(PlaybackLoop)
+        _ = Task.Run(() =>
         {
-            Name = "AudioPlayback",
-            IsBackground = true
-        };
-        _playbackThread.Start(_cts.Token);
+            try
+            {
+                player.PlayFile(path, token);
+            }
+            catch (OperationCanceledException)
+            {
+                // 正常停止
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Debug.WriteLine($"播放异常: {ex.Message}");
+            }
+            finally
+            {
+                Dispatcher.UIThread.Post(() =>
+                {
+                    if (ReferenceEquals(_player, player)) StopPlayback();
+                });
+            }
+        }, token);
     }
 
     /// <summary>暂停播放</summary>
@@ -194,240 +206,79 @@ public partial class AudioPlayerService : ObservableObject, IDisposable
         State = PlaybackState.Paused;
     }
 
-    /// <summary>停止播放</summary>
-    public void Stop()
-    {
-        StopPlayback();
-    }
+    /// <summary>停止播放并复位位置</summary>
+    public void Stop() => StopPlayback();
 
     /// <summary>跳转到指定时间位置（秒）</summary>
+    /// <param name="seconds">目标位置（秒）</param>
     public void Seek(Double seconds)
     {
-        if (_reader == null || _totalFrames <= 0) return;
+        if (_player == null) return;
+        if (!_player.Seek(seconds)) return;
 
-        var frameIndex = (Int64)(seconds / _duration * _totalFrames);
-        frameIndex = Math.Clamp(frameIndex, 0, _totalFrames - 1);
-
-        _reader.SeekFrame(frameIndex);
-        _currentFrame = frameIndex;
-        _currentFrameIndex = frameIndex;
         Position = seconds;
-        _pcmSamplesWritten = 0;
-        _pcmSkipRemaining = 0;
-        _pcmTotalSamples = 0;
-        if (_codec is OpusCodec opus) opus.Reset();
+        CurrentFrameIndex = 0;
 
-        // 如果正在播放，清空播放器缓冲区
-        if (State == PlaybackState.Playing)
-        {
-            _player?.Stop();
-            _player?.Play();
-        }
+        if (State == PlaybackState.Paused) _player.Resume();
+        State = PlaybackState.Playing;
+        _timer.Start();
     }
     #endregion
 
     #region 内部方法
-    private void PlaybackLoop(Object? state)
+    private void RefreshPosition()
     {
-        var token = (CancellationToken)state!;
-        var reader = _reader;
-        var codec = _codec;
         var player = _player;
-        if (reader == null || player == null) return;
+        if (player == null || State != PlaybackState.Playing) return;
 
-        try
-        {
-            while (!token.IsCancellationRequested && State == PlaybackState.Playing)
-            {
-                // 读取一帧编码数据
-                var packet = reader.ReadFrame();
-                if (packet == null) break; // 播放结束
-
-                // 解码为 PCM
-                Byte[] pcmData;
-                if (codec != null)
-                {
-                    var pcmPacket = codec.ToPcm(packet.GetSpan(), null);
-                    pcmData = pcmPacket.ToArray();
-                }
-                else
-                {
-                    // 无编解码器时直接透传（PCM 容器）
-                    pcmData = packet.ToArray();
-                }
-
-                // Opus/Ogg 按 pre-skip 与最终 granule 裁剪首尾无效样本
-                pcmData = TrimPcm(pcmData, _audioFormat?.Channels ?? 1);
-
-                // 应用音量
-                if (pcmData.Length > 0 && Math.Abs(_volume - 1.0) > 0.01)
-                {
-                    ApplyVolume(pcmData, _volume);
-                }
-
-                if (pcmData.Length > 0)
-                {
-                    // 触发 PCM 数据事件（用于频谱分析）
-                    PcmDataAvailable?.Invoke(this, pcmData);
-
-                    // 写入播放缓冲区（非阻塞）
-                    player.Write(pcmData);
-                }
-
-                // 更新进度
-                _currentFrame++;
-                _currentFrameIndex = _currentFrame;
-                if (_totalFrames > 0)
-                    Position = (Double)_currentFrame / _totalFrames * _duration;
-
-                // 避免缓冲区溢出，等待消耗
-                while (!token.IsCancellationRequested &&
-                       player.BufferedBytes > _audioFormat!.BytesPerFrame * 32)
-                {
-                    Thread.Sleep(10);
-                }
-            }
-        }
-        catch (OperationCanceledException)
-        {
-            // 正常取消
-        }
-        catch (Exception ex)
-        {
-            System.Diagnostics.Debug.WriteLine($"播放线程异常: {ex.Message}");
-        }
-        finally
-        {
-            if (!token.IsCancellationRequested)
-            {
-                // 播放自然结束，确保在主线程上通知
-                Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-                {
-                    if (State == PlaybackState.Playing)
-                        StopPlayback();
-                });
-            }
-        }
+        Position = player.Position;
     }
 
-    private static void ApplyVolume(Byte[] pcmData, Double volume)
-    {
-        if (pcmData.Length < 2) return;
-
-        // 16-bit PCM 音量调整
-        var span = new Span<Byte>(pcmData);
-        var samples = MemoryMarshal.Cast<Byte, Int16>(span);
-        for (Int32 i = 0; i < samples.Length; i++)
-        {
-            var sample = (Int32)(samples[i] * volume);
-            if (sample > Int16.MaxValue) sample = Int16.MaxValue;
-            if (sample < Int16.MinValue) sample = Int16.MinValue;
-            samples[i] = (Int16)sample;
-        }
-    }
-
-    /// <summary>按 Ogg Opus pre-skip 与最终 granule 裁剪 PCM 首尾无效样本</summary>
-    private Byte[] TrimPcm(Byte[] pcmData, Int32 channels)
-    {
-        if (pcmData.Length == 0) return pcmData;
-
-        var bytesPerSample = 2 * Math.Max(1, channels);
-        if (_pcmSkipRemaining > 0)
-        {
-            var skipBytes = Math.Min(pcmData.Length, _pcmSkipRemaining * bytesPerSample);
-            if (skipBytes > 0)
-            {
-                pcmData = pcmData.AsSpan(skipBytes).ToArray();
-                _pcmSkipRemaining -= skipBytes / bytesPerSample;
-            }
-        }
-
-        if (_pcmTotalSamples > 0)
-        {
-            var remaining = _pcmTotalSamples - _pcmSamplesWritten;
-            if (remaining <= 0) return [];
-
-            var maxBytes = (Int32)Math.Min(pcmData.Length, remaining * bytesPerSample);
-            if (maxBytes < pcmData.Length) pcmData = pcmData.AsSpan(0, maxBytes).ToArray();
-        }
-
-        _pcmSamplesWritten += pcmData.Length / bytesPerSample;
-        return pcmData;
-    }
+    private void OnPcmData(Object sender, Byte[] pcm) => PcmDataAvailable?.Invoke(this, pcm);
 
     private void StopPlayback()
     {
+        _timer.Stop();
+
         _cts?.Cancel();
         _cts = null;
 
-        if (_player != null)
+        var player = _player;
+        _player = null;
+        if (player != null)
         {
-            try { _player.Stop(); }
-            catch { /* ignore */ }
-            try { _player.Dispose(); }
-            catch { /* ignore */ }
-            _player = null;
+            player.PcmDataAvailable -= OnPcmData;
+            try { player.Stop(); } catch { /* 设备失效时忽略 */ }
+            try { player.Dispose(); } catch { /* 忽略 */ }
         }
 
-        _playbackThread = null;
         State = PlaybackState.Stopped;
-        _currentFrame = 0;
-        _currentFrameIndex = 0;
         Position = 0;
-
-        // 停止后回到起点，保证再次播放从头开始
-        if (_reader != null)
-        {
-            try { _reader.SeekFrame(0); } catch { /* 不可定位流忽略 */ }
-        }
-        if (_codec is OpusCodec opus) opus.Reset();
-
-        _pcmSamplesWritten = 0;
-        _pcmSkipRemaining = 0;
-        _pcmTotalSamples = 0;
-        if (_reader is OggFileReader ogg)
-        {
-            _pcmSkipRemaining = ogg.PreSkip;
-            _pcmTotalSamples = ogg.TotalSamples;
-        }
+        CurrentFrameIndex = 0;
     }
 
-    private void CloseReader()
+    private void CloseFile()
     {
-        if (_reader != null)
-        {
-            try { _reader.Dispose(); }
-            catch { /* ignore */ }
-            _reader = null;
-        }
-        _codec = null;
-        _audioFormat = null;
-        _metadata = null;
-        _duration = 0;
-        _totalFrames = 0;
-        _pcmSkipRemaining = 0;
-        _pcmSamplesWritten = 0;
-        _pcmTotalSamples = 0;
+        FilePath = null;
+        FileName = null;
+        AudioFormat = null;
+        Metadata = null;
+        Duration = 0;
+        TotalFrames = 0;
+        CurrentFrameIndex = 0;
+        Position = 0;
+        OnPropertyChanged(nameof(IsFileOpen));
     }
 
-    private void OnPlaybackStopped(Object? sender, EventArgs e)
-    {
-        Avalonia.Threading.Dispatcher.UIThread.Post(() =>
-        {
-            if (State == PlaybackState.Playing)
-                StopPlayback();
-        });
-    }
-    #endregion
-
-    #region Dispose
+    /// <summary>释放服务</summary>
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
 
         StopPlayback();
-        CloseReader();
+        _timer.Stop();
+        CloseFile();
         GC.SuppressFinalize(this);
     }
     #endregion

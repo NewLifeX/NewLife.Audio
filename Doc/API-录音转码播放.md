@@ -43,6 +43,9 @@
 
 `Write(ReadOnlySpan<Byte>)` 与水位等待都是内部实现细节，第三方播放器只需实现 `IAudioPlayer` 也能正常使用。
 
+文件播放走可定位会话：逐帧解码 → 按水位写入；`Seek(秒)` 在解码锁内定位容器帧并清掉播放器积压，因此拖动进度不会与解码线程打架；
+Ogg Opus 的编码器前导（pre-skip）与尾部填充自动裁剪。`PcmDataAvailable` 每块送播放器前触发（独立副本），供频谱/波形使用。
+
 ## 4. 转码为什么只有一个入口
 
 `AudioConverter.Convert` 内部：探测 → 逐帧解码（`AudioFile.StreamPcm`）→ `AudioEncodePipeline`（重采样、声道转换、编码、封装）。
@@ -69,6 +72,6 @@
 - 消费方落后超过 `BufferSeconds` 时会丢最旧音频，`DroppedBytes` 如实计数；硬件侧覆盖/欠载计入 `Overruns`。
   “完全不丢”只能靠无限内存，这是物理取舍，不是实现缺陷。
 - `.opus` 编码依赖可用编码后端（托管未完成时需 ffmpeg），不可用时 `AudioConverter` 明确抛异常。
-- 播放的 `Seek`（拖动进度）尚未进入门面，桌面端仍由 `AudioPlayerService` 自带实现。
+- 播放的 `Seek` 仅对文件播放有效（PCM/流播放无可定位容器）；拖动后位置以“跳转点 + 已写入样本”为准。
 - **破坏性变更**：`IAudioRecorder` 合并了事件与读取能力（新增 Format/IsRecording/BufferSeconds/BufferedBytes/DroppedBytes/Overruns/Read/ReadAsync），
   自定义实现需改继承 `AudioRecorderBase` 或补齐成员；发版时按不兼容变更处理。

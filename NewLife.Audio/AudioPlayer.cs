@@ -36,6 +36,7 @@ public class AudioPlayer : IDisposable
     private readonly IAudioDriver _driver;
     private readonly String _deviceId;
     private IAudioPlayer _player;
+    private AudioPlaybackSession _session;
     private Double _position;
     private Boolean _disposed;
 
@@ -46,11 +47,14 @@ public class AudioPlayer : IDisposable
     /// <summary>当前音频总时长（秒）</summary>
     public Double Duration { get; private set; }
 
-    /// <summary>已送出的音频位置（秒）</summary>
-    public Double Position => _position;
+    /// <summary>当前播放位置（秒）</summary>
+    public Double Position => _session != null ? _session.Position : _position;
 
     /// <summary>是否正在播放</summary>
     public Boolean IsPlaying => _player != null;
+
+    /// <summary>PCM 数据可用（每块送入播放器前触发，供频谱/波形使用）</summary>
+    public event EventHandler<Byte[]> PcmDataAvailable;
     #endregion
 
     #region 构造
@@ -73,12 +77,37 @@ public class AudioPlayer : IDisposable
         ThrowIfDisposed();
         if (path == null) throw new ArgumentNullException(nameof(path));
 
-        var info = AudioProbe.Probe(path);
-        Duration = info.Duration;
+        var player = _driver.CreatePlayer();
+        _player = player;
 
-        using var stream = File.OpenRead(path);
-        PlayCore(AudioFile.StreamPcm(stream, info, DefaultChunkBytes), cancellationToken);
+        var session = new AudioPlaybackSession(path, player, new PlayerRenderAdapter(player), _deviceId, Volume);
+        _session = session;
+        Duration = session.Duration;
+
+        session.PcmDataAvailable += OnPcmDataAvailable;
+
+        try
+        {
+            session.Play(cancellationToken);
+        }
+        finally
+        {
+            session.PcmDataAvailable -= OnPcmDataAvailable;
+
+            // 播放结束后保留最后位置，便于 UI 显示
+            _position = session.Position;
+            session.Dispose();
+            _session = null;
+
+            player.Dispose();
+            _player = null;
+        }
     }
+
+    /// <summary>跳转到指定时间位置（秒），仅对文件播放有效</summary>
+    /// <param name="seconds">目标位置（秒）</param>
+    /// <returns>是否成功跳转</returns>
+    public Boolean Seek(Double seconds) => _session != null && _session.Seek(seconds);
 
     /// <summary>播放文件（不占用调用方线程）</summary>
     /// <param name="path">音频文件路径</param>
@@ -223,6 +252,9 @@ public class AudioPlayer : IDisposable
                     while (!render.WaitForSpace(watermark, 500))
                         cancellationToken.ThrowIfCancellationRequested();
 
+                    // 频谱/波形订阅者拿独立副本，后续写入不再改动它
+                    if (PcmDataAvailable != null) PcmDataAvailable.Invoke(this, span.ToArray());
+
                     render.Write(span);
 
                     _position += (Double)count / byteRate;
@@ -277,6 +309,8 @@ public class AudioPlayer : IDisposable
     {
         if (_disposed) throw new ObjectDisposedException(nameof(AudioPlayer));
     }
+
+    private void OnPcmDataAvailable(Object sender, Byte[] pcm) => PcmDataAvailable?.Invoke(this, pcm);
     #endregion
 
     #region 播放适配

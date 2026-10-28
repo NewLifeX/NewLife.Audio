@@ -13,7 +13,7 @@ namespace XUnitTest;
 /// <summary>播放门面：分块送入、音量缩放与文件回放</summary>
 public class AudioPlayerTests
 {
-    /// <summary>假播放器：只统计写入量，缓冲即时清空，等价于“理想声卡”</summary>
+    /// <summary>假播放器：统计写入量；可选按真实时长节流，模拟声卡节奏</summary>
     private sealed class FakePlayer : IAudioPlayer
     {
         private readonly Object _lock = new();
@@ -23,6 +23,8 @@ public class AudioPlayerTests
         public Byte[] FirstChunk { get; private set; }
 
         public AudioFormat Format { get; private set; }
+
+        public Boolean Throttle { get; set; }
 
         public Int32 BufferedBytes => 0;
 
@@ -43,6 +45,10 @@ public class AudioPlayerTests
                 Total += data.Length;
                 if (FirstChunk == null && data.Length > 0) FirstChunk = data.ToArray();
             }
+
+            // 按字节率节流，让播放真实占用一段时间
+            if (Throttle && Format != null && Format.ByteRate > 0)
+                Thread.Sleep(Math.Max(1, data.Length * 1000 / Format.ByteRate));
         }
 
         public void Dispose() { }
@@ -138,5 +144,51 @@ public class AudioPlayerTests
         player.Play(new AudioPcm { Format = new AudioFormat(), Data = [] });
 
         Assert.Equal(0, driver.Player.Total);
+    }
+
+    [Fact(DisplayName = "播放：PCM 观察事件能拿到下发数据")]
+    public void Play_RaisesPcmData()
+    {
+        var driver = new FakeDriver();
+        using var player = new AudioPlayer(driver);
+
+        var received = 0L;
+        player.PcmDataAvailable += (s, pcm) => received += pcm.Length;
+
+        var pcm = CreatePcm(100);
+        player.Play(pcm);
+
+        Assert.Equal(pcm.Data.Length, received);
+    }
+
+    [Fact(DisplayName = "播放：文件播放可跳转且位置随之前进")]
+    public async Task PlayFile_SeekWorks()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"seek-{Guid.NewGuid():N}.wav");
+        var pcm = CreatePcm(1000);
+        AudioFile.WritePcm(path, pcm);
+
+        try
+        {
+            var driver = new FakeDriver();
+            driver.Player.Throttle = true;
+
+            using var player = new AudioPlayer(driver);
+
+            var task = player.PlayFileAsync(path);
+
+            // 等播放确实开始后跳到 0.6 秒，应跳过前面的数据
+            await Task.Delay(200);
+            Assert.True(player.Seek(0.6));
+
+            await task;
+
+            Assert.InRange(player.Position, 0.55, 1.05);
+            Assert.True(driver.Player.Total < pcm.Data.Length * 0.95, $"跳转后不应播完整个文件，实际 {driver.Player.Total}");
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 }
