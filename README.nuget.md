@@ -132,7 +132,7 @@ Turn text into sound with three lines of code:
 - **Speak directly** — `await new TtsClient().SayAsync("text")` via Windows SAPI / macOS `say` / Linux `espeak-ng` (on Windows .NET Core/.NET 5+, reference the `System.Speech` package)
 - **Save to file** — WAV / raw PCM / MP3 / FLAC, chosen by file extension (compressed formats go through the resample → encode → container pipeline)
 - **Stream out** — PCM chunks for HTTP/WebSocket generate-as-you-send
-- **Pluggable engines** — system speech, `HttpTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
+- **Pluggable engines** — system speech, `HttpTtsEngine`, `WebSocketTtsEngine`, `ProcessTtsEngine`, custom `ITtsEngine`
 - **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
 - **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate plus a voice catalog (`TtsVoiceCatalog`: pick voices across engines by language and scenario), disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)

@@ -6,7 +6,7 @@ namespace NewLife.Audio.Tts;
 /// 同一个接口覆盖系统语音、HTTP 服务、子进程合成器与自定义模型：
 /// <list type="bullet">
 /// <item>系统语音：<see cref="SystemSpeechEngine"/>、<see cref="MacSayTtsEngine"/>、<see cref="EspeakTtsEngine"/></item>
-/// <item>在线服务：<see cref="HttpTtsEngine"/></item>
+/// <item>在线服务：<see cref="HttpTtsEngine"/>、<see cref="WebSocketTtsEngine"/></item>
 /// <item>子进程：<see cref="ProcessTtsEngine"/>（piper / espeak-ng 等）</item>
 /// <item>测试与兜底：<see cref="NullTtsEngine"/></item>
 /// </list>
