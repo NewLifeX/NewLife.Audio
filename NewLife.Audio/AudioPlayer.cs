@@ -35,6 +35,7 @@ public class AudioPlayer : IDisposable
 
     private readonly IAudioDriver _driver;
     private readonly String _deviceId;
+    private readonly Object _sync = new();
     private IAudioPlayer _player;
     private AudioPlaybackSession _session;
     private Double _position;
@@ -48,10 +49,22 @@ public class AudioPlayer : IDisposable
     public Double Duration { get; private set; }
 
     /// <summary>当前播放位置（秒）</summary>
-    public Double Position => _session != null ? _session.Position : _position;
+    public Double Position
+    {
+        get
+        {
+            lock (_sync) return _session != null ? _session.Position : _position;
+        }
+    }
 
     /// <summary>是否正在播放</summary>
-    public Boolean IsPlaying => _player != null;
+    public Boolean IsPlaying
+    {
+        get
+        {
+            lock (_sync) return _player != null;
+        }
+    }
 
     /// <summary>PCM 数据可用（每块送入播放器前触发，供频谱/波形使用）</summary>
     public event EventHandler<Byte[]> PcmDataAvailable;
@@ -77,44 +90,54 @@ public class AudioPlayer : IDisposable
         ThrowIfDisposed();
         if (path == null) throw new ArgumentNullException(nameof(path));
 
-        var player = _driver.CreatePlayer();
-        _player = player;
-
-        var session = new AudioPlaybackSession(path, player, new PlayerRenderAdapter(player), _deviceId, Volume);
-        _session = session;
-        Duration = session.Duration;
-
-        session.PcmDataAvailable += OnPcmDataAvailable;
-
+        var session = CreateSession(path, out var player);
         try
         {
             session.Play(cancellationToken);
         }
         finally
         {
-            session.PcmDataAvailable -= OnPcmDataAvailable;
-
-            // 播放结束后保留最后位置，便于 UI 显示
-            _position = session.Position;
-            session.Dispose();
-            _session = null;
-
-            player.Dispose();
-            _player = null;
+            FinishSession(session, player);
         }
     }
 
     /// <summary>跳转到指定时间位置（秒），仅对文件播放有效</summary>
     /// <param name="seconds">目标位置（秒）</param>
     /// <returns>是否成功跳转</returns>
-    public Boolean Seek(Double seconds) => _session != null && _session.Seek(seconds);
+    public Boolean Seek(Double seconds)
+    {
+        AudioPlaybackSession session;
+        lock (_sync) session = _session;
+
+        return session != null && session.Seek(seconds);
+    }
 
     /// <summary>播放文件（不占用调用方线程）</summary>
     /// <param name="path">音频文件路径</param>
     /// <param name="cancellationToken">取消标记</param>
     /// <returns>播完或取消后完成的任务</returns>
-    public Task PlayFileAsync(String path, CancellationToken cancellationToken = default) =>
-        Task.Run(() => PlayFile(path, cancellationToken), cancellationToken);
+    /// <remarks>文件打开与解码会话建立是同步的，返回任务后即可调用 <see cref="Seek"/>。</remarks>
+    public Task PlayFileAsync(String path, CancellationToken cancellationToken = default)
+    {
+        ThrowIfDisposed();
+        if (path == null) throw new ArgumentNullException(nameof(path));
+        cancellationToken.ThrowIfCancellationRequested();
+
+        // 同步建立会话，避免调用方拿到任务后立即 Seek 时 _session 仍为空
+        var session = CreateSession(path, out var player);
+
+        return Task.Run(() =>
+        {
+            try
+            {
+                session.Play(cancellationToken);
+            }
+            finally
+            {
+                FinishSession(session, player);
+            }
+        }, CancellationToken.None);
+    }
 
     /// <summary>播放一段 PCM（播完才返回）</summary>
     /// <param name="audio">PCM 音频</param>
@@ -150,13 +173,22 @@ public class AudioPlayer : IDisposable
     }
 
     /// <summary>暂停播放</summary>
-    public void Pause() => _player?.Pause();
+    public void Pause()
+    {
+        lock (_sync) _player?.Pause();
+    }
 
     /// <summary>恢复播放</summary>
-    public void Resume() => _player?.Play();
+    public void Resume()
+    {
+        lock (_sync) _player?.Play();
+    }
 
     /// <summary>停止播放</summary>
-    public void Stop() => _player?.Stop();
+    public void Stop()
+    {
+        lock (_sync) _player?.Stop();
+    }
 
     /// <summary>释放播放门面</summary>
     public void Dispose()
@@ -164,8 +196,13 @@ public class AudioPlayer : IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _player?.Dispose();
-        _player = null;
+        IAudioPlayer player;
+        lock (_sync)
+        {
+            player = _player;
+            _player = null;
+        }
+        player?.Dispose();
     }
     #endregion
 
@@ -197,14 +234,68 @@ public class AudioPlayer : IDisposable
     #endregion
 
     #region 辅助
+    /// <summary>建立文件播放会话并登记到门面</summary>
+    /// <param name="path">音频文件路径</param>
+    /// <param name="player">创建出的播放器</param>
+    /// <returns>播放会话</returns>
+    private AudioPlaybackSession CreateSession(String path, out IAudioPlayer player)
+    {
+        lock (_sync)
+        {
+            if (_session != null) throw new InvalidOperationException("A playback session is already active.");
+
+            player = _driver.CreatePlayer();
+            try
+            {
+                var session = new AudioPlaybackSession(path, player, new PlayerRenderAdapter(player), _deviceId, Volume);
+                _session = session;
+                _player = player;
+                Duration = session.Duration;
+                session.PcmDataAvailable += OnPcmDataAvailable;
+
+                return session;
+            }
+            catch
+            {
+                player.Dispose();
+                player = null;
+                throw;
+            }
+        }
+    }
+
+    /// <summary>结束会话并清理播放器</summary>
+    /// <param name="session">播放会话</param>
+    /// <param name="player">播放器</param>
+    private void FinishSession(AudioPlaybackSession session, IAudioPlayer player)
+    {
+        session.PcmDataAvailable -= OnPcmDataAvailable;
+
+        // 播放结束后保留最后位置，便于 UI 显示
+        var position = session.Position;
+        session.Dispose();
+
+        lock (_sync)
+        {
+            _position = position;
+            if (ReferenceEquals(_session, session)) _session = null;
+            if (ReferenceEquals(_player, player)) _player = null;
+        }
+
+        player.Dispose();
+    }
+
     /// <summary>逐块送入播放器并等待播完</summary>
     /// <param name="chunks">PCM 分块</param>
     /// <param name="cancellationToken">取消标记</param>
     private void PlayCore(IEnumerable<AudioPcm> chunks, CancellationToken cancellationToken)
     {
         var player = _driver.CreatePlayer();
-        _player = player;
-        _position = 0;
+        lock (_sync)
+        {
+            _player = player;
+            _position = 0;
+        }
 
         var render = new PlayerRenderAdapter(player);
         Byte[] volumeBuffer = null;
@@ -257,7 +348,7 @@ public class AudioPlayer : IDisposable
 
                     render.Write(span);
 
-                    _position += (Double)count / byteRate;
+                    lock (_sync) _position += (Double)count / byteRate;
                 }
             }
 
@@ -280,7 +371,10 @@ public class AudioPlayer : IDisposable
             }
 
             player.Dispose();
-            _player = null;
+            lock (_sync)
+            {
+                if (ReferenceEquals(_player, player)) _player = null;
+            }
         }
     }
 

@@ -177,8 +177,7 @@ public class AudioPlayerTests
 
             var task = player.PlayFileAsync(path);
 
-            // 等播放确实开始后跳到 0.6 秒，应跳过前面的数据
-            await Task.Delay(200);
+            // PlayFileAsync 同步建立会话，返回后即可跳转，不必等待播放线程启动
             Assert.True(player.Seek(0.6));
 
             await task;
