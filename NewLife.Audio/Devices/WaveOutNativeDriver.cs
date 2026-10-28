@@ -1,3 +1,5 @@
+using System.Buffers;
+using System.Diagnostics;
 using System.Runtime.InteropServices;
 using NewLife;
 using NewLife.Audio.DSP;
@@ -81,13 +83,18 @@ public class WaveOutNativeDriver : IAudioDriver
     public IAudioPlayer CreatePlayer() => new WaveOutPlayer();
 
     /// <summary>创建录制器</summary>
+    /// <returns>WaveIn 录制器（内含采集线程与缓冲队列）</returns>
     public IAudioRecorder CreateRecorder() => new WaveInRecorder();
 }
 
 /// <summary>WaveOut 播放器（P/Invoke winmm）</summary>
-internal class WaveOutPlayer : IAudioPlayer
+/// <remarks>用 <c>CALLBACK_EVENT</c> 感知缓冲播放完成，
+/// 于是 <see cref="WaitForSpace"/> 可以等事件而不是睡眠轮询。
+/// </remarks>
+internal class WaveOutPlayer : IAudioPlayer, IAudioRender
 {
     private IntPtr _hWaveOut;
+    private IntPtr _eventHandle;
     private AudioFormat _format;
     private readonly List<IntPtr> _headers = [];
     private readonly Queue<Byte[]> _pendingBuffers = new();
@@ -135,14 +142,19 @@ internal class WaveOutPlayer : IAudioPlayer
         if (deviceId != null && Int32.TryParse(deviceId, out var devIdx))
             devId = (UIntPtr)(UInt32)devIdx;
 
+        // 缓冲完成时由系统置事件，供 WaitForSpace 阻塞等待，不占用 CPU
+        _eventHandle = NativeMethods.CreateEvent(IntPtr.Zero, false, false, null);
+        var flags = _eventHandle != IntPtr.Zero ? NativeMethods.CALLBACK_EVENT : NativeMethods.CALLBACK_NULL;
+
         var result = NativeMethods.waveOutOpen(
             out _hWaveOut, devId, ref wfx,
-            IntPtr.Zero, IntPtr.Zero,
-            NativeMethods.CALLBACK_NULL);
+            _eventHandle, IntPtr.Zero,
+            flags);
 
         if (result != 0)
         {
             _hWaveOut = IntPtr.Zero;
+            CloseEvent();
             XTrace.Log.InfoPrefixed("WaveOut: ", "waveOutOpen returned {0}; falling back to the null player.", result);
         }
     }
@@ -174,11 +186,70 @@ internal class WaveOutPlayer : IAudioPlayer
     }
 
     /// <summary>写入音频数据</summary>
+    /// <param name="data">PCM 数据</param>
     public void Write(Byte[] data)
     {
         if (data == null || data.Length == 0) return;
 
-        if (_hWaveOut == IntPtr.Zero) { lock (_lock) _pendingBuffers.Enqueue(data); return; }
+        WriteCore(data, 0, data.Length);
+    }
+
+    /// <summary>写入音频数据（不使用额外托管分配）</summary>
+    /// <param name="data">PCM 数据</param>
+    public void Write(ReadOnlySpan<Byte> data)
+    {
+        if (data.Length == 0) return;
+
+        if (_hWaveOut == IntPtr.Zero)
+        {
+            // 无设备时保留排队语义，缓冲需独立于池化临时数组
+            lock (_lock) _pendingBuffers.Enqueue(data.ToArray());
+            return;
+        }
+
+        // 非托管缓冲只能由 Marshal.Copy 从数组拷入，用池化临时数组避免每次分配
+        var temp = ArrayPool<Byte>.Shared.Rent(data.Length);
+        try
+        {
+            data.CopyTo(temp);
+            WriteCore(temp, 0, data.Length);
+        }
+        finally
+        {
+            ArrayPool<Byte>.Shared.Return(temp);
+        }
+    }
+
+    /// <summary>等待缓冲回落到水位以下</summary>
+    /// <param name="maxBufferedBytes">允许的最大积压字节数</param>
+    /// <param name="timeoutMilliseconds">超时时间（毫秒），小于 0 表示一直等</param>
+    /// <returns>是否已回到水位以下</returns>
+    public Boolean WaitForSpace(Int32 maxBufferedBytes, Int32 timeoutMilliseconds)
+    {
+        if (BufferedBytes <= maxBufferedBytes) return true;
+
+        var watch = Stopwatch.StartNew();
+        while (true)
+        {
+            if (BufferedBytes <= maxBufferedBytes) return true;
+            if (timeoutMilliseconds >= 0 && watch.ElapsedMilliseconds >= timeoutMilliseconds) return false;
+
+            if (_eventHandle != IntPtr.Zero)
+                NativeMethods.WaitForSingleObject(_eventHandle, 20);
+            else
+                Thread.Sleep(2);
+        }
+    }
+
+    private void WriteCore(Byte[] data, Int32 offset, Int32 count)
+    {
+        if (_hWaveOut == IntPtr.Zero)
+        {
+            var copy = new Byte[count];
+            Buffer.BlockCopy(data, offset, copy, 0, count);
+            lock (_lock) _pendingBuffers.Enqueue(copy);
+            return;
+        }
 
         // 清理已完成的头部
         CleanupDoneHeaders();
@@ -186,13 +257,13 @@ internal class WaveOutPlayer : IAudioPlayer
         // 准备并写入。驱动会异步修改非托管头部的 dwFlags，必须保留非托管头部才能感知完成状态
         var headerSize = Marshal.SizeOf<NativeMethods.WAVEHDR>();
         var headerPtr = Marshal.AllocHGlobal(headerSize);
-        var dataPtr = Marshal.AllocHGlobal(data.Length);
-        Marshal.Copy(data, 0, dataPtr, data.Length);
+        var dataPtr = Marshal.AllocHGlobal(count);
+        Marshal.Copy(data, offset, dataPtr, count);
 
         var hdr = new NativeMethods.WAVEHDR
         {
             lpData = dataPtr,
-            dwBufferLength = (UInt32)data.Length,
+            dwBufferLength = (UInt32)count,
         };
         Marshal.StructureToPtr(hdr, headerPtr, false);
 
@@ -258,92 +329,87 @@ internal class WaveOutPlayer : IAudioPlayer
             NativeMethods.waveOutClose(_hWaveOut);
             _hWaveOut = IntPtr.Zero;
         }
+
+        CloseEvent();
+    }
+
+    private void CloseEvent()
+    {
+        var handle = _eventHandle;
+        _eventHandle = IntPtr.Zero;
+        if (handle != IntPtr.Zero) NativeMethods.CloseHandle(handle);
     }
 }
 
-/// <summary>WaveIn 录制器（P/Invoke winmm）</summary>
+/// <summary>WaveIn 录制器（P/Invoke winmm）：预投递缓冲 + 事件等待，线程与队列由基类负责</summary>
 /// <remarks>
-/// 使用 <c>waveInPrepareHeader</c> + <c>waveInAddBuffer</c> 预投递多个缓冲，
-/// 由后台线程轮询 <c>WHDR_DONE</c> 后触发 <see cref="DataAvailable"/> 并回收缓冲，形成持续采集。
-/// 打开设备失败时抛 <see cref="InvalidOperationException"/>，与 WASAPI 采集器行为一致。
+/// 预投递 <c>4</c> 个 20 毫秒缓冲，<see cref="AudioRecorderBase.ReadNative"/> 内等待 <c>CALLBACK_EVENT</c> 事件后
+/// 把已完成缓冲交给调用方并立即重投；不再为每块数据分配托管数组。
+/// 打开设备失败时抛 <see cref="InvalidOperationException"/>，与 WASAPI 录制器行为一致。
 /// </remarks>
-internal class WaveInRecorder : IAudioRecorder
+internal sealed class WaveInRecorder : AudioRecorderBase
 {
     private const Int32 BufferCount = 4;
 
     private IntPtr _hWaveIn;
-    private AudioFormat _format;
-    private String _deviceId;
+    private IntPtr _eventHandle;
     private readonly List<IntPtr> _headers = [];
     private readonly Object _lock = new();
-    private Thread _thread;
-    private volatile Boolean _running;
-    private Boolean _disposed;
+    private Int32 _headerSize;
+    private Byte[] _staging = [];
+    private Int32 _pendingOffset;
+    private Int32 _pendingCount;
 
-    /// <summary>数据可用事件</summary>
-    public event EventHandler<Byte[]> DataAvailable;
-
-    /// <summary>请求的音频格式</summary>
-    public AudioFormat Format => _format;
-
-    /// <summary>是否正在录制</summary>
-    public Boolean IsRecording => _running;
-
-    /// <summary>初始化录制器</summary>
-    public void Init(AudioFormat format, String deviceId = null)
+    /// <summary>打开设备并预投递缓冲</summary>
+    protected override void Open()
     {
-        if (_disposed) throw new ObjectDisposedException(nameof(WaveInRecorder));
-
-        _format = format?.Clone() ?? AudioFormat.Default;
-        _deviceId = deviceId;
-    }
-
-    /// <summary>开始录制</summary>
-    /// <exception cref="InvalidOperationException">设备不可用或初始化失败</exception>
-    public void StartRecording()
-    {
-        if (_disposed) throw new ObjectDisposedException(nameof(WaveInRecorder));
-        if (_hWaveIn != IntPtr.Zero) return;
-
-        if (_format == null) _format = AudioFormat.Default;
+        var format = Format ?? AudioFormat.Default;
 
         var wfx = new NativeMethods.WAVEFORMATEX
         {
             wFormatTag = 1, // PCM
-            nChannels = (Int16)_format.Channels,
-            nSamplesPerSec = _format.SampleRate,
-            nAvgBytesPerSec = _format.SampleRate * _format.Channels * _format.BitsPerSample / 8,
-            nBlockAlign = (Int16)(_format.Channels * _format.BitsPerSample / 8),
-            wBitsPerSample = (Int16)_format.BitsPerSample,
+            nChannels = (Int16)format.Channels,
+            nSamplesPerSec = format.SampleRate,
+            nAvgBytesPerSec = format.SampleRate * format.Channels * format.BitsPerSample / 8,
+            nBlockAlign = (Int16)(format.Channels * format.BitsPerSample / 8),
+            wBitsPerSample = (Int16)format.BitsPerSample,
             cbSize = 0,
         };
 
         var devId = UIntPtr.Zero;
-        if (_deviceId != null && Int32.TryParse(_deviceId, out var devIdx))
+        if (DeviceId != null && Int32.TryParse(DeviceId, out var devIdx))
             devId = (UIntPtr)(UInt32)devIdx;
+
+        // 每次缓冲完成系统都会置这个事件，读取时直接等它，不再空转轮询
+        _eventHandle = NativeMethods.CreateEvent(IntPtr.Zero, false, false, null);
+        var flags = _eventHandle != IntPtr.Zero ? NativeMethods.CALLBACK_EVENT : NativeMethods.CALLBACK_NULL;
 
         var result = NativeMethods.waveInOpen(
             out _hWaveIn, devId, ref wfx,
-            IntPtr.Zero, IntPtr.Zero,
-            NativeMethods.CALLBACK_NULL);
+            _eventHandle, IntPtr.Zero,
+            flags);
         if (result != 0)
         {
             _hWaveIn = IntPtr.Zero;
+            CloseEvent();
             throw new InvalidOperationException(L.T("No default audio device is available."));
         }
 
         try
         {
             // 4 个 20ms 缓冲，兼顾回调延迟与采集连续性
-            var headerSize = Marshal.SizeOf<NativeMethods.WAVEHDR>();
-            var bufferSize = Math.Max(1, _format.SampleRate / 50) * _format.Channels * _format.BytesPerSample;
+            _headerSize = Marshal.SizeOf<NativeMethods.WAVEHDR>();
+            var bufferSize = Math.Max(1, format.SampleRate / 50) * format.Channels * format.BytesPerSample;
+            _staging = new Byte[bufferSize];
+            _pendingOffset = 0;
+            _pendingCount = 0;
 
             lock (_lock)
             {
                 for (var i = 0; i < BufferCount; i++)
                 {
                     var dataPtr = Marshal.AllocHGlobal(bufferSize);
-                    var headerPtr = Marshal.AllocHGlobal(headerSize);
+                    var headerPtr = Marshal.AllocHGlobal(_headerSize);
                     var hdr = new NativeMethods.WAVEHDR
                     {
                         lpData = dataPtr,
@@ -351,11 +417,11 @@ internal class WaveInRecorder : IAudioRecorder
                     };
                     Marshal.StructureToPtr(hdr, headerPtr, false);
 
-                    var prepared = NativeMethods.waveInPrepareHeader(_hWaveIn, headerPtr, (UInt32)headerSize) == 0;
-                    var hr = prepared ? NativeMethods.waveInAddBuffer(_hWaveIn, headerPtr, (UInt32)headerSize) : -1;
+                    var prepared = NativeMethods.waveInPrepareHeader(_hWaveIn, headerPtr, (UInt32)_headerSize) == 0;
+                    var hr = prepared ? NativeMethods.waveInAddBuffer(_hWaveIn, headerPtr, (UInt32)_headerSize) : -1;
                     if (hr != 0)
                     {
-                        if (prepared) NativeMethods.waveInUnprepareHeader(_hWaveIn, headerPtr, (UInt32)headerSize);
+                        if (prepared) NativeMethods.waveInUnprepareHeader(_hWaveIn, headerPtr, (UInt32)_headerSize);
 
                         Marshal.FreeHGlobal(dataPtr);
                         Marshal.FreeHGlobal(headerPtr);
@@ -366,105 +432,98 @@ internal class WaveInRecorder : IAudioRecorder
                 }
             }
 
-            _running = true;
-            _thread = new Thread(CaptureThread)
-            {
-                IsBackground = true,
-                Name = "WaveInRecorder",
-            };
-            _thread.Start();
-
             result = NativeMethods.waveInStart(_hWaveIn);
             if (result != 0) throw new InvalidOperationException(L.T("No default audio device is available."));
         }
         catch
         {
-            _running = false;
-
-            var thread = _thread;
-            _thread = null;
-            if (thread != null && thread != Thread.CurrentThread && thread.IsAlive) thread.Join(500);
-
             CloseDevice();
             throw;
         }
     }
 
-    /// <summary>停止录制</summary>
-    public void StopRecording()
+    /// <summary>关闭设备</summary>
+    protected override void Close() => CloseDevice();
+
+    /// <summary>阻塞读取一块已完成缓冲</summary>
+    /// <param name="buffer">目标缓冲</param>
+    /// <param name="timeoutMilliseconds">等待超时时间（毫秒），小于等于 0 表示一直等</param>
+    /// <param name="cancellationToken">取消标记</param>
+    /// <returns>实际写入的字节数；0 表示超时</returns>
+    protected override Int32 ReadNative(Span<Byte> buffer, Int32 timeoutMilliseconds, CancellationToken cancellationToken)
     {
-        _running = false;
+        if (buffer.Length == 0) return 0;
 
-        var thread = _thread;
-        _thread = null;
-        if (thread != null && thread != Thread.CurrentThread && thread.IsAlive) thread.Join(1000);
+        var watch = timeoutMilliseconds > 0 ? Stopwatch.StartNew() : null;
 
-        CloseDevice();
-    }
-
-    /// <summary>释放资源</summary>
-    public void Dispose()
-    {
-        if (_disposed) return;
-        _disposed = true;
-        StopRecording();
-    }
-
-    private void CaptureThread()
-    {
-        var headerSize = Marshal.SizeOf<NativeMethods.WAVEHDR>();
-
-        while (_running)
+        while (true)
         {
-            List<Byte[]> chunks = null;
-            lock (_lock)
+            cancellationToken.ThrowIfCancellationRequested();
+
+            // 先把上一块没交完的剩余部分交给调用方，攒够一块再处理下一块
+            if (_pendingCount > 0)
             {
-                for (var i = 0; i < _headers.Count; i++)
-                {
-                    var ptr = _headers[i];
-                    var hdr = Marshal.PtrToStructure<NativeMethods.WAVEHDR>(ptr);
-                    if ((hdr.dwFlags & NativeMethods.WHDR_DONE) == 0) continue;
+                var take = Math.Min(_pendingCount, buffer.Length);
+                _staging.AsSpan(_pendingOffset, take).CopyTo(buffer);
+                _pendingOffset += take;
+                _pendingCount -= take;
 
-                    var bytes = (Int32)hdr.dwBytesRecorded;
-                    if (bytes > 0)
-                    {
-                        var data = new Byte[bytes];
-                        Marshal.Copy(hdr.lpData, data, 0, bytes);
-                        (chunks ??= []).Add(data);
-                    }
-
-                    // 只清 WHDR_DONE 再重新投递，必须保留驱动设置的 WHDR_PREPARED，
-                    // 否则 waveInAddBuffer 会因未准备而失败，导致采完首轮缓冲后静默停采
-                    hdr.dwFlags &= ~NativeMethods.WHDR_DONE;
-                    hdr.dwBytesRecorded = 0;
-                    Marshal.StructureToPtr(hdr, ptr, false);
-                    var hr = NativeMethods.waveInAddBuffer(_hWaveIn, ptr, (UInt32)headerSize);
-                    if (hr != 0) XTrace.Log.InfoPrefixed("WaveInRecorder: ", "waveInAddBuffer returned {0}", hr);
-                }
+                return take;
             }
 
-            if (chunks != null)
+            if (ReadDevice()) continue;
+
+            if (watch != null && watch.ElapsedMilliseconds >= timeoutMilliseconds) return 0;
+
+            if (_eventHandle != IntPtr.Zero)
+                NativeMethods.WaitForSingleObject(_eventHandle, 20);
+            else
+                Thread.Sleep(1);
+        }
+    }
+
+    /// <summary>取走一块已完成缓冲并重新投递；没有已完成缓冲时返回 false</summary>
+    /// <returns>是否取到数据</returns>
+    private Boolean ReadDevice()
+    {
+        lock (_lock)
+        {
+            if (_hWaveIn == IntPtr.Zero) return false;
+
+            for (var i = 0; i < _headers.Count; i++)
             {
-                foreach (var chunk in chunks)
-                {
-                    try
-                    {
-                        DataAvailable?.Invoke(this, chunk);
-                    }
-                    catch (Exception ex)
-                    {
-                        XTrace.Log.InfoPrefixed("WaveInRecorder: ", "Data handler failed: {0}", ex.Message);
-                    }
-                }
+                var ptr = _headers[i];
+                var hdr = Marshal.PtrToStructure<NativeMethods.WAVEHDR>(ptr);
+                if ((hdr.dwFlags & NativeMethods.WHDR_DONE) == 0) continue;
+
+                var bytes = (Int32)hdr.dwBytesRecorded;
+                if (bytes > _staging.Length) bytes = _staging.Length;
+                if (bytes > 0) Marshal.Copy(hdr.lpData, _staging, 0, bytes);
+                _pendingOffset = 0;
+                _pendingCount = bytes;
+
+                // 只清 WHDR_DONE 再重新投递，必须保留驱动设置的 WHDR_PREPARED，
+                // 否则 waveInAddBuffer 会因未准备而失败，导致采完首轮缓冲后静默停采
+                hdr.dwFlags &= ~NativeMethods.WHDR_DONE;
+                hdr.dwBytesRecorded = 0;
+                Marshal.StructureToPtr(hdr, ptr, false);
+                var hr = NativeMethods.waveInAddBuffer(_hWaveIn, ptr, (UInt32)_headerSize);
+                if (hr != 0) XTrace.Log.InfoPrefixed("WaveInRecorder: ", "waveInAddBuffer returned {0}", hr);
+
+                return bytes > 0;
             }
 
-            Thread.Sleep(5);
+            return false;
         }
     }
 
     private void CloseDevice()
     {
-        if (_hWaveIn == IntPtr.Zero) return;
+        if (_hWaveIn == IntPtr.Zero)
+        {
+            CloseEvent();
+            return;
+        }
 
         NativeMethods.waveInStop(_hWaveIn);
         NativeMethods.waveInReset(_hWaveIn);
@@ -484,6 +543,16 @@ internal class WaveInRecorder : IAudioRecorder
 
         NativeMethods.waveInClose(_hWaveIn);
         _hWaveIn = IntPtr.Zero;
+        _pendingOffset = 0;
+        _pendingCount = 0;
+        CloseEvent();
+    }
+
+    private void CloseEvent()
+    {
+        var handle = _eventHandle;
+        _eventHandle = IntPtr.Zero;
+        if (handle != IntPtr.Zero) NativeMethods.CloseHandle(handle);
     }
 }
 
@@ -491,6 +560,7 @@ internal class WaveInRecorder : IAudioRecorder
 internal static class NativeMethods
 {
     public const UInt32 CALLBACK_NULL = 0x00000000;
+    public const UInt32 CALLBACK_EVENT = 0x00050000;
     public const UInt32 WHDR_DONE = 0x00000001;
     public const UInt32 WHDR_PREPARED = 0x00000002;
 
@@ -607,4 +677,13 @@ internal static class NativeMethods
 
     [DllImport("winmm.dll")]
     public static extern Int32 waveInClose(IntPtr hWaveIn);
+
+    [DllImport("kernel32.dll", SetLastError = true, CharSet = CharSet.Unicode)]
+    public static extern IntPtr CreateEvent(IntPtr lpEventAttributes, Boolean bManualReset, Boolean bInitialState, String lpName);
+
+    [DllImport("kernel32.dll")]
+    public static extern UInt32 WaitForSingleObject(IntPtr hHandle, UInt32 dwMilliseconds);
+
+    [DllImport("kernel32.dll")]
+    public static extern Boolean CloseHandle(IntPtr hObject);
 }

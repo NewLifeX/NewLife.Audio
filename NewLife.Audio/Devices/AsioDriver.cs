@@ -41,28 +41,3 @@ public class AsioDriver : IAudioDriver
     /// <exception cref="NotSupportedException">ASIO 后端尚未实现</exception>
     public IAudioRecorder CreateRecorder() => throw new NotSupportedException(L.T("The ASIO backend is not implemented."));
 }
-
-/// <summary>空播放器。仅用于无音频后端时的占位，不产生任何声音</summary>
-internal class NullPlayer : IAudioPlayer
-{
-    public Int32 BufferedBytes => 0;
-    public event EventHandler PlaybackStopped;
-
-    public void Init(AudioFormat format, String deviceId = null) { }
-    public void Play() { }
-    public void Pause() { }
-    public void Stop() => PlaybackStopped?.Invoke(this, EventArgs.Empty);
-    public void Write(Byte[] data) { }
-    public void Dispose() => Stop();
-}
-
-/// <summary>空录制器。仅用于无音频后端的占位，不产生任何数据</summary>
-internal class NullRecorder : IAudioRecorder
-{
-    public event EventHandler<Byte[]> DataAvailable;
-
-    public void Init(AudioFormat format, String deviceId = null) { }
-    public void StartRecording() { }
-    public void StopRecording() { }
-    public void Dispose() => StopRecording();
-}

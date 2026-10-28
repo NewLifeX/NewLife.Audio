@@ -116,7 +116,7 @@ public sealed class AlsaDriver : IAudioDriver
     public IAudioPlayer CreatePlayer() => new AlsaPlayer();
 
     /// <summary>创建录制器</summary>
-    /// <returns>录制器实例</returns>
+    /// <returns>ALSA 录制器（内含采集线程与缓冲队列）</returns>
     public IAudioRecorder CreateRecorder() => new AlsaRecorder();
 
     private static String GetHint(IntPtr hint, String type)
@@ -232,10 +232,11 @@ internal static class AlsaNative
 }
 
 /// <summary>ALSA 播放器：后台线程逐块写入 PCM</summary>
-internal sealed class AlsaPlayer : IAudioPlayer
+internal sealed class AlsaPlayer : IAudioPlayer, IAudioRender
 {
     private readonly Object _lock = new();
     private readonly Queue<Byte[]> _queue = new();
+    private readonly ManualResetEventSlim _space = new(false);
     private IntPtr _pcm;
     private Thread _thread;
     private AudioFormat _format;
@@ -334,6 +335,36 @@ internal sealed class AlsaPlayer : IAudioPlayer
         }
     }
 
+    /// <summary>写入 PCM 数据（16 位小端交错）</summary>
+    /// <param name="data">PCM 数据</param>
+    public void Write(ReadOnlySpan<Byte> data)
+    {
+        if (data.Length == 0) return;
+
+        // 底层 writei 按数组工作，这里收起一次拷贝
+        Write(data.ToArray());
+    }
+
+    /// <summary>等待缓冲回落到水位以下</summary>
+    /// <param name="maxBufferedBytes">允许的最大积压字节数</param>
+    /// <param name="timeoutMilliseconds">超时时间（毫秒），小于 0 表示一直等</param>
+    /// <returns>是否已回到水位以下</returns>
+    public Boolean WaitForSpace(Int32 maxBufferedBytes, Int32 timeoutMilliseconds)
+    {
+        if (BufferedBytes <= maxBufferedBytes) return true;
+
+        var watch = System.Diagnostics.Stopwatch.StartNew();
+        while (BufferedBytes > maxBufferedBytes)
+        {
+            if (timeoutMilliseconds >= 0 && watch.ElapsedMilliseconds >= timeoutMilliseconds) return false;
+
+            _space.Wait(20);
+            _space.Reset();
+        }
+
+        return true;
+    }
+
     private void PlayLoop()
     {
         // drop/underrun 之后流处于 SETUP 状态，写入前必须 prepare
@@ -352,6 +383,9 @@ internal sealed class AlsaPlayer : IAudioPlayer
 
                 buffer = _queue.Dequeue();
             }
+
+            // 取走数据后唤醒等空间的写入方
+            _space.Set();
 
             var frames = buffer.Length / frameBytes;
             if (frames <= 0) continue;
@@ -373,6 +407,8 @@ internal sealed class AlsaPlayer : IAudioPlayer
     {
         Stop();
 
+        _space.Dispose();
+
         var thread = _thread;
         _thread = null;
         if (thread != null && !thread.Join(2000))
@@ -390,99 +426,101 @@ internal sealed class AlsaPlayer : IAudioPlayer
     }
 }
 
-/// <summary>ALSA 录制器：后台线程按 20ms 帧读取 PCM 并抛事件</summary>
-internal sealed class AlsaRecorder : IAudioRecorder
+/// <summary>ALSA 录制器：阻塞 readi 取数，队列缓冲由基类负责</summary>
+internal sealed class AlsaRecorder : AudioRecorderBase
 {
     private IntPtr _pcm;
-    private Thread _thread;
-    private AudioFormat _format;
-    private volatile Boolean _running;
-
-    /// <summary>数据可用事件</summary>
-    public event EventHandler<Byte[]> DataAvailable;
+    private Byte[] _staging = [];
+    private Int32 _pendingOffset;
+    private Int32 _pendingCount;
 
     /// <summary>初始化录制器</summary>
     /// <param name="format">音频格式，仅支持 16 位有符号小端</param>
     /// <param name="deviceId">ALSA 设备名</param>
-    public void Init(AudioFormat format, String deviceId = null)
+    public override void Init(AudioFormat format, String deviceId = null)
     {
-        if (format == null) throw new ArgumentNullException(nameof(format));
-        if (format.BitsPerSample != 16) throw new NotSupportedException(L.T("The requested audio format is not supported: {0}", format.BitsPerSample));
-
-        _format = format.Clone();
-
+        if (format != null && format.BitsPerSample != 16) throw new NotSupportedException(L.T("The requested audio format is not supported: {0}", format.BitsPerSample));
         if (!AlsaDriver.IsAvailable) throw new NotSupportedException(L.T("No audio backend is available."));
 
-        var device = deviceId.IsNullOrEmpty() ? "default" : deviceId;
-        var result = AlsaNative.Open(device, AlsaNative.StreamCapture, _format, out _pcm);
+        base.Init(format, deviceId);
+    }
+
+    /// <summary>打开采集设备</summary>
+    protected override void Open()
+    {
+        if (!AlsaDriver.IsAvailable) throw new NotSupportedException(L.T("No audio backend is available."));
+
+        var device = DeviceId.IsNullOrEmpty() ? "default" : DeviceId;
+        var result = AlsaNative.Open(device, AlsaNative.StreamCapture, Format, out _pcm);
         if (result != 0)
         {
             XTrace.WriteLine("ALSA capture device {0} failed to open: {1}", device, AlsaNative.Error(result));
             throw new InvalidOperationException(AlsaNative.Error(result));
         }
-    }
 
-    /// <summary>开始录制</summary>
-    public void StartRecording()
-    {
-        if (_pcm == IntPtr.Zero) throw new InvalidOperationException(L.T("No audio backend is available."));
-
-        _running = true;
-        if (_thread == null || !_thread.IsAlive)
-        {
-            _thread = new Thread(CaptureLoop) { IsBackground = true, Name = "alsa-capture" };
-            _thread.Start();
-        }
-    }
-
-    /// <summary>停止录制</summary>
-    public void StopRecording()
-    {
-        _running = false;
-
-        if (_thread == null) return;
-        if (_thread.Join(2000)) _thread = null;
-        else XTrace.WriteLine("ALSA capture thread did not exit in 2s");
-    }
-
-    private void CaptureLoop()
-    {
         AlsaNative.snd_pcm_prepare(_pcm);
 
-        var frameBytes = Math.Max(1, _format.Channels * _format.BytesPerSample);
-        var frames = Math.Max(1, _format.SampleRate / 50);
-        var buffer = new Byte[frames * frameBytes];
+        var frameBytes = Math.Max(1, Format.Channels * Format.BytesPerSample);
+        var frames = Math.Max(1, Format.SampleRate / 50);
+        _staging = new Byte[frames * frameBytes];
+        _pendingOffset = 0;
+        _pendingCount = 0;
+    }
 
-        while (_running)
+    /// <summary>关闭采集设备</summary>
+    protected override void Close()
+    {
+        if (_pcm != IntPtr.Zero)
         {
-            var read = AlsaNative.snd_pcm_readi(_pcm, buffer, (UIntPtr)(UInt32)frames).ToInt64();
+            AlsaNative.snd_pcm_drop(_pcm);
+            AlsaNative.snd_pcm_close(_pcm);
+            _pcm = IntPtr.Zero;
+        }
+
+        _pendingOffset = 0;
+        _pendingCount = 0;
+    }
+
+    /// <summary>阻塞读取一块 PCM（snd_pcm_readi 本身阻塞）</summary>
+    /// <param name="buffer">目标缓冲</param>
+    /// <param name="timeoutMilliseconds">超时时间（毫秒），readi 本身阻塞，此参数仅保持契约一致</param>
+    /// <param name="cancellationToken">取消标记</param>
+    /// <returns>实际写入的字节数；0 表示已停止</returns>
+    protected override Int32 ReadNative(Span<Byte> buffer, Int32 timeoutMilliseconds, CancellationToken cancellationToken)
+    {
+        if (buffer.Length == 0 || _pcm == IntPtr.Zero) return 0;
+
+        var frameBytes = Math.Max(1, Format.Channels * Format.BytesPerSample);
+
+        while (true)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            if (_pendingCount > 0)
+            {
+                var take = Math.Min(_pendingCount, buffer.Length);
+                _staging.AsSpan(_pendingOffset, take).CopyTo(buffer);
+                _pendingOffset += take;
+                _pendingCount -= take;
+
+                return take;
+            }
+
+            var frames = Math.Min(_staging.Length / frameBytes, buffer.Length / frameBytes);
+            if (frames <= 0) return 0;
+
+            var read = AlsaNative.snd_pcm_readi(_pcm, _staging, (UIntPtr)(UInt32)frames).ToInt64();
             if (read < 0)
             {
+                // -EPIPE（欠载）等：重新准备后重试，计入欠载次数
+                AddOverrun();
                 AlsaNative.snd_pcm_prepare(_pcm);
                 continue;
             }
             if (read == 0) continue;
 
-            var length = (Int32)read * frameBytes;
-            var data = new Byte[length];
-            Buffer.BlockCopy(buffer, 0, data, 0, length);
-
-            DataAvailable?.Invoke(this, data);
-        }
-    }
-
-    /// <summary>释放录制器</summary>
-    public void Dispose()
-    {
-        StopRecording();
-
-        // 采集线程仍在阻塞，关闭句柄会导致访问已释放内存
-        if (_thread != null) return;
-
-        if (_pcm != IntPtr.Zero)
-        {
-            AlsaNative.snd_pcm_close(_pcm);
-            _pcm = IntPtr.Zero;
+            _pendingOffset = 0;
+            _pendingCount = (Int32)read * frameBytes;
         }
     }
 }

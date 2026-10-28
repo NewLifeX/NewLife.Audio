@@ -57,6 +57,10 @@ public sealed class AudioFrame : IDisposable
     /// <returns>当前帧的只读字节视图</returns>
     public ReadOnlySpan<Byte> GetSpan() => Data == null ? default : new ReadOnlySpan<Byte>(Data, Offset > 0 ? Offset : 0, Length);
 
+    /// <summary>取帧数据视图（可写）</summary>
+    /// <returns>当前帧的可写内存视图，供采集器直接填充</returns>
+    public Memory<Byte> GetMemory() => Data == null ? default : new Memory<Byte>(Data, Offset > 0 ? Offset : 0, Length);
+
     /// <summary>帧时长（按采样率、声道数与位深计算）</summary>
     public TimeSpan Duration
     {

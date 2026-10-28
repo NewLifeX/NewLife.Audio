@@ -107,15 +107,17 @@ public class DeviceDriverTests
         Assert.NotNull(recorder);
     }
 
-    [Fact(DisplayName = "默认驱动路径录音器是真实采集器而非空实现")]
-    public void DefaultDriver_Recorder_IsRealCapture()
+    [Fact(DisplayName = "默认驱动路径录制器是真实拉模式实现")]
+    public void DefaultDriver_Capture_IsRealCapture()
     {
         var driver = AudioDriverFactory.Create();
 
         if (!AudioDriverFactory.IsSupported) return;
 
+        // 新架构：录制器直接继承 AudioRecorderBase（内部自带采集线程与缓冲队列）
         using var recorder = driver.CreateRecorder();
         Assert.Equal(AudioDriverFactory.IsWindows ? "WaveInRecorder" : "AlsaRecorder", recorder.GetType().Name);
+        Assert.IsAssignableFrom<AudioRecorderBase>(recorder);
     }
 
     [Fact(DisplayName = "默认驱动路径播放器是真实输出而非空实现")]
