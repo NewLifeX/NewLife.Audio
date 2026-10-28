@@ -12,7 +12,7 @@ namespace NewLife.Audio.Containers;
 /// <item>写入 PCM：<see cref="WritePcm"/> 内部调用 <see cref="Mp3Codec"/> 的 Layer III 编码器按帧压缩，自动处理跨调用的半帧缓冲。</item>
 /// </list>
 /// </remarks>
-public class Mp3FileWriter : IAudioContainerWriter
+public class Mp3FileWriter : IAudioContainerWriter, IAudioPcmSink
 {
     #region 字段
     private readonly Stream _stream;

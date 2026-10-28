@@ -2,6 +2,7 @@ using NewLife;
 using NewLife.Audio.Codecs;
 using NewLife.Audio.Containers;
 using NewLife.Audio.DSP;
+using NewLife.Audio.Streaming;
 using NewLife.Data;
 
 namespace NewLife.Audio;
@@ -39,6 +40,13 @@ public class AudioWriteOptions
     /// <summary>FLAC 压缩级别 0~8，默认 5</summary>
     public Int32 FlacCompressionLevel { get; set; } = 5;
 
+    /// <summary>有损编码的统一码率（bps），0 表示按格式默认（MP3 用 <see cref="Mp3BitrateKbps"/>）</summary>
+    /// <remarks>适用于 AAC(ADTS/M4A) 与 Opus；MP3 专用参数见 <see cref="Mp3BitrateKbps"/>。</remarks>
+    public Int32 BitrateKbps { get; set; }
+
+    /// <summary>Ogg Vorbis 质量档位 0~10，默认 5</summary>
+    public Int32 VorbisQuality { get; set; } = 5;
+
     /// <summary>元数据（写入支持标签的容器）</summary>
     public AudioMetadata Metadata { get; set; }
 
@@ -71,8 +79,9 @@ public class AudioSaveResult
 /// <remarks>
 /// 读取支持 WAV/RF64（PCM/浮点/G.711，24 位降为 16 位）、FLAC、MP3、ADTS AAC、MP4/M4A（AAC）、
 /// Ogg（Opus 逐包 / Vorbis 整文件）。<br/>
-/// 写入按扩展名选择容器：`.wav` 直写 PCM、`.flac` 无损压缩、`.mp3` 调用托管编码器；
-/// 其余容器（AAC/Opus 编码容器）尚未提供托管编码路径，会明确抛出 <see cref="NotSupportedException"/>。
+/// 写入按扩展名选择容器：`.wav/.aiff` 直写 PCM、`.flac` 无损压缩、`.mp3` 托管 MP3、
+/// `.ogg` 托管 Vorbis、`.opus` 托管 Opus、`.m4a`/`.mp4` 托管 AAC-LC、`.aac`/`.adts` 裸 ADTS 码流。<br/>
+/// 需要流式、带进度与重采样/声道转换的转码，用 <see cref="AudioConverter"/>。
 /// </remarks>
 /// <example>
 /// <code>
@@ -206,7 +215,17 @@ public class AudioFile
         if (options.PreferFrameCopy && TryCopyFrames(path, target, options))
             return new AudioSaveResult { FrameCopied = true, Container = target, Detail = "Frame copy" };
 
-        WritePcm(path, ReadPcm(), options);
+        // 逐帧转码：不再先把整段 PCM 解码进内存
+        AudioConverter.Convert(Path, path, new AudioEncodeOptions
+        {
+            Container = System.IO.Path.GetExtension(path)?.ToLowerInvariant(),
+            Mp3BitrateKbps = options.Mp3BitrateKbps,
+            FlacCompressionLevel = options.FlacCompressionLevel,
+            BitrateKbps = options.BitrateKbps,
+            VorbisQuality = options.VorbisQuality,
+            Metadata = options.Metadata,
+            PreserveMetadata = options.PreserveMetadata,
+        });
 
         return new AudioSaveResult { Reencoded = true, Container = target, Detail = "Decode and re-encode" };
     }
@@ -424,6 +443,28 @@ public class AudioFile
 
                 default:
                     throw new NotSupportedException(L.T("Unsupported container format: {0}.", extension));
+                case ".ogg":
+                case ".opus":
+                case ".m4a":
+                case ".mp4":
+                case ".aac":
+                case ".adts":
+                    {
+                        // 编码型容器统一走编码管线，避免每种格式各写一套样本对齐逻辑
+                        using var pipeline = new AudioEncodePipeline(stream, format, new AudioEncodeOptions
+                        {
+                            Container = extension,
+                            Mp3BitrateKbps = options.Mp3BitrateKbps,
+                            FlacCompressionLevel = options.FlacCompressionLevel,
+                            BitrateKbps = options.BitrateKbps,
+                            VorbisQuality = options.VorbisQuality,
+                            Metadata = options.Metadata,
+                            LeaveOpen = true,
+                        });
+                        pipeline.Write(audio.Data);
+                        pipeline.Complete();
+                        break;
+                    }
             }
         });
     }

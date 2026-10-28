@@ -114,7 +114,7 @@ public class AudioFileTests
     [Fact(DisplayName = "不支持的目标扩展名明确报错")]
     public void WritePcm_UnsupportedExtension_Throws()
     {
-        var path = TempPath(".ogg");
+        var path = TempPath(".xyz");
         try
         {
             Assert.Throws<NotSupportedException>(() => AudioFile.WritePcm(path, Format, new Byte[320]));

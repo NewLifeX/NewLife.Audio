@@ -11,7 +11,7 @@ namespace NewLife.Audio.Streaming;
 /// <summary>编码输出参数</summary>
 public class AudioEncodeOptions
 {
-    /// <summary>目标容器（按扩展名，支持 .wav/.flac/.mp3），为空时跟随输出流无法推断则用 .wav</summary>
+    /// <summary>目标容器（按扩展名，支持 .wav/.flac/.mp3/.aiff/.ogg/.opus/.m4a/.aac），为空时无法推断则用 .wav</summary>
     public String Container { get; set; } = ".wav";
 
     /// <summary>目标采样率（Hz），0 表示与输入一致</summary>
@@ -26,6 +26,12 @@ public class AudioEncodeOptions
     /// <summary>MP3 码率（kbps）</summary>
     public Int32 Mp3BitrateKbps { get; set; } = 128;
 
+    /// <summary>有损格式的统一码率（bps），0 表示按格式默认（MP3 用 <see cref="Mp3BitrateKbps"/>）</summary>
+    public Int32 BitrateKbps { get; set; }
+
+    /// <summary>Vorbis 质量档位 0~10</summary>
+    public Int32 VorbisQuality { get; set; } = 5;
+
     /// <summary>MP3 码率模式</summary>
     public Mp3RateMode Mp3Mode { get; set; } = Mp3RateMode.Cbr;
 
@@ -34,6 +40,9 @@ public class AudioEncodeOptions
 
     /// <summary>写入容器头的元数据（WAV INFO / FLAC VORBIS_COMMENT / MP3 ID3v2）</summary>
     public AudioMetadata Metadata { get; set; }
+
+    /// <summary>未显式指定 <see cref="Metadata"/> 时是否沿用源文件标签，默认 true</summary>
+    public Boolean PreserveMetadata { get; set; } = true;
 
     /// <summary>释放管线时是否保留输出流打开，默认 false（由管线负责关闭）</summary>
     public Boolean LeaveOpen { get; set; }
@@ -111,6 +120,10 @@ public class AudioEncodePipeline : IDisposable
         var sampleRate = options.SampleRate > 0 ? options.SampleRate : _inputFormat.SampleRate;
         _quality = options.ResampleQuality;
 
+        // Opus 的时间基固定为 48 kHz，写入前统一重采样
+        if (String.Equals(options.Container, ".opus", StringComparison.OrdinalIgnoreCase))
+            sampleRate = OpusOptions.GetNearestSampleRate(sampleRate);
+
         _outputFormat = new AudioFormat
         {
             SampleRate = sampleRate,
@@ -138,10 +151,17 @@ public class AudioEncodePipeline : IDisposable
     private static IAudioContainerWriter CreateWriter(Stream output, AudioFormat format, AudioEncodeOptions options)
     {
         var container = (options.Container ?? "").ToLowerInvariant();
+        var bitrate = options.BitrateKbps > 0 ? options.BitrateKbps : 64000;
+
         return container switch
         {
             ".flac" => new FlacFileWriter(output, format, new FlacWriterOptions { CompressionLevel = options.FlacCompressionLevel }),
             ".mp3" => new Mp3FileWriter(output, format, options.Mp3BitrateKbps),
+            ".aiff" or ".aif" or ".aifc" => new AiffFileWriter(output, format),
+            ".ogg" => new OggVorbisFileWriter(output, format, options.VorbisQuality),
+            ".opus" => new OggOpusFileWriter(output, format, bitrate),
+            ".m4a" or ".mp4" => new Mp4AacFileWriter(output, format, bitrate),
+            ".aac" or ".adts" => new AdtsAacFileWriter(output, format, bitrate),
             _ => new WaveFileWriter(output, format),
         };
     }
@@ -272,7 +292,7 @@ public class AudioEncodePipeline : IDisposable
         var all = _pending.ToArray();
         var samples16 = PcmConverter.FromFloat(all.AsSpan(0, count), SampleFormat.Int16);
 
-        if (_writer is Mp3FileWriter mp3) mp3.WritePcm(samples16);
+        if (_writer is IAudioPcmSink sink) sink.WritePcm(samples16);
         else _writer.WriteFrame(samples16);
 
         _pending.RemoveRange(0, count);
