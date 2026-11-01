@@ -8,9 +8,11 @@ on:
   workflow_dispatch:
 
 # 必须声明 packages: write，否则推送 GitHub Packages 会 403
+# 必须声明 id-token: write，否则 NuGet Trusted Publishing 无法换取临时 API Key
 permissions:
   contents: read
   packages: write
+  id-token: write
 
 jobs:
   build-publish:
@@ -38,7 +40,14 @@ jobs:
       continue-on-error: true
       shell: pwsh
       run: pwsh -NoProfile -File ./tools/check-api-compat.ps1
+    - name: NuGet login (OIDC)
+      # Trusted Publishing：用 GitHub OIDC 换取 1 小时有效的临时 Key，不再依赖长期 API Key
+      # 需在 nuget.org 的 Trusted Publishing 中为本仓库的 publish-beta.yml 建立策略
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: NewLife
     - name: Publish
       run: |
         dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://nuget.pkg.github.com/NewLifeX/index.json --api-key ${{ github.token }}
-        dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.nugetKey }}
+        dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}

@@ -5,10 +5,12 @@ on:
     tags: [ v* ]
   workflow_dispatch:
 
-# 必须同时声明：缺 packages: write 会让 GitHub Packages 推送 403，缺 contents: write 无法创建 Release
+# 必须同时声明：缺 packages: write 会让 GitHub Packages 推送 403，缺 contents: write 无法创建 Release，
+# 缺 id-token: write 则 NuGet Trusted Publishing 无法换取临时 API Key
 permissions:
   contents: write
   packages: write
+  id-token: write
 
 jobs:
   build-publish:
@@ -37,10 +39,17 @@ jobs:
       continue-on-error: true
       run: |
         dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://nuget.pkg.github.com/NewLifeX/index.json --api-key ${{ github.token }}
+    - name: NuGet login (OIDC)
+      # Trusted Publishing：用 GitHub OIDC 换取 1 小时有效的临时 Key，不再依赖长期 API Key
+      # 需在 nuget.org 的 Trusted Publishing 中为本仓库的本工作流文件建立策略
+      id: nuget-login
+      uses: NuGet/login@v1
+      with:
+        user: NewLife
     - name: Publish to NuGet.org
       id: nuget
       run: |
-        dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://api.nuget.org/v3/index.json --api-key ${{ secrets.nugetKey }}
+        dotnet nuget push ./out/*.nupkg --skip-duplicate --source https://api.nuget.org/v3/index.json --api-key ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
     - name: Create GitHub Release
       id: release
       # 仅 tag 推送时创建；手工触发（无 tag）只发包
