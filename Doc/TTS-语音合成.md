@@ -455,6 +455,23 @@ var text = TtsText.Default.Normalize("设备型号 A2 温度 35 度");
 
 AOT/裁剪：`SystemSpeechEngine` 依赖反射，不保证 NativeAOT 可用；AOT 场景请注入自定义引擎或使用 `ProcessTtsEngine` / `HttpTtsEngine` / 公共云引擎。
 
+## 10. 局域网播报示例（`Samples/TtsNotify`）
+
+把 TTS 接到局域网上：常驻监听一个 UDP 端口，收到 UTF-8 文本就念出来；同一个程序也能反过来广播。
+适合设备自检、烧写产线、长时间构建这类"结果不用盯屏幕"的场景。
+
+```bash
+dotnet run --project Samples/TtsNotify                        # 常驻监听 UDP 5502（并加入组播 239.255.42.99）
+dotnet run --project Samples/TtsNotify -- --test              # 先念一遍测试语料，确认音箱与音色
+dotnet run --project Samples/TtsNotify -- --send "A6 自检通过" # 向局域网广播一句
+```
+
+- 收：`udp://0.0.0.0:5502`，广播与组播均可；多网卡重复报文 2 秒内只念一次，播报之间排队不重叠
+- 报文：UTF-8 纯文本一行，或 JSON `{"text":"...","device":"..."}`（与 A2/A4 镜像里的 `usr/sbin/ttsnotify` 默认端口/组播一致，设备可直接发）
+- 发：默认只发广播 `255.255.255.255`；加 `--group` 才补发组播（避免收听端念两遍）
+- 音色/语速：`--voice 慧慧 --rate 1.1`；`--list-voices` 列出本机音色
+- 任何语言都能发：UDP 发一行 UTF-8 文本即可；Windows 需放行该端口入站
+
 ---
 
 （完）

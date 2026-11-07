@@ -1,0 +1,23 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- 局域网语音播报器：UDP 收文字 → 本机 TTS 播报；也可用 send 模式广播给别的机器。
+       用法见 Program.cs 文件头注释。 -->
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net8.0</TargetFramework>
+    <Nullable>disable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <AssemblyName>TtsNotify</AssemblyName>
+    <RootNamespace>TtsNotify</RootNamespace>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\NewLife.Audio\NewLife.Audio.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <!-- Windows 系统语音（SAPI）：NewLife.Audio 按反射调用，.NET Core/5+ 应用需自带此包 -->
+    <PackageReference Include="System.Speech" Version="8.0.0" />
+  </ItemGroup>
+
+</Project>

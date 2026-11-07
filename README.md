@@ -134,6 +134,7 @@ Turn text into sound with three lines of code:
 - **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
 - **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate plus a voice catalog (`TtsVoiceCatalog`: pick voices across engines by language and scenario), disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
+- **LAN announcer** — `Samples/TtsNotify` listens on a UDP port and speaks any text broadcast on the LAN (and can send too): handy for build/burn result announcements
 
 ### 🎙️ Speech Recognition (ASR)
 Low-priority adapter layer — no bundled model or inference runtime:
