@@ -51,9 +51,10 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 
 ### 🔊 Audio Device I/O (DEVIO)
 Cross-platform audio device abstraction:
-- Device enumeration & discovery
+- Device enumeration & discovery (including shared-mode mix format and device interface friendly name)
 - **WaveOut** / **WASAPI** backends on Windows (ASIO planned)
 - Audio capture & loopback recording
+- Endpoint volume & mute control (WASAPI)
 - Multi-device concurrent management via `AudioDeviceManager`
 
 > ⚠️ On Windows, both WinMM (WaveOut/WaveIn) and WASAPI (shared-mode playback/capture, loopback, event-driven low-latency streams, device-loss recovery, hot-plug watcher) are fully implemented. ASIO and the Linux/macOS/Android/iOS backends are not; their status and roadmap are documented in the [architecture design](Doc/架构设计.md).

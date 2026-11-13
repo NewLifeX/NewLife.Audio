@@ -33,7 +33,8 @@
 | `AlsaDriver` | Linux ALSA：`snd_device_name_hint` 枚举 PCM 设备，`snd_pcm_open` + `snd_pcm_set_params`（S16_LE 交错）后 `snd_pcm_writei`/`snd_pcm_readi` 播放与采集，xrun（`-EPIPE`/`-ESTRPIPE`）重新 `prepare` 后重试；`IsAvailable` 在非 Linux 或加载不到 `libasound.so.2` 时为 false，此时枚举返回空、默认设备返回 null、`Init` 抛 `NotSupportedException`。**已在 Linux ARM64 真机验证**：枚举 17 个设备、默认与 `hw:` 直连播放、`null` 设备采集通路；真实采集受该机 USB 输入端点无数据限制未复验。真机冒烟程序见 `Samples/AlsaSmoke` |
 | `LoopbackRecorder` | 系统音频回路录制：走 WASAPI loopback 真实回采，按请求格式转换 |
 | `AudioDeviceWatcher` | 经 `IMMNotificationClient` 上报设备增删、状态变化与默认设备切换，并提供活动端点快照 |
-| `AudioDeviceInfo` | 音频设备元数据：名称、ID、输入/输出、支持格式 |
+| `AudioEndpointVolume` | 端点音量控制：经 `IAudioEndpointVolume` 读写端点主音量标量与静音，效果等同系统音量合成器对该设备的调整；仅 Windows WASAPI 端点支持 |
+| `AudioDeviceInfo` | 音频设备元数据：名称、设备接口友好名、ID、输入/输出、默认标记、共享模式混音格式、支持格式 |
 
 ---
 
@@ -118,9 +119,21 @@ public class AudioDeviceInfo
 {
     public String Id { get; set; }
     public String Name { get; set; }
+    public String DeviceFriendlyName { get; set; }
     public Boolean IsInput { get; set; }
     public Boolean IsDefault { get; set; }
+    public AudioFormat MixFormat { get; set; }
     public List<AudioFormat> SupportedFormats { get; set; } = [];
+}
+
+/// <summary>音频端点音量控制</summary>
+public sealed class AudioEndpointVolume : IDisposable
+{
+    public static Boolean IsSupported { get; }
+    public static AudioEndpointVolume Open(String deviceId = null);
+    public Single Volume { get; set; }   // 0~1
+    public Boolean Mute { get; set; }
+    public void Dispose();
 }
 
 /// <summary>音频播放器接口</summary>
@@ -173,6 +186,7 @@ public interface IAudioDriver
 | WASAPI 事件回调 + 轮询回退 | 事件驱动可降低延迟；事件句柄不可用时自动回落到 100 ms 轮询，保证兼容性 |
 | 设备丢失后在新默认设备重连 | 播放/采集循环检测 `AUDCLNT_E_DEVICE_INVALIDATED` 后释放端点并重开，`ReconnectCount` 可观测 |
 | 优先平台原生 API | 不用第三方跨平台抽象库（增加原生依赖），直接调用 OS API，零依赖 |
+| 端点音量与混音格式随设备枚举一并提供 | 声卡测试类工具需要展示设备实际声道/采样率并直接调音量；WASAPI 下用 `IMMDevice.Activate` 激活 `IAudioEndpointVolume` 与 `IAudioClient.GetMixFormat`，与 NAudio 同一套 Core Audio 能力，仍不引入第三方依赖；软件音量（`AudioPlayer.Volume`）只缩放本库播放的数据，不替代端点音量 |
 | 跨平台原生驱动进入路线图 | 原"Linux/macOS 暂缓"的结论已调整：五平台（含 Android/iOS）设备 I/O 纳入阶段一/二，见[架构设计](架构设计.md) 路线图 |
 | 驱动命名（v1.2 破坏性） | `IAudioBackend`/`AudioBackendFactory` 与三个 Backend 实现直接改名为 Driver，不保留 Obsolete 别名；旧调用方需替换类型名，API 兼容门禁会报告这些删除 |
 

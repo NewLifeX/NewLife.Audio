@@ -95,6 +95,9 @@ internal sealed class WasapiAudioFormat
     /// <summary>每帧字节数</summary>
     public Int32 BlockAlign { get; private set; }
 
+    /// <summary>声道掩码（WAVEFORMATEXTENSIBLE 的 dwChannelMask）</summary>
+    public Int32 ChannelMask { get; private set; }
+
     /// <summary>是否为浮点格式</summary>
     public Boolean IsFloat => Tag == 3;
 
@@ -140,9 +143,11 @@ internal sealed class WasapiAudioFormat
         var raw = new Byte[size];
         Marshal.Copy(ptr, raw, 0, size);
 
+        var channelMask = 0;
         if (tag == 0xFFFE && size >= 40)
         {
-            // WAVEFORMATEXTENSIBLE：SubFormat GUID 起始 4 字节即实际格式标签
+            // WAVEFORMATEXTENSIBLE：dwChannelMask 位于偏移 20，SubFormat GUID 起始 4 字节即实际格式标签
+            channelMask = Marshal.ReadInt32(ptr, 20);
             tag = (UInt16)Marshal.ReadInt32(ptr, 24);
         }
 
@@ -153,9 +158,21 @@ internal sealed class WasapiAudioFormat
             SampleRate = sampleRate,
             BitsPerSample = bits,
             BlockAlign = blockAlign,
+            ChannelMask = channelMask,
             Raw = raw,
         };
     }
+
+    /// <summary>转换为通用 <see cref="AudioFormat"/></summary>
+    /// <returns>音频格式描述</returns>
+    public AudioFormat ToAudioFormat() => new()
+    {
+        SampleRate = SampleRate,
+        Channels = Channels,
+        BitsPerSample = BitsPerSample,
+        IsFloat = IsFloat,
+        ChannelMask = ChannelMask,
+    };
 
     /// <summary>复制格式字节到非托管内存</summary>
     /// <returns>调用方负责 <see cref="Marshal.FreeHGlobal"/> 的指针</returns>
@@ -231,11 +248,18 @@ internal static class WasapiInterop
     public static readonly Guid IID_IAudioClient = new("1CB9AD4C-DBFA-4C32-B178-C2F568A703B2");
     public static readonly Guid IID_IAudioRenderClient = new("F294ACFC-3146-4483-A7BF-ADDCA7C260E2");
     public static readonly Guid IID_IAudioCaptureClient = new("C8ADBD64-E71E-48A0-A4DE-185C395CD317");
+    public static readonly Guid IID_IAudioEndpointVolume = new("5CDF2C82-841E-4546-9722-0CF74078229A");
 
     private static readonly PROPERTYKEY PKEY_Device_FriendlyName = new()
     {
         fmtid = new Guid("a45c254e-df1c-4efd-8020-67d146a850e0"),
         pid = 14,
+    };
+
+    private static readonly PROPERTYKEY PKEY_DeviceInterface_FriendlyName = new()
+    {
+        fmtid = new Guid("026e516e-b814-414b-83cd-856d6fef4822"),
+        pid = 2,
     };
 
     /// <summary>创建设备枚举器</summary>
@@ -278,13 +302,16 @@ internal static class WasapiInterop
                     {
                         if (device.GetId(out var id) != 0 || id.IsNullOrEmpty()) continue;
 
-                        var name = GetFriendlyName(device);
+                        var name = GetFriendlyName(device, PKEY_Device_FriendlyName);
+                        var deviceName = GetFriendlyName(device, PKEY_DeviceInterface_FriendlyName);
                         list.Add(new AudioDeviceInfo
                         {
                             Id = id,
                             Name = name.IsNullOrEmpty() ? id : name,
+                            DeviceFriendlyName = deviceName,
                             IsInput = input,
                             IsDefault = String.Equals(id, defaultId, StringComparison.OrdinalIgnoreCase),
+                            MixFormat = GetMixFormat(device),
                         });
                     }
                     finally
@@ -452,13 +479,12 @@ internal static class WasapiInterop
         }
     }
 
-    private static String GetFriendlyName(IMMDevice device)
+    private static String GetFriendlyName(IMMDevice device, PROPERTYKEY key)
     {
         if (device.OpenPropertyStore(STGM_READ, out var store) != 0 || store == null) return null;
 
         try
         {
-            var key = PKEY_Device_FriendlyName;
             if (store.GetValue(ref key, out var value) != 0) return null;
 
             try
@@ -474,6 +500,38 @@ internal static class WasapiInterop
         finally
         {
             Release(store);
+        }
+    }
+
+    /// <summary>读取端点的共享模式混音格式</summary>
+    /// <param name="device">音频端点</param>
+    /// <returns>混音格式；激活音频客户端失败时返回 null</returns>
+    public static AudioFormat GetMixFormat(IMMDevice device)
+    {
+        object instance = null;
+        try
+        {
+            var iid = IID_IAudioClient;
+            if (device.Activate(ref iid, CLSCTX_ALL, IntPtr.Zero, out instance) != 0 || instance is not IAudioClient client) return null;
+
+            if (client.GetMixFormat(out var ptr) != 0 || ptr == IntPtr.Zero) return null;
+
+            try
+            {
+                return WasapiAudioFormat.Read(ptr).ToAudioFormat();
+            }
+            finally
+            {
+                Marshal.FreeCoTaskMem(ptr);
+            }
+        }
+        catch
+        {
+            return null;
+        }
+        finally
+        {
+            if (instance != null) Release(instance);
         }
     }
 
@@ -1454,6 +1512,24 @@ internal interface IAudioClient
     [PreserveSig] Int32 Reset();
     [PreserveSig] Int32 SetEventHandle(IntPtr eventHandle);
     [PreserveSig] Int32 GetService(ref Guid iid, [MarshalAs(UnmanagedType.IUnknown)] out Object service);
+}
+
+[ComImport, Guid("5CDF2C82-841E-4546-9722-0CF74078229A"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]
+internal interface IAudioEndpointVolume
+{
+    [PreserveSig] Int32 RegisterControlChangeNotify(IntPtr notify);
+    [PreserveSig] Int32 UnregisterControlChangeNotify(IntPtr notify);
+    [PreserveSig] Int32 GetChannelCount(out UInt32 channelCount);
+    [PreserveSig] Int32 SetMasterVolumeLevel(Single levelDB, IntPtr eventContext);
+    [PreserveSig] Int32 SetMasterVolumeLevelScalar(Single level, IntPtr eventContext);
+    [PreserveSig] Int32 GetMasterVolumeLevel(out Single levelDB);
+    [PreserveSig] Int32 GetMasterVolumeLevelScalar(out Single level);
+    [PreserveSig] Int32 SetChannelVolumeLevel(UInt32 channel, Single levelDB, IntPtr eventContext);
+    [PreserveSig] Int32 SetChannelVolumeLevelScalar(UInt32 channel, Single level, IntPtr eventContext);
+    [PreserveSig] Int32 GetChannelVolumeLevel(UInt32 channel, out Single levelDB);
+    [PreserveSig] Int32 GetChannelVolumeLevelScalar(UInt32 channel, out Single level);
+    [PreserveSig] Int32 SetMute([MarshalAs(UnmanagedType.Bool)] Boolean mute, IntPtr eventContext);
+    [PreserveSig] Int32 GetMute([MarshalAs(UnmanagedType.Bool)] out Boolean mute);
 }
 
 [ComImport, Guid("F294ACFC-3146-4483-A7BF-ADDCA7C260E2"), InterfaceType(ComInterfaceType.InterfaceIsIUnknown)]

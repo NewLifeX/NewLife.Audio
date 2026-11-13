@@ -53,9 +53,10 @@ Bidirectional PCM conversion for 10+ audio codecs, all in pure managed C#:
 
 ### 🔊 Audio Device I/O (DEVIO)
 Cross-platform audio device abstraction:
-- Device enumeration & discovery
+- Device enumeration & discovery (including shared-mode mix format and device interface friendly name)
 - **WaveOut** / **WASAPI** backends on Windows (ASIO planned)
 - Audio capture & loopback recording
+- Endpoint volume & mute control (WASAPI)
 - Multi-device concurrent management via `AudioDeviceManager`
 
 > ⚠️ On Windows, both WinMM (WaveOut/WaveIn) and WASAPI (shared-mode playback/capture, loopback, event-driven low-latency streams, device-loss recovery, hot-plug watcher) are fully implemented. ASIO and the Linux/macOS/Android/iOS backends are not; their status and roadmap are documented in the [architecture design](https://github.com/NewLifeX/NewLife.Audio/blob/master/Doc/架构设计.md).
@@ -136,6 +137,7 @@ Turn text into sound with three lines of code:
 - **Cloud providers** — `AliyunTtsEngine` / `TencentTtsEngine` / `BaiduTtsEngine` / `AzureTtsEngine`, plus key-free `BaiduTranslateTtsEngine`
 - **Offline neural voices** — optional `NewLife.Audio.Sherpa` package (sherpa-onnx: VITS / Matcha / Kokoro, streaming)
 - **Optional advanced** — voice/rate plus a voice catalog (`TtsVoiceCatalog`: pick voices across engines by language and scenario), disk cache, pre-generated phrases, text normalization (`NewLife.Audio.Tts.Advanced`)
+- **LAN announcer** — `Samples/TtsNotify` listens on a UDP port and speaks any text broadcast on the LAN (and can send too): handy for build/burn result announcements
 
 ### 🎙️ Speech Recognition (ASR)
 Low-priority adapter layer — no bundled model or inference runtime:

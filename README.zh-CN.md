@@ -53,9 +53,10 @@ Nuget：NewLife.Audio
 
 ### 🔊 音频设备 I/O（DEVIO）
 跨平台音频设备抽象：
-- 设备枚举与发现
+- 设备枚举与发现（含共享模式混音格式与设备接口友好名）
 - Windows 下的 **WaveOut** / **WASAPI** 后端（ASIO 规划中）
 - 音频采集与环回录制
+- 端点音量与静音控制（WASAPI）
 - 通过 `AudioDeviceManager` 进行多设备并发管理
 
 > ⚠️ Windows 下 WaveOut/WaveIn（WinMM）与 WASAPI（共享模式播放/采集、loopback、事件回调低延迟流、设备丢失恢复、热插拔观察）均已完整实现；ASIO 与 Linux/macOS/Android/iOS 后端尚未实现，状态与排期见[架构设计](Doc/架构设计.md)。
